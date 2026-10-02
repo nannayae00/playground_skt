@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$GCP_SA_KEY_B64\" ] && (umask 077; printf '%s' \"$GCP_SA_KEY_B64\" | base64 -d > /tmp/gcp-sa.json)"
+            "command": "[ -n \"$GCP_SA_KEY_B64\" ] && (umask 077; printf '%s' \"$GCP_SA_KEY_B64\" | base64 -d > /tmp/gcp-sa.json) || true"
           }
         ]
       }
