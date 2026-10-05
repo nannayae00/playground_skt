@@ -1,0 +1,200 @@
+from flask import Flask, request, jsonify
+from scrapers.moyo_scraper import MoyoScraper
+from core.firebase_handler import FirebaseHandler
+import requests
+import os
+from datetime import datetime
+
+app = Flask(__name__)
+
+# 환경변수
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
+
+def send_telegram(text):
+    """텔레그램 메시지 전송"""
+    print(f"📤 텔레그램 전송 시도...")
+    
+    if not BOT_TOKEN or not CHAT_ID:
+        print("⚠️ 텔레그램 설정 없음")
+        return
+    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    data = {
+        "chat_id": CHAT_ID,
+        "text": text
+    }
+    try:
+        response = requests.post(url, json=data, timeout=10)
+        if response.status_code == 200:
+            print("✅ 텔레그램 전송 성공!")
+        else:
+            print(f"❌ 텔레그램 전송 실패: {response.text}")
+    except Exception as e:
+        print(f"❌ 텔레그램 전송 에러: {e}")
+
+@app.route('/')
+def index():
+    """Health check"""
+    return jsonify({
+        "status": "ok",
+        "service": "Price Monitor",
+        "version": "1.0"
+    })
+
+@app.route('/check-moyo', methods=['POST'])
+def check_moyo():
+    """모요 체크 (Cloud Scheduler가 호출)"""
+    try:
+        print(f"🚀 모요 체크 시작: {datetime.now()}")
+        
+        # 1. 스크래핑
+        scraper = MoyoScraper()
+        plans, screenshot = scraper.scrape()
+        print(f"   추출: {len(plans)}개")
+        
+        # 2. Firebase 저장
+        db = FirebaseHandler()
+        db.save_check_result('moyo', plans, screenshot)
+        
+        # 3. 비교 분석
+        from core.comparator import Comparator
+        comparator = Comparator()
+        alerts = comparator.analyze_competitiveness(plans)
+        
+        # 4. 결과 메시지 생성
+        message = f"""모요 체크 완료
+
+⏰ 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+📊 요금제: {len(plans)}개
+🚨 알림: {len(alerts)}개
+
+"""
+        # 알림이 있으면 표시
+        if alerts:
+            message += "⚠️ 주요 알림:\n"
+            for alert in alerts[:5]:  # 최대 5개만
+                message += f"\n{alert['message']}"
+            
+            if len(alerts) > 5:
+                message += f"\n\n... 외 {len(alerts) - 5}개"
+        else:
+            message += "✅ 경쟁력 양호! 특이사항 없음"
+        
+        message += f"\n\n상위 3개 요금제:\n"
+        for i, plan in enumerate(plans[:3], 1):
+            name = plan['name'].replace('_', ' ').replace('*', ' ').replace('[', '(').replace(']', ')')
+            message += f"\n{i}. {plan['display_name']}\n"
+            message += f"   {name}\n"
+            message += f"   {plan['final_price']:,}원\n"
+        
+        send_telegram(message)
+        
+        return jsonify({
+            "status": "success",
+            "plans_count": len(plans),
+            "alerts_count": len(alerts),
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        error_msg = f"모요 체크 실패\n\n에러: {str(e)}"
+        send_telegram(error_msg)
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@app.route('/telegram-webhook', methods=['POST'])
+def telegram_webhook():
+    """텔레그램 웹훅"""
+    try:
+        data = request.get_json()
+        
+        if 'message' not in data:
+            return jsonify({"status": "ok"})
+        
+        message = data['message']
+        chat_id = message['chat']['id']
+        text = message.get('text', '')
+        
+        print(f"📨 텔레그램 메시지: {text} (chat_id: {chat_id})")
+        
+        text_lower = text.lower()
+        
+        if '수집' in text_lower or '체크' in text_lower or '확인' in text_lower:
+            send_telegram("🔍 모요 사이트 수집을 시작합니다...")
+            
+            # 스크래핑
+            scraper = MoyoScraper()
+            plans, screenshot = scraper.scrape()
+            
+            # Firebase 저장
+            db = FirebaseHandler()
+            db.save_check_result('moyo', plans, screenshot)
+            
+            # 비교 분석
+            from core.comparator import Comparator
+            comparator = Comparator()
+            alerts = comparator.analyze_competitiveness(plans)
+            
+            # 결과 메시지
+            result_msg = f"""✅ 수집 완료!
+
+⏰ 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+📊 요금제: {len(plans)}개
+🚨 알림: {len(alerts)}개
+
+"""
+            if alerts:
+                result_msg += "⚠️ 주요 알림:\n"
+                for alert in alerts[:5]:
+                    result_msg += f"\n{alert['message']}"
+                
+                if len(alerts) > 5:
+                    result_msg += f"\n\n... 외 {len(alerts) - 5}개"
+            else:
+                result_msg += "✅ 경쟁력 양호! 특이사항 없음"
+            
+            result_msg += f"\n\n상위 3개 요금제:\n"
+            for i, plan in enumerate(plans[:3], 1):
+                name = plan['name'].replace('_', ' ').replace('*', ' ').replace('[', '(').replace(']', ')')
+                result_msg += f"\n{i}. {plan['display_name']}\n"
+                result_msg += f"   {name}\n"
+                result_msg += f"   {plan['final_price']:,}원\n"
+            
+            send_telegram(result_msg)
+        
+        elif '도움' in text_lower or 'help' in text_lower:
+            help_msg = """📋 사용 가능한 명령어:
+
+🔍 수집해줘 / 체크해줘 / 확인해줘
+   → 모요 사이트 즉시 수집 + 경쟁력 분석
+
+💡 도움말 / help
+   → 이 메시지 표시
+"""
+            send_telegram(help_msg)
+        
+        return jsonify({"status": "ok"})
+        
+    except Exception as e:
+        print(f"❌ 웹훅 처리 에러: {e}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+@app.route('/status')
+def status():
+    """상태 확인"""
+    db = FirebaseHandler()
+    latest = db.get_latest_data('moyo')
+    
+    if latest:
+        return jsonify({
+            "status": "ok",
+            "last_check": str(latest.get('checked_at')),
+            "last_plan_count": latest.get('plan_count')
+        })
+    else:
+        return jsonify({"status": "no_data"})
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=True)

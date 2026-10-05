@@ -1,0 +1,7 @@
+flask==3.0.3
+requests==2.32.3
+google-generativeai==0.7.2
+google-api-python-client==2.136.0
+google-auth==2.30.0
+gunicorn==22.0.0
+google-cloud-firestore==2.16.0

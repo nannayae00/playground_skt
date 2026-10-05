@@ -1,0 +1,59 @@
+# 우리 회사 요금제
+our_company:
+  name: "우리회사"
+  network: "SKT"
+  
+  plans:
+    - name: "4GB 기본"
+      data: "4GB"
+      data_gb: 4
+      base_price: 11000
+      monthly_discount: 200
+      discount_months: 10
+      voucher: 0
+      final_price: 8900
+      total_support: 2000
+      
+    - name: "7GB 표준"
+      data: "7GB"
+      data_gb: 7
+      base_price: 15000
+      monthly_discount: 300
+      discount_months: 10
+      voucher: 0
+      final_price: 12000
+      total_support: 3000
+      
+    - name: "11GB 프리미엄"
+      data: "11GB"
+      data_gb: 11
+      base_price: 20000
+      monthly_discount: 400
+      discount_months: 10
+      voucher: 0
+      final_price: 16000
+      total_support: 4000
+      
+    - name: "100GB 무제한"
+      data: "100GB"
+      data_gb: 100
+      base_price: 50000
+      monthly_discount: 1500
+      discount_months: 10
+      voucher: 0
+      final_price: 35000
+      total_support: 15000
+
+# 통신망 정보
+networks:
+  SKT:
+    is_our_network: true
+  KT:
+    is_our_network: false
+  LGU+:
+    is_our_network: false
+
+# 알림 임계값
+alert_thresholds:
+  price_difference: 1000  # 1000원 이상 차이 시 알림
+  total_support: 5000     # 총 지원금 5000원 이상 차이 시

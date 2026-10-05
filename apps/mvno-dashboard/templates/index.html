@@ -1,0 +1,2290 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MVNO Intelligence Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#fff;--bg2:#f7f7f5;--bg3:#efede9;
+  --border:#e9e9e7;--border2:#d9d9d6;
+  --text:#37352f;--text2:#6b6b6b;--text3:#9b9b9b;
+  --skt:#2563eb;--kt:#059669;--lgu:#d97706;
+  --good:#0f7b0f;--good-bg:#e6f4e6;
+  --warn:#a05000;--warn-bg:#fbf3db;
+  --danger:#c7300a;--danger-bg:#fde8e0;
+  --purple:#6940a5;--purple-bg:#f1ecfb;
+  --sw:252px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans KR',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;display:flex;min-height:100vh;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+
+/* ── SIDEBAR ── */
+.sidebar{width:var(--sw);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100;transition:transform .2s;}
+.sb-top{padding:12px 10px 8px;border-bottom:1px solid var(--border);}
+.ws-row{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer;font-weight:600;font-size:13px;}
+.ws-row:hover{background:var(--bg3);}
+.ws-icon{width:22px;height:22px;background:var(--skt);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700;}
+.sb-search{margin:5px 10px;display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;color:var(--text3);font-size:12px;cursor:text;}
+.sec-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;padding:8px 14px 3px;}
+.nav-item{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;color:var(--text2);font-size:13px;transition:background .1s;}
+.nav-item:hover,.nav-item.active{background:var(--bg3);color:var(--text);}
+.nav-item.active{font-weight:500;}
+.ni{font-size:13px;width:18px;text-align:center;}
+.nbadge{margin-left:auto;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;}
+.nb-r{background:var(--danger-bg);color:var(--danger);}
+.nb-g{background:var(--good-bg);color:var(--good);}
+.dg-header{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:4px;cursor:pointer;color:var(--text2);font-size:13px;transition:background .1s;}
+.dg-header:hover{background:var(--bg3);}
+.dg-arrow{font-size:9px;color:var(--text3);transition:transform .18s;margin-left:auto;flex-shrink:0;}
+.dg-arrow.open{transform:rotate(90deg);}
+.dg-sub{padding-left:24px;overflow:hidden;max-height:0;transition:max-height .22s ease;}
+.dg-sub.open{max-height:500px;}
+.dg-item{display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:12px;color:var(--text2);}
+.dg-item:hover{background:var(--bg3);color:var(--text);}
+.dg-item.active{color:var(--skt);font-weight:600;}
+.ddot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.dr{background:var(--danger);} .dy{background:#f59e0b;} .dg2{background:var(--good);}
+.div-thin{height:1px;background:var(--border);margin:5px 12px;}
+
+/* ── MAIN ── */
+.main{margin-left:var(--sw);flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{padding:0 36px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.92);backdrop-filter:blur(8px);position:sticky;top:0;z-index:50;}
+.tb-row1{display:flex;align-items:center;gap:8px;padding:10px 0 8px;}
+.breadcrumb{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text2);}
+.bc-sep{color:var(--text3);} .bc-cur{color:var(--text);font-weight:500;}
+.tb-actions{margin-left:auto;display:flex;align-items:center;gap:6px;}
+.tbtn{padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:#fff;font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;transition:all .1s;}
+.tbtn:hover{background:var(--bg2);}
+.tbtn.pri{background:var(--skt);color:#fff;border-color:var(--skt);}
+.date-strip{display:flex;align-items:center;gap:4px;padding:0 0 8px;overflow-x:auto;scrollbar-width:none;}
+.date-strip::-webkit-scrollbar{display:none;}
+.dchip{flex-shrink:0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);color:var(--text2);background:#fff;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px;}
+.dchip:hover{background:var(--bg2);}
+.dchip.active{background:var(--skt);color:#fff;border-color:var(--skt);}
+.cdot{width:5px;height:5px;border-radius:50%;}
+.cd-r{background:#ef4444;} .cd-y{background:#f59e0b;} .cd-g{background:#22c55e;}
+.dchip.active .cdot{background:rgba(255,255,255,.7);}
+.strip-arr{flex-shrink:0;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer;color:var(--text2);}
+
+/* ── PAGE ── */
+.page{max-width:920px;margin:0 auto;padding:32px 36px 80px;width:100%;}
+.view{display:none;} .view.active{display:block;}
+.page-cover{height:5px;background:linear-gradient(90deg,var(--skt),#60a5fa,#a78bfa);margin:-32px -36px 26px;}
+.page-emoji{font-size:34px;margin-bottom:5px;display:block;}
+.page-title{font-size:24px;font-weight:700;letter-spacing:-.02em;margin-bottom:3px;}
+.page-desc{font-size:12px;color:var(--text3);}
+.pta{margin-bottom:20px;}
+.sh{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:22px 0 10px;display:flex;align-items:center;gap:8px;}
+.sh::after{content:'';flex:1;height:1px;background:var(--border);}
+.props{background:var(--bg2);border:1px solid var(--border);border-radius:7px;margin-bottom:20px;overflow:hidden;}
+.pr{display:flex;align-items:center;padding:6px 14px;border-bottom:1px solid var(--border);font-size:13px;}
+.pr:last-child{border-bottom:none;} .pr:hover{background:var(--bg3);}
+.pk{width:110px;color:var(--text3);font-size:11px;display:flex;align-items:center;gap:4px;flex-shrink:0;}
+.ptag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;}
+.pt-d{background:var(--danger-bg);color:var(--danger);}
+.pt-w{background:var(--warn-bg);color:var(--warn);}
+.pt-g{background:var(--good-bg);color:var(--good);}
+.pt-p{background:var(--purple-bg);color:var(--purple);}
+.pt-b{background:#e8f0fe;color:var(--skt);}
+.kg{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px;}
+.kc{background:#fff;border:1px solid var(--border);border-radius:7px;padding:12px 14px;position:relative;overflow:hidden;transition:box-shadow .15s;}
+.kc:hover{box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.kc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.kc.kd::before{background:var(--danger);} .kc.kw::before{background:#d97706;} .kc.kg::before{background:var(--good);} .kc.kb::before{background:var(--skt);}
+.kl{font-size:10px;color:var(--text3);margin-bottom:5px;}
+.kv{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600;line-height:1;margin-bottom:3px;}
+.kv.kd{color:var(--danger);} .kv.kw{color:var(--warn);} .kv.kg{color:var(--good);} .kv.kb{color:var(--skt);}
+.ks2{font-size:10px;color:var(--text3);}
+.kdelta{font-size:10px;font-weight:600;font-family:'IBM Plex Mono',monospace;margin-top:3px;}
+.co{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-radius:6px;margin-bottom:7px;font-size:13px;line-height:1.6;border:1px solid;}
+.co.co-d{background:var(--danger-bg);border-color:#f5c6be;}
+.co.co-w{background:var(--warn-bg);border-color:#f5e6b2;}
+.co.co-g{background:var(--good-bg);border-color:#b7e0b7;}
+.co.co-i{background:#edf2fb;border-color:#c8d8f5;}
+.coi{font-size:15px;flex-shrink:0;line-height:1.5;}
+.msc{background:#fff;border:1px solid var(--border);border-radius:7px;padding:13px 15px;margin-bottom:9px;}
+.msh{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;font-size:12px;}
+.mst{font-weight:600;color:var(--text2);}
+.mstot{font-family:'IBM Plex Mono',monospace;color:var(--text3);font-size:11px;}
+.msr{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.msr:last-of-type{margin-bottom:0;}
+.cpill{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;}
+.ps{background:#dbeafe;color:var(--skt);} .pk2{background:#d1fae5;color:#065f46;} .pl{background:#fef3c7;color:#92400e;}
+.bt{flex:1;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.bf{height:100%;border-radius:3px;transition:width 1.1s cubic-bezier(.4,0,.2,1);}
+.fs{background:var(--skt);} .fk{background:#10b981;} .fl{background:#f59e0b;}
+.mpct{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;width:38px;text-align:right;flex-shrink:0;}
+.mcnt{font-size:11px;color:var(--text3);width:46px;text-align:right;flex-shrink:0;}
+.mstarget{display:flex;align-items:center;gap:8px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border);font-size:12px;}
+.mtl{color:var(--text3);} .mtv{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.gtag{margin-left:auto;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;}
+.gb{background:var(--danger-bg);color:var(--danger);} .gw{background:var(--warn-bg);color:var(--warn);} .gg{background:var(--good-bg);color:var(--good);}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:10px;}
+.nc{background:#fff;border:1px solid var(--border);border-radius:7px;padding:11px;text-align:center;}
+.ncar{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px;}
+.nval{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:700;line-height:1;}
+.nval.nm{color:var(--danger);} .nval.np{color:var(--good);} .nval.nf{color:var(--text3);}
+.nsub{font-size:10px;color:var(--text3);margin-top:3px;}
+.cc{background:#fff;border:1px solid var(--border);border-radius:7px;padding:13px 15px;margin-bottom:10px;}
+.cct{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+.cw{position:relative;height:145px;}
+.cwm{position:relative;height:175px;}
+.cwl{position:relative;height:200px;}
+.nt{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:13px;border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+.nt th{background:var(--bg2);padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);}
+.nt th.r{text-align:right;}
+.nt td{padding:8px 12px;border-bottom:1px solid var(--border);}
+.nt td.r{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+.nt tr:last-child td{border-bottom:none;}
+.nt tr:hover td{background:var(--bg2);}
+.tg2{color:var(--good);font-weight:600;} .td2{color:var(--danger);font-weight:600;} .tw2{color:var(--warn);font-weight:600;}
+.pw{background:var(--bg3);border-radius:3px;height:5px;overflow:hidden;margin-top:3px;}
+.pf{height:100%;background:var(--skt);border-radius:3px;transition:width 1s;}
+.pf.pd{background:var(--danger);} .pf.pg{background:var(--good);}
+.page-footer{margin-top:32px;padding-top:13px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);display:flex;justify-content:space-between;}
+.comm-card{background:#fff;border:1px solid var(--border);border-radius:7px;padding:13px 15px;margin-bottom:9px;border-left:3px solid var(--border);}
+.comm-card.cc-s{border-left-color:var(--skt);}
+.comm-card.cc-l{border-left-color:#f59e0b;}
+.comm-card.cc-yt{border-left-color:#ef4444;}
+.comm-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.comm-src{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;}
+.comm-heat{display:flex;align-items:center;gap:4px;font-size:11px;}
+.post-row{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
+.post-row:last-child{border-bottom:none;padding-bottom:0;}
+.post-rank{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--text3);width:16px;flex-shrink:0;padding-top:1px;}
+.post-rank.r1{color:#f59e0b;}
+.post-body{flex:1;min-width:0;}
+.post-title{font-size:12px;font-weight:500;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.post-meta{font-size:10px;color:var(--text3);display:flex;gap:8px;font-family:'IBM Plex Mono',monospace;}
+.post-views{color:#f59e0b;}
+.post-badge{display:inline-flex;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;}
+.pb-hot{background:#fde8e0;color:var(--danger);}
+.pb-game{background:#e8f0fe;color:var(--skt);}
+.pb-new{background:var(--good-bg);color:var(--good);}
+.comm-interp{margin-top:9px;padding:8px 11px;background:var(--bg2);border-radius:5px;border-left:2px solid var(--border2);font-size:12px;color:var(--text2);line-height:1.7;}
+.comm-interp strong{color:var(--text);}
+.price-card{background:#fff;border:1px solid var(--border);border-radius:7px;padding:13px 15px;margin-bottom:9px;}
+.ptbl{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px;}
+.ptbl th{background:var(--bg2);padding:6px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);}
+.ptbl th:first-child{text-align:left;}
+.ptbl td{padding:7px 10px;text-align:center;border-bottom:1px solid var(--border);font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.ptbl td:first-child{text-align:left;font-family:'IBM Plex Sans KR',sans-serif;font-size:11px;color:var(--text2);}
+.ptbl tr:last-child td{border-bottom:none;}
+.ptbl tr:hover td{background:var(--bg2);}
+.price-low{color:var(--skt);font-weight:700;}
+.price-alert{color:var(--danger);font-weight:700;}
+.gbadge2{display:inline-block;padding:1px 4px;background:var(--danger-bg);border:1px solid #f5c6be;border-radius:3px;color:var(--danger);font-size:8px;margin-left:3px;font-family:'IBM Plex Sans KR',sans-serif;}
+.top-plan-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);}
+.top-plan-row:last-child{border-bottom:none;}
+.tp-rank{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--text3);width:16px;flex-shrink:0;}
+.tp-rank.r1{color:#f59e0b;}
+.tp-body{flex:1;min-width:0;}
+.tp-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tp-co{font-size:10px;color:var(--text3);}
+.tp-cnt{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);flex-shrink:0;}
+.dbv{border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:13px;}
+.dbtb{background:var(--bg2);border-bottom:1px solid var(--border);padding:6px 12px;display:flex;align-items:center;gap:6px;}
+.dbvb{padding:3px 8px;border-radius:4px;border:none;background:none;font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;}
+.dbvb.active{background:#fff;border:1px solid var(--border);color:var(--text);font-weight:500;}
+.dbf{margin-left:auto;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:11px;color:var(--text2);cursor:pointer;font-family:inherit;}
+.dbr{display:flex;align-items:center;padding:7px 12px;border-bottom:1px solid var(--border);font-size:13px;transition:background .1s;cursor:pointer;}
+.dbr:last-child{border-bottom:none;}
+.dbr:hover{background:var(--bg2);}
+.dbt{flex:1;display:flex;align-items:center;gap:7px;font-weight:500;}
+.dbd{font-size:11px;color:var(--text3);width:86px;font-family:'IBM Plex Mono',monospace;}
+.dbs{width:76px;}
+.dbsc{width:54px;text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;}
+.ib{background:#fff;border:1px solid var(--border);border-radius:7px;padding:13px 17px;margin-bottom:10px;}
+.ii{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.ii:last-child{border-bottom:none;padding-bottom:0;}
+.inum{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:var(--border2);flex-shrink:0;width:20px;line-height:1.5;}
+.itxt{font-size:13px;line-height:1.8;color:var(--text2);}
+.itxt strong{color:var(--text);font-weight:600;}
+.itxt em{color:var(--skt);font-style:normal;}
+
+/* ══ REALTIME STYLES ══ */
+.rt-pulse{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 1.5s ease-in-out infinite;margin-right:5px;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.82);}}
+
+/* 오늘 상태 배너 */
+.rt-banner{border-radius:8px;padding:14px 18px;margin-bottom:14px;background:linear-gradient(135deg,#0f172a,#1e3a5f);color:#fff;}
+.rt-banner-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.rt-banner-date{font-size:13px;font-weight:600;}
+.rt-banner-time{font-size:11px;color:#94a3b8;display:flex;align-items:center;}
+.rt-banner-tags{display:flex;gap:6px;flex-wrap:wrap;}
+.rt-btag{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:4px;}
+.rt-btag.danger{background:rgba(199,48,10,.3);color:#fca5a5;border:1px solid rgba(199,48,10,.4);}
+.rt-btag.warn{background:rgba(160,80,0,.3);color:#fcd34d;border:1px solid rgba(160,80,0,.4);}
+.rt-btag.good{background:rgba(15,123,15,.3);color:#86efac;border:1px solid rgba(15,123,15,.4);}
+.rt-banner-note{font-size:11px;color:#64748b;margin-top:8px;}
+
+/* MNP 시장 구조 */
+.mnp-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:10px;}
+.mnp-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+.mnp-total-bar{display:flex;height:26px;border-radius:5px;overflow:hidden;gap:2px;margin-bottom:14px;}
+.mnp-seg{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;}
+.seg-mno{background:#475569;}
+.seg-mvno{background:#2563eb;}
+.mnp-breakdown{display:flex;flex-direction:column;gap:8px;}
+.mnp-row{display:flex;align-items:center;gap:10px;}
+.mnp-label{font-size:11px;font-weight:600;width:52px;flex-shrink:0;}
+.mnp-bar-track{flex:1;height:18px;background:var(--bg3);border-radius:4px;overflow:hidden;}
+.mnp-bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:10px;font-weight:700;color:#fff;transition:width .8s ease;}
+.mnp-row-val{font-family:'IBM Plex Mono',monospace;font-size:12px;width:80px;text-align:right;flex-shrink:0;}
+.mnp-sub{font-size:10px;color:var(--text3);width:60px;text-align:right;flex-shrink:0;}
+
+/* 군별 득실 */
+.gunbyul-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:10px;}
+.gun-card{border-radius:8px;padding:13px 14px;border:1px solid var(--border);}
+.gun-card.gs{border-top:3px solid var(--skt);background:#f8faff;}
+.gun-card.gk{border-top:3px solid var(--kt);background:#f0fdf4;}
+.gun-card.gl{border-top:3px solid var(--lgu);background:#fffbeb;}
+.gun-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.gun-title.gs{color:var(--skt);} .gun-title.gk{color:var(--kt);} .gun-title.gl{color:var(--lgu);}
+.gun-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);}
+.gun-row:last-of-type{border-bottom:none;}
+.gun-label{color:var(--text2);}
+.gun-val{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.gun-total{display:flex;justify-content:space-between;align-items:center;padding-top:7px;margin-top:5px;border-top:2px solid var(--border);}
+.gun-total-label{font-size:11px;font-weight:700;}
+.gun-total-val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;}
+
+/* SKT OUT 관리카드 */
+.tout-card{background:#fff;border:2px solid #fca5a5;border-radius:8px;padding:16px;margin-bottom:10px;}
+.tout-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+.tout-title{font-size:13px;font-weight:700;color:var(--danger);display:flex;align-items:center;gap:6px;}
+.tout-status{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;}
+.ts-ok{background:var(--good-bg);color:var(--good);}
+.ts-warn{background:var(--warn-bg);color:var(--warn);}
+.ts-bad{background:var(--danger-bg);color:var(--danger);}
+.tout-3col{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:14px;}
+.tout-col{padding:12px 14px;text-align:center;border-right:1px solid var(--border);}
+.tout-col:last-child{border-right:none;}
+.tout-col-label{font-size:10px;color:var(--text3);margin-bottom:5px;}
+.tout-col-val{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:800;line-height:1;}
+.tout-col-sub{font-size:10px;color:var(--text3);margin-top:3px;}
+.pace-wrap{margin-bottom:12px;}
+.pace-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:5px;}
+.pace-track{height:12px;background:var(--bg3);border-radius:6px;overflow:hidden;position:relative;}
+.pace-fill{height:100%;border-radius:6px;transition:width 1s ease;}
+.pace-marker{position:absolute;top:0;height:100%;width:2px;background:rgba(0,0,0,.25);}
+.pace-hint{font-size:10px;color:var(--text3);margin-top:4px;}
+.tout-fc{display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg2);border-radius:6px;font-size:12px;}
+.tout-fc-range{font-family:'IBM Plex Mono',monospace;font-weight:700;}
+.tout-trend{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--text2);}
+
+/* MVNO IN | OUT | 순증감 3열 */
+.inout-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;}
+.io-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px 14px;}
+.io-title{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.io-fc{font-size:9px;padding:1px 5px;border-radius:3px;background:#e8f0fe;color:var(--skt);font-weight:600;}
+.io-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border);}
+.io-row:last-of-type{border-bottom:none;}
+.io-key{font-size:12px;font-weight:700;width:26px;flex-shrink:0;}
+.io-key.ks{color:var(--skt);} .io-key.kk{color:var(--kt);} .io-key.kl{color:var(--lgu);}
+.io-bar{flex:1;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.io-bf{height:100%;border-radius:3px;}
+.io-bfs{background:var(--skt);} .io-bfk{background:#10b981;} .io-bfl{background:#f59e0b;}
+.io-pct{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);width:36px;text-align:right;flex-shrink:0;}
+.io-now{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;width:46px;text-align:right;flex-shrink:0;}
+.io-fc2{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--skt);width:46px;text-align:right;flex-shrink:0;}
+.io-total{display:flex;justify-content:space-between;align-items:center;padding:7px 0 0;margin-top:5px;border-top:2px solid var(--border);font-size:12px;font-weight:700;}
+.io-divider{height:1px;background:var(--border);margin:8px 0;}
+.io-section-label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
+
+/* 월 목표 달성 */
+.goal-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.goal-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.goal-row:last-child{border-bottom:none;}
+.goal-label{font-size:12px;font-weight:600;width:90px;flex-shrink:0;}
+.goal-body{flex:1;}
+.goal-bar-wrap{position:relative;height:12px;background:var(--bg3);border-radius:6px;overflow:hidden;margin-bottom:4px;}
+.goal-bar-fill{height:100%;border-radius:6px;transition:width 1s ease;}
+.goal-bar-limit{position:absolute;top:0;height:100%;width:2px;background:rgba(0,0,0,.2);}
+.goal-nums{font-size:10px;color:var(--text3);display:flex;justify-content:space-between;}
+.goal-fc{font-family:'IBM Plex Mono',monospace;font-size:11px;width:180px;text-align:right;flex-shrink:0;}
+.goal-badge{width:56px;flex-shrink:0;text-align:center;}
+
+/* 최근 5일 트렌드 */
+.trend-table{width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:10px;}
+.trend-table th{background:var(--bg2);padding:7px 10px;text-align:center;font-size:10px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);}
+.trend-table th:first-child{text-align:left;}
+.trend-table td{padding:7px 10px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.trend-table td:first-child{text-align:left;font-family:'IBM Plex Sans KR',sans-serif;font-weight:500;}
+.trend-table tr:last-child td{border-bottom:none;}
+.trend-table tr:hover td{background:var(--bg2);}
+.trend-table tr.today-row td{background:#eff6ff;}
+.tc-ok{color:var(--good);font-weight:700;}
+.tc-warn{color:var(--warn);font-weight:700;}
+.tc-bad{color:var(--danger);font-weight:700;}
+
+/* 차트 카드 */
+.rt-chart{background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+.rt-ct{font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+.rt-leg{display:flex;gap:10px;}
+.rt-li{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);}
+.rt-ld{width:18px;height:2px;border-radius:1px;}
+.cwrt{position:relative;height:155px;}
+.cwrt2{position:relative;height:130px;}
+
+/* SIDEBAR TOGGLE */
+.sb-toggle{display:none;position:fixed;top:10px;left:10px;z-index:200;background:#fff;border:1px solid var(--border);border-radius:5px;padding:5px 7px;cursor:pointer;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.1);}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+.page>*{animation:fadeIn .3s ease both;}
+
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 20px rgba(0,0,0,.1);}
+  .main{margin-left:0;}
+  .sb-toggle{display:block;}
+  .topbar{padding:0 12px 0 46px;}
+  .page{padding:24px 14px 60px;}
+  .page-cover{margin:-24px -14px 22px;}
+  .kg{grid-template-columns:repeat(2,1fr);}
+  .two,.three,.inout-grid,.gunbyul-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<button class="sb-toggle" onclick="toggleSidebar()">☰</button>
+
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-top">
+    <div class="ws-row"><div class="ws-icon">SK</div>MVNO Intelligence</div>
+  </div>
+  <div style="padding:4px 10px 5px;"><div class="sb-search">🔍 &nbsp;검색...</div></div>
+
+  <div class="nav-item" onclick="showView('bw');activeSbItem(this)"><span class="ni">📐</span>영업일수(BW)<span class="nbadge nb-g" style="margin-left:auto">개념</span></div>
+  <div class="nav-item" onclick="showView('fctrend');activeSbItem(this)"><span class="ni">🎯</span>월예측 추이</div>
+
+  <div class="div-thin"></div>
+  <div class="sec-label">리포트</div>
+  <div class="nav-item" onclick="showView('realtime');activeSbItem(this)" style="font-weight:600;">
+    <span class="ni">📡</span>실시간 현황<span class="nbadge nb-r">LIVE</span>
+  </div>
+
+  <div>
+    <div class="dg-header" onclick="toggleGrp('g-daily',this)">
+      <span class="ni">📊</span><span style="font-size:13px">일일 리포트</span>
+      <span class="nbadge nb-r" style="margin-left:8px">2건</span>
+      <span class="dg-arrow open">▶</span>
+    </div>
+    <div class="dg-sub open" id="g-daily">
+      <div class="dg-item active" onclick="loadD('0307');activeSbItem(this)"><span class="ddot dr"></span>3/07 (토) — 조치필요</div>
+      <div class="dg-item" onclick="loadD('0306');activeSbItem(this)"><span class="ddot dy"></span>3/06 (금) — 관리필요</div>
+      <div class="dg-item" onclick="loadD('0305');activeSbItem(this)"><span class="ddot dr"></span>3/05 (목) — 조치필요</div>
+      <div class="dg-item" onclick="loadD('0304');activeSbItem(this)"><span class="ddot dy"></span>3/04 (수) — 관리필요</div>
+      <div class="dg-item" onclick="loadD('0303');activeSbItem(this)"><span class="ddot dy"></span>3/03 (화) — 관리필요</div>
+      <div class="dg-item" onclick="loadD('0302');activeSbItem(this)"><span class="ddot dg2"></span>3/02 (월) — 양호</div>
+      <div class="dg-item" onclick="loadD('0228');activeSbItem(this)"><span class="ddot dg2"></span>2/28 (금) — 양호</div>
+      <div class="dg-item" onclick="loadD('0227');activeSbItem(this)"><span class="ddot dy"></span>2/27 (목) — 관리필요</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="dg-header" onclick="toggleGrp('g-weekly',this)">
+      <span class="ni">📈</span><span style="font-size:13px">주간 리포트</span><span class="dg-arrow">▶</span>
+    </div>
+    <div class="dg-sub" id="g-weekly">
+      <div class="dg-item" onclick="showView('weekly');activeSbItem(this)"><span class="ddot dr"></span>W10 (3/02–3/08)</div>
+      <div class="dg-item" onclick="showView('weekly');activeSbItem(this)"><span class="ddot dg2"></span>W09 (2/24–3/01)</div>
+      <div class="dg-item" onclick="showView('weekly');activeSbItem(this)"><span class="ddot dy"></span>W08 (2/17–2/23)</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="dg-header" onclick="toggleGrp('g-monthly',this)">
+      <span class="ni">📅</span><span style="font-size:13px">월간 리포트</span>
+      <span class="nbadge nb-g" style="margin-left:8px">NEW</span>
+      <span class="dg-arrow">▶</span>
+    </div>
+    <div class="dg-sub" id="g-monthly">
+      <div class="dg-item" onclick="showView('monthly');activeSbItem(this)"><span class="ddot dr"></span>2026년 3월</div>
+      <div class="dg-item" onclick="showView('monthly');activeSbItem(this)"><span class="ddot dy"></span>2026년 2월</div>
+    </div>
+  </div>
+
+  <div class="div-thin"></div>
+  <div class="nav-item" onclick="showView('archive');activeSbItem(this)"><span class="ni">🗂️</span>아카이브</div>
+  <div class="div-thin"></div>
+  <div class="sec-label">분석</div>
+  <div class="nav-item" style="padding-left:22px" onclick="loadD('0307');scrollToSh('커뮤니티')"><span class="ni">💬</span>커뮤니티 동향</div>
+  <div class="nav-item" style="padding-left:22px" onclick="loadD('0307');scrollToSh('요금제')"><span class="ni">💰</span>요금제 현황</div>
+  <div class="div-thin"></div>
+  <div class="sec-label">설정</div>
+  <div class="nav-item"><span class="ni">⚙️</span>설정</div>
+  <div class="nav-item"><span class="ni">👥</span>팀 관리</div>
+</aside>
+
+<!-- ═══ MAIN ═══ -->
+<main class="main">
+  <div class="topbar">
+    <div class="tb-row1">
+      <div class="breadcrumb">
+        <span>MVNO Intelligence</span>
+        <span class="bc-sep">›</span>
+        <span class="bc-cur" id="bc-view">실시간 현황</span>
+        <span class="bc-sep" id="bc-s2" style="display:none">›</span>
+        <span class="bc-cur" id="bc-date" style="display:none">3/07 (토)</span>
+      </div>
+      <div class="tb-actions">
+        <button class="tbtn">공유</button>
+        <button class="tbtn pri">+ 새 리포트</button>
+      </div>
+    </div>
+    <div class="date-strip" id="date-strip" style="display:none">
+      <button class="strip-arr">‹</button>
+      <div class="dchip" onclick="loadD('0302');activeChip(this)"><span class="cdot cd-g"></span>3/02</div>
+      <div class="dchip" onclick="loadD('0303');activeChip(this)"><span class="cdot cd-y"></span>3/03</div>
+      <div class="dchip" onclick="loadD('0304');activeChip(this)"><span class="cdot cd-y"></span>3/04</div>
+      <div class="dchip" onclick="loadD('0305');activeChip(this)"><span class="cdot cd-r"></span>3/05</div>
+      <div class="dchip" onclick="loadD('0306');activeChip(this)"><span class="cdot cd-y"></span>3/06</div>
+      <div class="dchip active" onclick="loadD('0307');activeChip(this)"><span class="cdot"></span>3/07</div>
+      <button class="strip-arr" style="opacity:.35" disabled>›</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════
+       📡 실시간 현황
+  ══════════════════════════════════ -->
+  <div class="view active" id="view-realtime">
+  <div class="page" style="max-width:960px;">
+    <!-- 모드 토글 (샘플용) -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;gap:6px;">
+      <button id="btn-live" onclick="setMode('live')" style="padding:4px 12px;border-radius:20px;border:1px solid var(--skt);background:var(--skt);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">📡 장중</button>
+      <button id="btn-close" onclick="setMode('close')" style="padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">✅ 마감</button>
+    </div>
+    <div class="page-cover" style="background:linear-gradient(90deg,#0f172a,#1e3a5f,#2563eb);"></div>
+
+    <!-- ① 오늘 한줄 요약 배너 -->
+    <div class="rt-banner">
+      <div class="rt-banner-top">
+        <div class="rt-banner-date">
+          <span id="mode-icon">📡</span> 2026-05-16(토) &nbsp;·&nbsp; 영업일수 0.6 &nbsp;·&nbsp;
+          <span id="mode-label" style="color:#22c55e;font-weight:700;">장중 진행 중</span>
+        </div>
+        <div class="rt-banner-time"><span class="rt-pulse" id="rt-pulse-el"></span><span id="rt-clock">갱신 중...</span></div>
+      </div>
+      <div class="rt-banner-tags">
+        <div class="rt-btag danger">🔴 SM순증 목표위험 — 잔여여유 △1,289건</div>
+        <div class="rt-btag good">✅ T-Out 양호 — 마감예측 33,630~35,366 (목표36,000↓)</div>
+        <div class="rt-btag warn">⚠️ SM신규MS 14.3% — 목표 19% 대비 △4.7%p</div>
+      </div>
+      <div class="rt-banner-note">※ 영업일수 0.6 → 보정값 = 원값×1.67 &nbsp;|&nbsp; 토요일 절대 수치 낮음 — 보정값 기준으로 해석</div>
+    </div>
+
+    <!-- ② MNP 시장 구조 + 군별 득실 (통합) -->
+    <div class="sh">MNP 시장 구조 — 오늘 번호이동 전체 흐름</div>
+    <div class="mnp-card">
+      <!-- 시장 규모 -->
+      <div class="mnp-title">
+        <span>MNP 총계 &nbsp;<span class="mono" style="font-size:16px;color:var(--text);">17,736건</span>
+        &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text3);">(영업일보정 29,560건 / 전주同토요일 +16.2%)</span></span>
+      </div>
+      <div class="mnp-total-bar" style="margin-bottom:6px;">
+        <div class="mnp-seg seg-mno" style="width:60.8%;">MNO 60.8%</div>
+        <div class="mnp-seg seg-mvno" style="width:39.2%;">MVNO 39.2%</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:16px;">
+        <span class="mono">MNO 10,783건</span>
+        <span class="mono">MVNO 6,953건 (MNO의 64.5%)</span>
+      </div>
+
+      <!-- 군별 득실 테이블 -->
+      <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
+        군별 득실 — MNO + MVNO 합산 포지션
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid var(--border);border-radius:7px;overflow:hidden;">
+        <thead>
+          <tr>
+            <th style="background:var(--bg2);padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">항목</th>
+            <th style="background:#eff6ff;padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--skt);border-bottom:1px solid var(--border);">S군 (SKT+SM)</th>
+            <th style="background:#f0fdf4;padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--kt);border-bottom:1px solid var(--border);">K군 (KT+KM)</th>
+            <th style="background:#fffbeb;padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:var(--lgu);border-bottom:1px solid var(--border);">L군 (LGU+LM)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text2);">MNO 순증</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--good);">+99</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--good);">+83</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--good);">+136</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text2);">MVNO 순증</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--danger);">△335</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--good);">+206</td>
+            <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--danger);">△189</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 12px;background:var(--bg2);font-weight:700;font-size:13px;">군 합산</td>
+            <td style="padding:10px 12px;background:#fef2f2;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;color:var(--danger);">
+              △236 &nbsp;<span style="font-size:18px;">🔴</span>
+            </td>
+            <td style="padding:10px 12px;background:#f0fdf4;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;color:var(--good);">
+              +289 &nbsp;<span style="font-size:18px;">🟢</span>
+            </td>
+            <td style="padding:10px 12px;background:#fffbeb;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;color:var(--warn);">
+              △53 &nbsp;<span style="font-size:18px;">🟡</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:10px;padding:8px 12px;background:var(--bg2);border-radius:6px;font-size:12px;color:var(--text2);line-height:1.7;">
+        💡 <strong>K군이 S·L 양쪽 이탈자 흡수</strong> — S군은 SM MVNO 해지(△335)가 SKT MNO 순증(+99)을 압도. <strong style="color:var(--danger);">SM 해지 억제가 S군 포지션 개선의 핵심.</strong>
+        &nbsp;|&nbsp; 제로섬: △236 + 289 + △53 = 0 ✅
+      </div>
+    </div>
+
+    <!-- ③ SKT OUT 관리카드 -->
+    <div class="sh">🎯 SKT OUT (T-Out) — 1순위 목표 관리지표</div>
+    <div class="tout-card">
+      <div class="tout-hdr">
+        <div class="tout-title">🔴 T-Out (SKT MNO → MVNO 이탈)</div>
+        <div class="tout-status ts-ok">✅ 월목표 달성 궤도</div>
+      </div>
+      <!-- 3단 수치 -->
+      <div class="tout-3col">
+        <div class="tout-col">
+          <div class="tout-col-label">당일 목표</div>
+          <div class="tout-col-val">872<span style="font-size:13px;color:var(--text3);font-family:sans-serif;"> 건</span></div>
+          <div class="tout-col-sub">×0.666 영업일수</div>
+        </div>
+        <div class="tout-col" style="background:#fff5f5;">
+          <div class="tout-col-label" id="tout-mid-label">현재 실적</div>
+          <div class="tout-col-val" style="color:var(--danger);">765<span style="font-size:13px;color:var(--text3);font-family:sans-serif;"> 건</span></div>
+          <div class="tout-col-sub">보정 1,275건</div>
+        </div>
+        <div class="tout-col" id="tout-right-col">
+          <div class="tout-col-label">일마감 예측</div>
+          <div class="tout-col-val" style="color:var(--warn);">~870<span style="font-size:13px;color:var(--text3);font-family:sans-serif;"> 건</span></div>
+          <div class="tout-col-sub">목표比 △2건</div>
+        </div>
+      </div>
+      <!-- 페이스 게이지 — 장중만 표시 -->
+      <div class="pace-wrap" id="pace-section">
+        <div class="pace-label">
+          <span>⏱ 소진 페이스</span>
+          <span class="mono" style="font-weight:700;">실적 765 / 목표 872 = <span style="color:var(--warn);">87.7%</span></span>
+        </div>
+        <div class="pace-track">
+          <div class="pace-fill" style="width:87.7%;background:var(--warn);"></div>
+          <div class="pace-marker" style="left:83.3%;"></div>
+        </div>
+        <div class="pace-hint">│ 세로선 = 시간경과(83%) &nbsp;·&nbsp; 바 = 목표소진율(88%) &nbsp;·&nbsp; 페이스 살짝 빠름 → 양호</div>
+      </div>
+      <!-- 월마감 예측 — 장중/마감 공통 (SKT OUT은 매시 갱신) -->
+      <div class="tout-fc" style="flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;color:var(--text2);font-weight:600;">월마감 예측</span>
+          <span id="fc-time-label" style="font-size:10px;color:var(--skt);font-weight:600;padding:1px 6px;background:#e8f0fe;border-radius:3px;">19시 기준</span>
+          <span class="ptag pt-g" style="margin-left:auto;">✅ 목표 36,000건↓</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <div style="text-align:center;padding:8px;background:#f0fdf4;border-radius:6px;border:1px solid #b7e0b7;">
+            <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">Low (보수적)</div>
+            <div class="mono" style="font-size:16px;font-weight:800;color:var(--good);">33,630</div>
+          </div>
+          <div style="text-align:center;padding:8px;background:#eff6ff;border-radius:6px;border:1px solid #bfdbfe;">
+            <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">Mid (기대)</div>
+            <div class="mono" style="font-size:16px;font-weight:800;color:var(--skt);">34,004</div>
+          </div>
+          <div style="text-align:center;padding:8px;background:#fffbeb;border-radius:6px;border:1px solid #fde68a;">
+            <div style="font-size:9px;color:var(--text3);margin-bottom:3px;">High (낙관)</div>
+            <div class="mono" style="font-size:16px;font-weight:800;color:var(--warn);">35,366</div>
+          </div>
+        </div>
+      </div>
+      <div class="tout-trend">
+        <span>📈 전월 동기 대비</span>
+        <span class="mono" style="color:var(--good);font-weight:600;">일평균 △206건 개선</span>
+        <span style="color:var(--text3);">(전월 1,359건 → 5월 1,153건)</span>
+        <span class="mono" style="margin-left:auto;color:var(--text3);font-size:11px;">누적 17,415건 / 잔여 일평균 1,310건</span>
+      </div>
+    </div>
+
+    <!-- T-Out 시간별 차트 -->
+    <div class="rt-chart">
+      <div class="rt-ct">
+        T-Out 누적 — 오늘 vs 전일 vs 전주 同요일
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:#ef4444;"></div>오늘(5/16)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:#94a3b8;border-top:1px dashed #94a3b8;"></div>어제(5/15)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:#fbbf24;"></div>전주 同토(5/9)</div>
+        </div>
+      </div>
+      <div class="cwrt"><canvas id="rt-tout-chart"></canvas></div>
+    </div>
+
+    <!-- ④ 지표별 수치 + 추이 통합 카드 -->
+    <div class="sh">핵심 지표 — 수치 · 추이 · 전일/전주 비교</div>
+
+    <!-- 스타일 인라인 정의 -->
+    <style>
+    .mc{background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px 15px;margin-bottom:0;}
+    .mc-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+    .mc-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:10px;}
+    .mc-num{padding:8px 10px;text-align:center;border-right:1px solid var(--border);}
+    .mc-num:last-child{border-right:none;}
+    .mc-num-label{font-size:9px;color:var(--text3);margin-bottom:3px;}
+    .mc-num-val{font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:800;line-height:1;}
+    .mc-num-sub{font-size:9px;margin-top:3px;}
+    .mc-chart{position:relative;height:110px;margin-bottom:8px;}
+    .mc-footer{font-size:10px;color:var(--text3);display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid var(--border);}
+    .mc-footer strong{color:var(--text);}
+    .up-good{color:var(--good);font-size:10px;font-weight:700;}
+    .up-bad{color:var(--danger);font-size:10px;font-weight:700;}
+    .up-flat{color:var(--text3);font-size:10px;}
+    .two-mc{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+    </style>
+
+    <!-- ROW 1: 시장 사이즈 + 군별 순증감 -->
+    <div class="two-mc">
+      <!-- 시장 사이즈 -->
+      <div class="mc">
+        <div class="mc-title">
+          MNP 시장 사이즈 (일별)
+          <span style="font-size:9px;padding:1px 5px;background:#e8f0fe;border-radius:3px;color:var(--skt);">영업일보정</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#f8faff;">
+            <div class="mc-num-label">오늘 (보정)</div>
+            <div class="mc-num-val" style="color:var(--skt);">29,560</div>
+            <div class="mc-num-sub up-good">전주比 +16.2%</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">25,660</div>
+            <div class="mc-num-sub up-flat">전일</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">전주 同토</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">24,272</div>
+            <div class="mc-num-sub up-flat">5/9</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-market"></canvas></div>
+        <div class="mc-footer">
+          <span>MVNO <strong>39.2%</strong> / MNO <strong>60.8%</strong></span>
+          <span>5일평균 <strong>27,380건</strong></span>
+        </div>
+      </div>
+
+      <!-- 군별 순증감 -->
+      <div class="mc">
+        <div class="mc-title">
+          군별 순증감 (MNO+MVNO 합산)
+          <span style="font-size:9px;padding:1px 5px;background:#fde8e0;border-radius:3px;color:var(--danger);">S군 △236</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fef2f2;">
+            <div class="mc-num-label">S군</div>
+            <div class="mc-num-val" style="color:var(--danger);">△236</div>
+            <div class="mc-num-sub up-bad">MNO+99 / SM△335</div>
+          </div>
+          <div class="mc-num" style="background:#f0fdf4;">
+            <div class="mc-num-label">K군</div>
+            <div class="mc-num-val" style="color:var(--good);">+289</div>
+            <div class="mc-num-sub up-good">MNO+83 / KM+206</div>
+          </div>
+          <div class="mc-num" style="background:#fffbeb;">
+            <div class="mc-num-label">L군</div>
+            <div class="mc-num-val" style="color:var(--warn);">△53</div>
+            <div class="mc-num-sub" style="color:var(--warn);font-size:9px;">MNO+136 / LM△189</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-gunbyul"></canvas></div>
+        <div class="mc-footer">
+          <span>제로섬: △236 + 289 + △53 = 0 ✅</span>
+          <span>K군 오늘 최강 포지션</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 2: T-Out 건수 + T-Out 비율 -->
+    <div class="two-mc">
+      <div class="mc">
+        <div class="mc-title">
+          T-Out 누적 (건) — 라인
+          <span style="font-size:9px;padding:1px 5px;background:var(--good-bg);border-radius:3px;color:var(--good);">목표 이하 ✅</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fff5f5;">
+            <div class="mc-num-label">오늘 (보정)</div>
+            <div class="mc-num-val" style="color:var(--danger);">1,275</div>
+            <div class="mc-num-sub up-good">전주4주平比 △5.2%</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">1,170</div>
+            <div class="mc-num-sub up-bad">▲9%↑</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">전주 同토</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">1,281</div>
+            <div class="mc-num-sub up-flat">≈ 유사</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-tout-line"></canvas></div>
+        <div class="mc-footer">
+          <span>월누적 17,415건 / 목표 36,000↓</span>
+          <span>마감예측 <strong>33,630~35,366</strong></span>
+        </div>
+      </div>
+
+      <div class="mc">
+        <div class="mc-title">
+          T-Out 비율 % (일별 막대)
+          <span style="font-size:9px;padding:1px 5px;background:var(--warn-bg);border-radius:3px;color:var(--warn);">기준 47.5%</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fff5f5;">
+            <div class="mc-num-label">오늘</div>
+            <div class="mc-num-val" style="color:var(--danger);">44.2%</div>
+            <div class="mc-num-sub up-good">4월(45~50%) 개선</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">45.6%</div>
+            <div class="mc-num-sub up-good">▼1.4%p↓</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">5일평균</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">49.7%</div>
+            <div class="mc-num-sub up-bad">기준초과</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-tout-pct"></canvas></div>
+        <div class="mc-footer">
+          <span>기준선 <strong>47.5%</strong> (MNO 가입자 비율)</span>
+          <span>오늘 기준 이하 ✅</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 3: SM 신규 MS% + SM 해지 MS% -->
+    <div class="two-mc">
+      <div class="mc">
+        <div class="mc-title">
+          SM 신규 MS% (일별 막대)
+          <span style="font-size:9px;padding:1px 5px;background:var(--danger-bg);border-radius:3px;color:var(--danger);">목표 19%</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fff5f5;">
+            <div class="mc-num-label">오늘</div>
+            <div class="mc-num-val" style="color:var(--danger);">14.3%</div>
+            <div class="mc-num-sub up-bad">목표比 △4.7%p</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">16.9%</div>
+            <div class="mc-num-sub up-bad">▲2.6%p↑</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">5일평균</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">16.4%</div>
+            <div class="mc-num-sub up-bad">목표比 △2.6%p</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-sm-ms"></canvas></div>
+        <div class="mc-footer">
+          <span>월누적 <strong>16.4%</strong> / 전월동기 18.9%</span>
+          <span>잔여기간 <strong>22.2%</strong> 필요</span>
+        </div>
+      </div>
+
+      <div class="mc">
+        <div class="mc-title">
+          SM 해지 MS% (일별 막대)
+          <span style="font-size:9px;padding:1px 5px;background:var(--warn-bg);border-radius:3px;color:var(--warn);">기준 19.4%</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#f0fdf4;">
+            <div class="mc-num-label">오늘</div>
+            <div class="mc-num-val" style="color:var(--good);">18.3%</div>
+            <div class="mc-num-sub up-good">기준 이하 ✅</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">20.2%</div>
+            <div class="mc-num-sub up-bad">기준초과</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">5일평균</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">19.5%</div>
+            <div class="mc-num-sub up-bad">기준比 +0.1%p</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-sm-churn"></canvas></div>
+        <div class="mc-footer">
+          <span>월누적 해지MS <strong>20.0%</strong> — 기준比 +0.6%p ⚠️</span>
+          <span>12월 기준선 <strong>19.4%</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 4: SM 순증감 + MNO Out -->
+    <div class="two-mc">
+      <div class="mc">
+        <div class="mc-title">
+          SM 순증감 (일별 막대 · 0선 기준)
+          <span style="font-size:9px;padding:1px 5px;background:var(--danger-bg);border-radius:3px;color:var(--danger);">2순위 목표</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fff5f5;">
+            <div class="mc-num-label">오늘 (보정)</div>
+            <div class="mc-num-val" style="color:var(--danger);">△558</div>
+            <div class="mc-num-sub up-good">전주比 +43건 개선</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">△407</div>
+            <div class="mc-num-sub up-bad">▼악화</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">5일평균</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">△401</div>
+            <div class="mc-num-sub up-bad">연속 마이너스</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-sm-net"></canvas></div>
+        <div class="mc-footer">
+          <span>월누적 <strong>△6,289건</strong> / 잔여여유 △1,289건</span>
+          <span style="color:var(--danger);font-weight:600;">⚠️ 목표 초과 위험</span>
+        </div>
+      </div>
+
+      <div class="mc">
+        <div class="mc-title">
+          MNO Out 합계 (일별 · 영업일보정)
+          <span style="font-size:9px;padding:1px 5px;background:var(--warn-bg);border-radius:3px;color:var(--warn);">시장 과열 지표</span>
+        </div>
+        <div class="mc-nums">
+          <div class="mc-num" style="background:#fffbeb;">
+            <div class="mc-num-label">오늘 (보정)</div>
+            <div class="mc-num-val" style="color:var(--warn);">2,883</div>
+            <div class="mc-num-sub up-bad">4월평균比 +20.1%</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">어제</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">2,566</div>
+            <div class="mc-num-sub up-bad">▲12%↑</div>
+          </div>
+          <div class="mc-num">
+            <div class="mc-num-label">5일평균</div>
+            <div class="mc-num-val" style="color:var(--text2);font-size:14px;">2,672</div>
+            <div class="mc-num-sub up-bad">4월比 +11.3%</div>
+          </div>
+        </div>
+        <div class="mc-chart"><canvas id="mc-mno-out"></canvas></div>
+        <div class="mc-footer">
+          <span>월누적 일평균 <strong>2,335건</strong></span>
+          <span>4월 전체 <strong>2,400건</strong> 대비 소폭 개선</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 월 목표 달성현황 -->
+    <div class="sh">월 목표 달성 현황 — 2026년 5월</div>
+    <div class="goal-card">
+      <!-- T-Out -->
+      <div class="goal-row">
+        <div class="goal-label">T-Out (SKT)</div>
+        <div class="goal-body">
+          <div class="goal-bar-wrap">
+            <div class="goal-bar-fill" style="width:48.4%;background:var(--good);"></div>
+            <div class="goal-bar-limit" style="left:100%;"></div>
+          </div>
+          <div class="goal-nums">
+            <span>누적 17,415건 (소진 48.4%)</span>
+            <span>목표 36,000건 이하</span>
+          </div>
+        </div>
+        <div class="goal-fc mono" style="font-size:10px;color:var(--text2);">예측 33,630~35,366</div>
+        <div class="goal-badge"><span class="ptag pt-g" style="font-size:10px;">✅ 양호</span></div>
+      </div>
+      <!-- SM 순증 -->
+      <div class="goal-row">
+        <div class="goal-label">SM 순증감</div>
+        <div class="goal-body">
+          <div class="goal-bar-wrap">
+            <div class="goal-bar-fill" style="width:100%;background:var(--danger);opacity:.7;"></div>
+          </div>
+          <div class="goal-nums">
+            <span>누적 △6,289건 / 잔여여유 △1,289건</span>
+            <span>목표 △5,000건 이내</span>
+          </div>
+        </div>
+        <div class="goal-fc mono" style="font-size:10px;color:var(--danger);">예측 △12,145~△12,771</div>
+        <div class="goal-badge"><span class="ptag pt-d" style="font-size:10px;">⚠️ 위험</span></div>
+      </div>
+      <!-- SM 신규 MS -->
+      <div class="goal-row">
+        <div class="goal-label">SM 신규 MS</div>
+        <div class="goal-body">
+          <div class="goal-bar-wrap">
+            <div class="goal-bar-fill" style="width:86.3%;background:var(--warn);"></div>
+            <div class="goal-bar-limit" style="left:100%;"></div>
+          </div>
+          <div class="goal-nums">
+            <span>현재 16.4% / 전월 동기 18.9%</span>
+            <span>목표 19%</span>
+          </div>
+        </div>
+        <div class="goal-fc mono" style="font-size:10px;color:var(--warn);">잔여기간 22.2% 필요</div>
+        <div class="goal-badge"><span class="ptag pt-w" style="font-size:10px;">⚠️ 미달</span></div>
+      </div>
+    </div>
+
+    <!-- ⑥ 최근 5영업일 트렌드 -->
+    <div class="sh">최근 5영업일 트렌드</div>
+    <table class="trend-table">
+      <thead>
+        <tr>
+          <th>날짜</th>
+          <th>요일</th>
+          <th>영업일수</th>
+          <th>T-Out (보정)</th>
+          <th>SM순증</th>
+          <th>SM신규%</th>
+          <th>SM해지%</th>
+          <th>MNO Out</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>5/12</td><td>화</td><td class="mono">1.0</td>
+          <td class="mono tc-ok">1,227</td>
+          <td class="mono tc-warn">△320</td>
+          <td class="mono tc-warn">17.0%</td>
+          <td class="mono">19.4%</td>
+          <td class="mono">2,502</td>
+        </tr>
+        <tr>
+          <td>5/13</td><td>수</td><td class="mono">1.1</td>
+          <td class="mono tc-warn">1,222</td>
+          <td class="mono tc-warn">△304</td>
+          <td class="mono tc-warn">16.8%</td>
+          <td class="mono">19.3%</td>
+          <td class="mono">2,912</td>
+        </tr>
+        <tr>
+          <td>5/14</td><td>목</td><td class="mono">1.0</td>
+          <td class="mono tc-ok">1,152</td>
+          <td class="mono tc-bad">△415</td>
+          <td class="mono tc-warn">16.8%</td>
+          <td class="mono tc-bad">20.5%</td>
+          <td class="mono">2,478</td>
+        </tr>
+        <tr>
+          <td>5/15</td><td>금</td><td class="mono">1.0</td>
+          <td class="mono tc-ok">1,170</td>
+          <td class="mono tc-bad">△407</td>
+          <td class="mono tc-warn">16.9%</td>
+          <td class="mono tc-warn">20.2%</td>
+          <td class="mono">2,566</td>
+        </tr>
+        <tr class="today-row">
+          <td><strong>5/16</strong></td><td><strong>토</strong></td><td class="mono">0.6</td>
+          <td class="mono tc-ok"><strong>1,275</strong></td>
+          <td class="mono tc-warn"><strong>△558</strong></td>
+          <td class="mono tc-bad"><strong>14.3%</strong></td>
+          <td class="mono tc-ok"><strong>18.3%</strong></td>
+          <td class="mono"><strong>2,883</strong></td>
+        </tr>
+        <tr style="background:var(--bg2);">
+          <td colspan="2" style="color:var(--text3);font-size:11px;">5일 평균</td>
+          <td class="mono" style="color:var(--text3);">—</td>
+          <td class="mono" style="color:var(--text3);">1,209</td>
+          <td class="mono" style="color:var(--text3);">△401</td>
+          <td class="mono" style="color:var(--text3);">16.4%</td>
+          <td class="mono" style="color:var(--text3);">—</td>
+          <td class="mono" style="color:var(--text3);">2,672</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="co co-i" style="margin-bottom:14px;"><div class="coi">💡</div><div style="font-size:12px;">토요일은 영업일수 0.6 적용 → 보정값 기준으로 비교. T-Out은 5일 내내 목표 이하 유지 중 ✅. SM순증은 5일 연속 마이너스 — <strong style="color:var(--danger);">월 목표 달성 위해 해지 억제가 시급</strong>.</div></div>
+
+    <!-- ⑦ 시간별 흐름 차트 -->
+    <div class="sh">시간별 흐름 — 오늘 vs 전일 vs 전주 同요일</div>
+    <div class="rt-chart">
+      <div class="rt-ct">
+        SM 신규 MS% 시간별 추이
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:#2563eb;"></div>오늘(5/16)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:#94a3b8;"></div>어제(5/15)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:#fbbf24;"></div>전주 同토(5/9)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:rgba(0,0,0,.2);"></div>목표 19%</div>
+        </div>
+      </div>
+      <div class="cwrt"><canvas id="rt-ms-chart"></canvas></div>
+    </div>
+    <div class="two">
+      <div class="rt-chart">
+        <div class="rt-ct">
+          SM 순증 누적
+          <div class="rt-leg">
+            <div class="rt-li"><div class="rt-ld" style="background:#ef4444;"></div>오늘</div>
+            <div class="rt-li"><div class="rt-ld" style="background:#94a3b8;"></div>어제</div>
+          </div>
+        </div>
+        <div class="cwrt2"><canvas id="rt-net-chart"></canvas></div>
+      </div>
+      <div class="rt-chart">
+        <div class="rt-ct">
+          MNO Out 합계 누적
+          <div class="rt-leg">
+            <div class="rt-li"><div class="rt-ld" style="background:#8b5cf6;"></div>오늘</div>
+            <div class="rt-li"><div class="rt-ld" style="background:#94a3b8;"></div>어제</div>
+            <div class="rt-li"><div class="rt-ld" style="background:#fbbf24;"></div>전주</div>
+          </div>
+        </div>
+        <div class="cwrt2"><canvas id="rt-mno-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ⑤-B 월마감 예측 전체 — 마감 모드에만 표시 -->
+    <div id="monthly-fc-section" style="display:none;">
+      <div class="sh">📦 월마감 예측 전체 — 일마감 기준 자동 계산</div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:10px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr>
+              <th style="background:var(--bg2);padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">지표</th>
+              <th style="background:#f0fdf4;padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--good);border-bottom:1px solid var(--border);">Low (보수적)</th>
+              <th style="background:#eff6ff;padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--skt);border-bottom:1px solid var(--border);">Mid (기대)</th>
+              <th style="background:#fffbeb;padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--warn);border-bottom:1px solid var(--border);">High (낙관)</th>
+              <th style="background:var(--bg2);padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">목표</th>
+              <th style="background:var(--bg2);padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">판정</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:600;">T-Out (SKT)</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--good);font-weight:700;">33,630</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--skt);font-weight:700;">34,004</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--warn);font-weight:700;">35,366</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--text3);">≤36,000</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-g" style="font-size:10px;">✅ 전체 달성</span></td>
+            </tr>
+            <tr>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:600;">SM MVNO IN</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--good);">44,191</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--skt);">44,683</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--warn);">46,473</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--text3);">—</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-b" style="font-size:10px;">참고</span></td>
+            </tr>
+            <tr>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);font-weight:600;">SM MVNO OUT</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--good);">56,336</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--skt);">56,963</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--warn);">59,244</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--text3);">—</td>
+              <td style="padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-b" style="font-size:10px;">참고</span></td>
+            </tr>
+            <tr>
+              <td style="padding:8px 12px;font-weight:700;">SM 순증감</td>
+              <td style="padding:8px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--danger);">△12,145</td>
+              <td style="padding:8px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--danger);">△12,280</td>
+              <td style="padding:8px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--danger);">△12,771</td>
+              <td style="padding:8px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--text3);">△5,000↑</td>
+              <td style="padding:8px 12px;text-align:center;"><span class="ptag pt-d" style="font-size:10px;">⚠️ 전체 초과</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="co co-d"><div class="coi">🔴</div><div style="font-size:12px;"><strong>SM 순증감 목표 초과 위험</strong> — Low 시나리오도 △12,145건으로 목표(△5,000건) 대비 크게 초과. 해지 억제 없이는 개선 불가능한 구조.</div></div>
+    </div>
+
+    <div class="page-footer">
+      <span>MVNO Intelligence · 실시간 현황 · ktoa_hourly 기반</span>
+      <span id="rt-footer">05/16 20:00 마감기준 · 30초 갱신</span>
+    </div>
+  </div>
+  </div>
+
+  <!-- ═══ BW 영업일수 ═══ -->
+  <div class="view" id="view-bw">
+  <div class="page" style="max-width:960px;">
+    <div class="page-cover" style="background:linear-gradient(90deg,#7c3aed,#a78bfa,#c4b5fd);"></div>
+    <div class="pta">
+      <span class="page-emoji">📐</span>
+      <div class="page-title">영업일수 (Business Weight)</div>
+      <div class="page-desc">2026년 5월 · 요일별 편차 보정 지표</div>
+    </div>
+
+    <!-- 개념 설명 -->
+    <div class="sh">영업일수란?</div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:12px;">
+      <div style="font-size:13px;line-height:2;color:var(--text2);">
+        <p style="margin-bottom:10px;">번호이동(MNP) 실적은 <strong style="color:var(--text);">요일과 날짜에 따라 편차가 크다.</strong> 토요일 실적이 월요일보다 낮아 보여도, 토요일은 오전만 운영하니 단순 비교는 의미가 없다.</p>
+        <p style="margin-bottom:10px;"><strong style="color:var(--skt);">영업일수(bw, Business Weight)</strong>는 이 편차를 보정하기 위한 가중치다. 하루 전체 영업을 <code style="background:var(--bg2);padding:1px 5px;border-radius:3px;">1.0</code>으로 기준 삼아, 토요일은 <code style="background:var(--bg2);padding:1px 5px;border-radius:3px;">0.6~0.7</code>, 월요일 특수일은 <code style="background:var(--bg2);padding:1px 5px;border-radius:3px;">1.2~1.3</code>으로 산출한다.</p>
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:12px 14px;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:var(--skt);margin-bottom:6px;">💡 핵심 공식</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--text);">
+            보정값 = 실적 ÷ bw
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-top:6px;">
+            예) 토요일 T-Out 765건 / bw 0.666 = <strong>보정 1,275건</strong> → "풀 영업일이었다면 1,275건 수준"
+          </div>
+        </div>
+        <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:12px 14px;">
+          <div style="font-size:12px;font-weight:700;color:var(--warn);margin-bottom:6px;">⚠️ 실적 해석 원칙</div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.8;">
+            모든 실적 비교는 <strong>보정값 기준</strong>으로 해야 한다.<br>
+            "오늘 1,000건"은 bw에 따라 완전히 다른 의미다.<br>
+            bw=1.0이면 평범한 하루, bw=0.6이면 실제론 1,667건짜리 날.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- bw 종류 -->
+    <div class="sh">bw 종류 — 정확도 고도화 과정</div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg2);">
+            <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">구분</th>
+            <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">산출 시점</th>
+            <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">방식</th>
+            <th style="padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">특징</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:#fef3c7;">
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-weight:700;">bw_manual</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">월초 사전</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">과거 경험 기반 요일별 고정값</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--warn);">기준값. 실제와 차이 날 수 있음</td>
+          </tr>
+          <tr style="background:#eff6ff;">
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-weight:700;">bw_ai_prev</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">월 시작 전</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">AI가 역사 데이터로 사전 예측</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--skt);">bw_manual 개선판</td>
+          </tr>
+          <tr style="background:#eff6ff;">
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-weight:700;">bw_ai_w0</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">실시간 (현재 사용)</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">실시간 보정 계산에 사용</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--skt);">대시보드에서 기본 사용값</td>
+          </tr>
+          <tr style="background:#eff6ff;">
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-weight:700;">bw_ai_w1~w3</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">주차 종료 후 자동 갱신</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">K-NN으로 실적 반영 재예측</td>
+            <td style="padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--skt);">주차가 쌓일수록 정확해짐</td>
+          </tr>
+          <tr style="background:#f0fdf4;">
+            <td style="padding:9px 14px;font-weight:700;">bw_performance</td>
+            <td style="padding:9px 14px;font-size:12px;color:var(--text2);">일/월 마감 후</td>
+            <td style="padding:9px 14px;font-size:12px;color:var(--text2);">실적 역산 (확정값)</td>
+            <td style="padding:9px 14px;font-size:12px;color:var(--good);">다음달 bw_manual 개선 피드백</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 정교화 흐름 -->
+    <div class="sh">월중 정교화 흐름 — 주차가 쌓일수록 예측이 수렴</div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px 20px;margin-bottom:12px;">
+      <div style="display:flex;flex-direction:column;gap:0;">
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="width:80px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--text3);padding-top:2px;">월초</div>
+          <div style="flex:1;font-size:12px;color:var(--text2);line-height:1.7;">bw_manual + bw_ai_prev 으로 시작. 경험치 + AI 사전예측 병행.</div>
+          <div style="width:120px;flex-shrink:0;text-align:right;"><span style="font-size:10px;padding:2px 7px;background:var(--warn-bg);color:var(--warn);border-radius:4px;font-weight:600;">정확도 낮음</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="width:80px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--skt);padding-top:2px;">1주차 종료</div>
+          <div style="flex:1;font-size:12px;color:var(--text2);line-height:1.7;">1~7일 실적 → bw_performance 역산 확정<br>8~31일 → 1주차 실적 K-NN 반영 재예측</div>
+          <div style="width:120px;flex-shrink:0;text-align:right;"><span style="font-size:10px;padding:2px 7px;background:#e8f0fe;color:var(--skt);border-radius:4px;font-weight:600;">정확도 향상</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="width:80px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--skt);padding-top:2px;">2주차 종료</div>
+          <div style="flex:1;font-size:12px;color:var(--text2);line-height:1.7;">1~14일 확정 / 15~31일 1·2주차 실적 반영 재예측</div>
+          <div style="width:120px;flex-shrink:0;text-align:right;"><span style="font-size:10px;padding:2px 7px;background:#e8f0fe;color:var(--skt);border-radius:4px;font-weight:600;">정확도 향상</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <div style="width:80px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--skt);padding-top:2px;">3주차 종료</div>
+          <div style="flex:1;font-size:12px;color:var(--text2);line-height:1.7;">1~21일 확정 / 22~31일 1·2·3주차 실적 반영 재예측</div>
+          <div style="width:120px;flex-shrink:0;text-align:right;"><span style="font-size:10px;padding:2px 7px;background:var(--good-bg);color:var(--good);border-radius:4px;font-weight:600;">정확도 높음</span></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:10px 0;">
+          <div style="width:80px;flex-shrink:0;font-size:11px;font-weight:700;color:var(--good);padding-top:2px;">월마감</div>
+          <div style="flex:1;font-size:12px;color:var(--text2);line-height:1.7;">전체 bw_performance 역산 → 다음달 bw_manual 개선 피드백</div>
+          <div style="width:120px;flex-shrink:0;text-align:right;"><span style="font-size:10px;padding:2px 7px;background:var(--good-bg);color:var(--good);border-radius:4px;font-weight:600;">확정값</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5월 영업일수 테이블 -->
+    <div class="sh">2026년 5월 — 일자별 영업일수</div>
+    <div class="co co-i" style="margin-bottom:10px;"><div class="coi">📌</div><div style="font-size:12px;">■ 노랑=실적확정 &nbsp;·&nbsp; 연초록=AI예측 &nbsp;·&nbsp; 연주황=수동입력 &nbsp;·&nbsp; 회색=영업없는날</div></div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead>
+          <tr style="background:var(--bg2);">
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">날짜</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">요일</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--warn);border-bottom:1px solid var(--border);">수동(bw_m)</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--skt);border-bottom:1px solid var(--border);">AI(bw_ai)</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--good);border-bottom:1px solid var(--border);">실적역산(bw_perf)</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">MVNO IN</th>
+            <th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--text3);border-bottom:1px solid var(--border);">오차</th>
+          </tr>
+        </thead>
+        <tbody id="bw-table-body">
+          <!-- JS로 채움 -->
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--bg2);font-weight:700;">
+            <td colspan="2" style="padding:7px 10px;font-size:11px;">합계</td>
+            <td style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--warn);">27.4</td>
+            <td style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--skt);">25.944</td>
+            <td style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;color:var(--good);">—</td>
+            <td style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;">—</td>
+            <td style="padding:7px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;">MAE 0.112</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- bw 시각화 차트 -->
+    <div class="sh">bw 비교 — 수동 vs AI vs 실적역산</div>
+    <div class="rt-chart">
+      <div class="rt-ct">
+        일자별 bw 비교 (확정일 기준)
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:var(--warn);"></div>수동(bw_manual)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--skt);"></div>AI(bw_ai)</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--good);"></div>실적역산(bw_perf)</div>
+        </div>
+      </div>
+      <div style="position:relative;height:200px;"><canvas id="bw-chart"></canvas></div>
+    </div>
+
+    <div class="page-footer"><span>MVNO Intelligence · 영업일수(BW) · 2026년 5월</span><span>매주 자동 갱신</span></div>
+  </div>
+  </div>
+
+  <!-- ═══ 월예측 추이 ═══ -->
+  <div class="view" id="view-fctrend">
+  <div class="page" style="max-width:960px;">
+    <div class="page-cover" style="background:linear-gradient(90deg,#0f766e,#0ea5e9,#8b5cf6);"></div>
+    <div class="pta">
+      <span class="page-emoji">🎯</span>
+      <div class="page-title">월마감 예측 추이</div>
+      <div class="page-desc">2026년 5월 · 날짜가 지날수록 예측이 수렴하는 과정</div>
+    </div>
+
+    <div class="co co-i" style="margin-bottom:14px;"><div class="coi">💡</div><div style="font-size:12px;"><strong>읽는 방법:</strong> 월초엔 예측 범위(Low~High)가 넓고, 실적이 쌓일수록 예측이 실제 마감값에 수렴한다. 예측선이 좁아질수록 bw가 정교해지고 있다는 신호.</div></div>
+
+    <!-- T-Out 예측 추이 -->
+    <div class="sh">T-Out (SKT OUT) 월마감 예측 추이 — 목표 36,000건 이하</div>
+    <div class="rt-chart" style="margin-bottom:10px;">
+      <div class="rt-ct">
+        일별 월마감 예측 (Low / Mid / High) + 목표선
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:var(--good);"></div>Low</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--skt);"></div>Mid</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--warn);"></div>High</div>
+          <div class="rt-li"><div class="rt-ld" style="background:rgba(0,0,0,.2);"></div>목표 36,000</div>
+        </div>
+      </div>
+      <div style="position:relative;height:200px;"><canvas id="fc-tout-trend"></canvas></div>
+    </div>
+    <div class="co co-g" style="margin-bottom:14px;"><div class="coi">✅</div><div style="font-size:12px;">Low~High 전 시나리오 목표(36,000) 이하 유지 중. 예측 범위가 점차 좁아지며 수렴 중.</div></div>
+
+    <!-- SM 순증감 예측 추이 -->
+    <div class="sh">SM 순증감 월마감 예측 추이 — 목표 △5,000건 이내</div>
+    <div class="rt-chart" style="margin-bottom:10px;">
+      <div class="rt-ct">
+        일별 월마감 예측 (Low / Mid / High) + 목표선
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:var(--good);"></div>Low</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--skt);"></div>Mid</div>
+          <div class="rt-li"><div class="rt-ld" style="background:var(--danger);"></div>High</div>
+          <div class="rt-li"><div class="rt-ld" style="background:rgba(0,0,0,.2);"></div>목표 △5,000</div>
+        </div>
+      </div>
+      <div style="position:relative;height:200px;"><canvas id="fc-net-trend"></canvas></div>
+    </div>
+    <div class="co co-d" style="margin-bottom:14px;"><div class="coi">🔴</div><div style="font-size:12px;">전 시나리오 목표(△5,000) 초과 — 해지 억제 없이는 개선 불가능한 구조. 예측 범위도 여전히 넓어 불확실성 높음.</div></div>
+
+    <!-- SM 신규 MS% 예측 추이 -->
+    <div class="sh">SM 신규 MS% 월누적 추이 — 목표 19%</div>
+    <div class="rt-chart">
+      <div class="rt-ct">
+        일별 SM 신규 MS% 누적 추이 + 목표선
+        <div class="rt-leg">
+          <div class="rt-li"><div class="rt-ld" style="background:var(--skt);"></div>실적 누적 MS%</div>
+          <div class="rt-li"><div class="rt-ld" style="background:rgba(0,0,0,.2);"></div>목표 19%</div>
+        </div>
+      </div>
+      <div style="position:relative;height:180px;"><canvas id="fc-ms-trend"></canvas></div>
+    </div>
+
+    <!-- 예측 정확도 테이블 -->
+    <div class="sh">월마감 예측 정확도 — 날짜별 추이</div>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:var(--bg2);">
+            <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">기준일</th>
+            <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--good);border-bottom:1px solid var(--border);">T-Out Low</th>
+            <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--skt);border-bottom:1px solid var(--border);">T-Out Mid</th>
+            <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--warn);border-bottom:1px solid var(--border);">T-Out High</th>
+            <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">목표比</th>
+            <th style="padding:8px 12px;text-align:center;font-size:11px;font-weight:600;color:var(--text3);border-bottom:1px solid var(--border);">판정</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td style="padding:7px 12px;border-bottom:1px solid var(--border);">5/01 (1영업일)</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">30,914</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">31,211</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">31,211</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);">이하</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-g" style="font-size:10px;">✅</span></td></tr>
+          <tr><td style="padding:7px 12px;border-bottom:1px solid var(--border);">5/04 (월, 4영업일)</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">39,554</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">40,221</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--danger);">40,221</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--danger);">초과</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-d" style="font-size:10px;">⚠️</span></td></tr>
+          <tr><td style="padding:7px 12px;border-bottom:1px solid var(--border);">5/08 (금, 1주차)</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">34,963</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">35,667</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">36,459</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--warn);">경계</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-w" style="font-size:10px;">⚠️</span></td></tr>
+          <tr><td style="padding:7px 12px;border-bottom:1px solid var(--border);">5/12 (화, 2주차)</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">35,817</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">36,197</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--danger);">36,444</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--warn);">경계</td><td style="padding:7px 12px;border-bottom:1px solid var(--border);text-align:center;"><span class="ptag pt-w" style="font-size:10px;">⚠️</span></td></tr>
+          <tr style="background:#eff6ff;"><td style="padding:7px 12px;font-weight:600;">5/15 (금, 3주차)</td><td style="padding:7px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);font-weight:700;">34,755</td><td style="padding:7px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--skt);font-weight:700;">34,755</td><td style="padding:7px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);font-weight:700;">34,504</td><td style="padding:7px 12px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);">이하</td><td style="padding:7px 12px;text-align:center;"><span class="ptag pt-g" style="font-size:10px;">✅ 수렴</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="co co-i"><div class="coi">💡</div><div style="font-size:12px;"><strong>수렴 패턴 확인:</strong> 월초(5/04) 예측이 목표 초과로 나왔다가, 주차가 쌓이면서 bw가 정교해지며 5/15 시점에 전 시나리오 목표 이하로 수렴. 이것이 bw 고도화의 효과.</div></div>
+
+    <div class="page-footer"><span>MVNO Intelligence · 월예측 추이 · 2026년 5월</span><span>일별 자동 업데이트</span></div>
+  </div>
+  </div>
+
+  <!-- ═══ DAILY ═══ -->
+  <div class="view" id="view-daily">
+  <div class="page">
+    <div class="page-cover"></div>
+    <div class="pta">
+      <span class="page-emoji">📊</span>
+      <div class="page-title" id="d-title">실적 분석 리포트 — 3/07 (토)</div>
+      <div class="page-desc">MVNO AI Bot · 자동 생성 · <span id="d-desc">2026.03.07</span></div>
+    </div>
+    <div class="props">
+      <div class="pr"><div class="pk">📅 날짜</div><div id="p-date" style="font-family:'IBM Plex Mono',monospace;font-size:12px">2026.03.07 (토)</div></div>
+      <div class="pr"><div class="pk">📊 종합 판정</div><span id="p-status" class="ptag pt-d">🔴 시급 조치 필요</span></div>
+      <div class="pr"><div class="pk">🎯 S 목표 달성</div><span id="p-ms" class="ptag pt-d">MS 16.9% / 목표 20%</span></div>
+      <div class="pr"><div class="pk">📈 S 순증</div><span id="p-net" class="ptag pt-d">▲877건 (목표 +2,000)</span></div>
+      <div class="pr"><div class="pk">👤 작성자</div><span class="ptag pt-b">🤖 MVNO AI Bot</span></div>
+    </div>
+    <div class="sh">핵심 지표</div>
+    <div class="kg">
+      <div class="kc kd"><div class="kl">S 당일 MS</div><div class="kv kd" id="k-ms">16.9%</div><div class="ks2">목표 20.0%</div><div class="kdelta" style="color:var(--danger);">▼ 3.1%p 미달</div></div>
+      <div class="kc kd"><div class="kl">S 순증 누적</div><div class="kv kd">▲877</div><div class="ks2">목표 +2,000건</div><div class="kdelta" style="color:var(--danger);">일평균 +120 필요</div></div>
+      <div class="kc kw"><div class="kl">T Out 비율</div><div class="kv kw">55.6%</div><div class="ks2">목표 37천건 이하</div><div class="kdelta" style="color:var(--warn);">일 1,025건 유지</div></div>
+      <div class="kc kw"><div class="kl">S 해지 MS</div><div class="kv kw">21.1%</div><div class="ks2">12월 대비</div><div class="kdelta" style="color:var(--danger);">▲ +1.7%p 증가</div></div>
+    </div>
+    <div class="sh">일간 / 주간 추이</div>
+    <div class="two">
+      <div class="cc"><div class="cct">S 신규 MS % (최근 7일)<span style="font-size:10px;color:var(--danger);">목표 20%</span></div><div class="cwm"><canvas id="c-ms"></canvas></div></div>
+      <div class="cc"><div class="cct">S 순증 누적 (당월)<span style="font-size:10px;color:var(--text3);">목표 +2,000</span></div><div class="cwm"><canvas id="c-net"></canvas></div></div>
+    </div>
+    <div class="two">
+      <div class="cc"><div class="cct">MNO Out vs T Out (최근 7일)</div><div class="cw"><canvas id="c-out"></canvas></div></div>
+      <div class="cc"><div class="cct">T Out 비율 %<span style="font-size:10px;color:var(--text3);">기준 47.5%</span></div><div class="cw"><canvas id="c-tout"></canvas></div></div>
+    </div>
+    <div class="sh">신규 (MNP In)</div>
+    <div class="two">
+      <div class="msc">
+        <div class="msh"><span class="mst">당일 마감</span><span class="mstot">계 9,393건</span></div>
+        <div class="msr"><div class="cpill ps">S</div><div class="bt"><div class="bf fs" style="width:16.9%"></div></div><div class="mpct" style="color:var(--skt)">16.9%</div><div class="mcnt">1,585</div></div>
+        <div class="msr"><div class="cpill pk2">K</div><div class="bt"><div class="bf fk" style="width:32.9%"></div></div><div class="mpct" style="color:#059669">32.9%</div><div class="mcnt">3,093</div></div>
+        <div class="msr"><div class="cpill pl">L</div><div class="bt"><div class="bf fl" style="width:50.2%"></div></div><div class="mpct" style="color:#d97706">50.2%</div><div class="mcnt">4,715</div></div>
+        <div class="mstarget"><span class="mtl">S 목표</span><span class="mtv">20.0%</span><span class="gtag gb">▼ 3.1%p 미달</span></div>
+      </div>
+      <div class="msc">
+        <div class="msh"><span class="mst">03월 누적</span><span class="mstot">계 74.1천건</span></div>
+        <div class="msr"><div class="cpill ps">S</div><div class="bt"><div class="bf fs" style="width:19.1%"></div></div><div class="mpct" style="color:var(--skt)">19.1%</div><div class="mcnt">14.2천</div></div>
+        <div class="msr"><div class="cpill pk2">K</div><div class="bt"><div class="bf fk" style="width:32.1%"></div></div><div class="mpct" style="color:#059669">32.1%</div><div class="mcnt">23.8천</div></div>
+        <div class="msr"><div class="cpill pl">L</div><div class="bt"><div class="bf fl" style="width:48.7%"></div></div><div class="mpct" style="color:#d97706">48.7%</div><div class="mcnt">36.1천</div></div>
+        <div class="mstarget"><span class="mtl">S 목표</span><span class="mtv">20.0%</span><span class="gtag gb">▼ 0.9%p 미달</span></div>
+      </div>
+    </div>
+    <div class="sh">순증감</div>
+    <div class="three">
+      <div class="nc"><div class="ncar" style="color:var(--skt)">S 당일</div><div class="nval nm">▲178</div><div class="nsub">순감</div></div>
+      <div class="nc"><div class="ncar" style="color:#059669">K 당일</div><div class="nval np">+292</div><div class="nsub">순증</div></div>
+      <div class="nc"><div class="ncar" style="color:#d97706">L 당일</div><div class="nval nf">+1</div><div class="nsub">보합</div></div>
+    </div>
+    <div class="sh">주요 액션 포인트</div>
+    <div class="co co-d"><div class="coi">🔴</div><div>순증 목표 크게 미달 — 누적 순증 <strong>▲877건</strong> vs 목표 <strong>+2,000건</strong>. 잔여 24일간 일 평균 <strong>+120건 이상</strong> 필요.</div></div>
+    <div class="co co-d"><div class="coi">🔴</div><div>신규 MS 목표 미달 — 당일 <strong>16.9%</strong> · 누적 <strong>19.1%</strong>. 하락세 지속 중.</div></div>
+    <div class="co co-w"><div class="coi">🟡</div><div>MNO Out 비율 과열 — 누적 T Out <strong>55.6%</strong>. 지속 모니터링 필요.</div></div>
+    <div class="co co-w"><div class="coi">🟡</div><div>해지 MS 증가 — 12월 대비 <strong>+1.7%p</strong>. 해지 방어 전략 강화 검토 필요.</div></div>
+
+    <div class="sh">커뮤니티 동향</div>
+    <div class="co co-d" style="margin-bottom:10px;"><div class="coi">🔥</div><div><strong>오늘 핫이슈:</strong> 유모바일 LGU+망 11G+ <strong>18,000원</strong> 게릴라 노출 — 뽐뿌 조회 <strong>24,810회</strong>. T Out 자극 중.</div></div>
+    <div class="two">
+      <div class="comm-card cc-l">
+        <div class="comm-hdr"><span class="comm-src">📋 뽐뿌 알뜰폰</span><span class="comm-heat">🔥 <strong style="color:var(--danger);">매우높음</strong></span></div>
+        <div class="post-row"><div class="post-rank r1">1</div><div class="post-body"><div class="post-title">유모바일 11G+ 18,000원 단독 최저가<span class="post-badge pb-hot">HOT</span></div><div class="post-meta"><span class="post-views">👁 24,810</span><span>💬 187</span><span>03/07 10:22</span></div></div></div>
+        <div class="post-row"><div class="post-rank">2</div><div class="post-body"><div class="post-title">프리티 하나은행 SKT망 15G+100 13,970원<span class="post-badge pb-game">가이드↓</span></div><div class="post-meta"><span class="post-views">👁 18,240</span><span>💬 92</span><span>03/06</span></div></div></div>
+        <div class="post-row"><div class="post-rank">3</div><div class="post-body"><div class="post-title">SKT→알뜰폰 갈아타기 총정리 2026.03</div><div class="post-meta"><span class="post-views">👁 11,050</span><span>💬 74</span><span>03/05</span></div></div></div>
+        <div class="comm-interp">⚠️ <strong>유모바일 게릴라</strong>가 오늘 최대 화제. SKT망 가이드이하도 노출 중 — T Out 자극 이중 구조.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px;">
+        <div class="comm-card cc-s">
+          <div class="comm-hdr"><span class="comm-src">💬 DC인사이드</span><span class="comm-heat">🌡 <strong style="color:var(--warn);">보통</strong></span></div>
+          <div class="post-row"><div class="post-rank r1">1</div><div class="post-body"><div class="post-title">LGU+ 요금제 진짜 가성비 실화냐<span class="post-badge pb-hot">HOT</span></div><div class="post-meta"><span class="post-views">👁 8,430</span><span>💬 213</span><span>03/07</span></div></div></div>
+          <div class="post-row"><div class="post-rank">2</div><div class="post-body"><div class="post-title">SKT 탈출 후기 — 에이모바일 10G 써봄</div><div class="post-meta"><span class="post-views">👁 5,710</span><span>💬 88</span><span>03/06</span></div></div></div>
+          <div class="comm-interp">💬 <strong>"SKT 탈출"</strong> 키워드 상승 — T Out 심리 자극 지속.</div>
+        </div>
+        <div class="comm-card cc-yt">
+          <div class="comm-hdr"><span class="comm-src">▶ YouTube</span><span class="comm-heat">📈 <strong style="color:var(--skt);">상승</strong></span></div>
+          <div class="post-row"><div class="post-rank r1">1</div><div class="post-body"><div class="post-title">2026 알뜰폰 완벽 가이드 — 어디가 싸?</div><div class="post-meta"><span class="post-views">👁 52,100</span><span>💬 340</span><span>03/05</span></div></div></div>
+          <div class="comm-interp">📺 LGU+망 비교 영상 조회 급증 → 뽐뿌 유입 패턴.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sh">요금제 현황</div>
+    <div class="co co-w" style="margin-bottom:10px;"><div class="coi">⚠️</div><div><strong>가이드이하 2건 모니터링 중:</strong> 프리티 하나은행 SKT망 7G+(8,470원) · 15G+100(13,970원)</div></div>
+    <div class="two">
+      <div class="price-card">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;">RS 망별 최저가 비교 (모요 기준)</div>
+        <table class="ptbl">
+          <thead><tr><th>구간</th><th style="color:var(--skt)">SKT</th><th style="color:#059669">KT</th><th style="color:#d97706">LGU+</th></tr></thead>
+          <tbody>
+            <tr><td>7G+</td><td class="price-alert">8,470<span class="gbadge2">가이드↓</span></td><td>10,000</td><td>10,000</td></tr>
+            <tr><td>11G+</td><td>19,000</td><td>19,000</td><td class="price-low">18,000 ★</td></tr>
+            <tr><td>15G+100</td><td class="price-alert">13,970<span class="gbadge2">가이드↓</span></td><td>16,000</td><td>15,000</td></tr>
+            <tr><td>15G+300</td><td>17,000</td><td>17,000</td><td class="price-low">16,000 ★</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="price-card">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;">망별 인기 요금제 Top 3</div>
+        <div style="font-size:10px;font-weight:700;color:var(--skt);margin-bottom:6px;">SKT망</div>
+        <div class="top-plan-row"><div class="tp-rank r1">1</div><div class="tp-body"><div class="tp-name">A 스마트 10GB</div><div class="tp-co">에이모바일</div></div><div class="tp-cnt">57,850명</div></div>
+        <div class="top-plan-row" style="margin-bottom:8px;"><div class="tp-rank">2</div><div class="tp-body"><div class="tp-name">가성비플러스(15GB/350분)</div><div class="tp-co">티플러스</div></div><div class="tp-cnt">49,043명</div></div>
+        <div style="font-size:10px;font-weight:700;color:#d97706;margin-bottom:6px;">LGU+망</div>
+        <div class="top-plan-row"><div class="tp-rank r1">1</div><div class="tp-body"><div class="tp-name">이야기 라이트 4.5GB+</div><div class="tp-co">이야기모바일</div></div><div class="tp-cnt">52,543명</div></div>
+      </div>
+    </div>
+    <div class="page-footer"><span>MVNO AI Bot · 자동 생성</span><span id="d-ft">2026.03.07 18:42</span></div>
+  </div>
+  </div>
+
+  <!-- ═══ WEEKLY ═══ -->
+  <div class="view" id="view-weekly">
+  <div class="page">
+    <div class="page-cover" style="background:linear-gradient(90deg,#a78bfa,#60a5fa,#34d399);"></div>
+    <div class="pta"><span class="page-emoji">📈</span><div class="page-title">주간 MVNO 현황 — W10</div><div class="page-desc">2026 W10 · 3/02(월) — 3/08(일)</div></div>
+    <div class="props">
+      <div class="pr"><div class="pk">📅 기간</div><span style="font-family:'IBM Plex Mono',monospace;font-size:12px">2026.03.02 – 03.08</span></div>
+      <div class="pr"><div class="pk">📊 판정</div><span class="ptag pt-d">순증 마이너스</span><span class="ptag pt-w" style="margin-left:4px">T Out 과열</span></div>
+    </div>
+    <div class="sh">주간 KPI</div>
+    <div class="three" style="margin-bottom:14px">
+      <div class="kc kd"><div class="kl">S 주간 순증</div><div class="kv kd">▲204</div><div class="ks2">주간 목표 +500</div><div class="kdelta" style="color:var(--danger)">목표 대비 -704건</div></div>
+      <div class="kc kw"><div class="kl">평균 T Out 비율</div><div class="kv kw">60.7%</div><div class="ks2">기준 47.5%</div><div class="kdelta" style="color:var(--danger)">▲ 13.2%p 초과</div></div>
+      <div class="kc kb"><div class="kl">S 주간 신규 MS</div><div class="kv kb">19.1%</div><div class="ks2">목표 20%</div><div class="kdelta" style="color:var(--warn)">▼ 0.9%p 미달</div></div>
+    </div>
+    <div class="sh">트렌드 차트</div>
+    <div class="cc" style="margin-bottom:10px"><div class="cct">MNO Out vs T Out (W10 일별)</div><div class="cwl"><canvas id="w-out"></canvas></div></div>
+    <div class="two">
+      <div class="cc"><div class="cct">T Out 비율 % — 기준선 47.5%</div><div class="cw"><canvas id="w-ratio"></canvas></div></div>
+      <div class="cc"><div class="cct">S MVNO 해지 (일별)</div><div class="cw"><canvas id="w-churn"></canvas></div></div>
+    </div>
+    <div class="cc"><div class="cct">S 신규 MS % (W10 일별) — 목표선 20%</div><div class="cwm"><canvas id="w-ms"></canvas></div></div>
+    <div class="sh">AI 인사이트</div>
+    <div class="ib">
+      <div class="ii"><div class="inum">01</div><div class="itxt"><strong>유모바일 게릴라가 T Out 급등의 핵심 원인.</strong> 수·목 오전 발생 후 SKT계 대응까지 3시간 공백. <em>30분 이내 대응 체계</em> 구축 시 T Out 비율 일별 3~5%p 절감 가능.</div></div>
+      <div class="ii"><div class="inum">02</div><div class="itxt"><strong>S 순증 마이너스의 원인은 해지.</strong> 누적 해지(9,704건)가 누적 신규(9,500건) 초과. <em>해지 억제와 T Out 관리 선행</em> 필요.</div></div>
+      <div class="ii"><div class="inum">03</div><div class="itxt"><strong>W11 수요일 오전 선제 대응.</strong> 유모바일 수·목 10시 게릴라 패턴 2주 연속 확인. <em>화요일까지 대응 상품 준비 완료</em> 후 즉시 집행.</div></div>
+    </div>
+    <div class="sh">주간 커뮤니티 동향 (W10)</div>
+    <div class="co co-d" style="margin-bottom:10px;"><div class="coi">🔥</div><div><strong>W10 최대 이슈:</strong> 유모바일 게릴라 2회 연속 (3/04·3/06) — 뽐뿌 합산 <strong>47,320회</strong>.</div></div>
+    <div class="two" style="margin-bottom:10px;">
+      <div class="comm-card cc-l">
+        <div class="comm-hdr"><span class="comm-src">📋 뽐뿌 W10 TOP</span><span class="comm-heat">주간 <strong style="color:var(--danger);">142,450회</strong></span></div>
+        <div class="post-row"><div class="post-rank r1">1</div><div class="post-body"><div class="post-title">유모바일 11G+ 18,000원<span class="post-badge pb-hot">HOT</span></div><div class="post-meta"><span class="post-views">👁 24,810</span><span>💬 187</span><span>3/07</span></div></div></div>
+        <div class="post-row"><div class="post-rank">2</div><div class="post-body"><div class="post-title">유모바일 15G+300 수요일 게릴라<span class="post-badge pb-hot">HOT</span></div><div class="post-meta"><span class="post-views">👁 22,510</span><span>💬 143</span><span>3/04</span></div></div></div>
+        <div class="comm-interp">🔴 <strong>게릴라 2회</strong>가 주간 T Out 과열의 직접 원인.</div>
+      </div>
+      <div class="comm-card cc-s">
+        <div class="comm-hdr"><span class="comm-src">💬 DC인사이드 주간</span><span class="comm-heat"><strong style="color:var(--danger);">+34%↑</strong></span></div>
+        <div class="post-row"><div class="post-rank r1">1</div><div class="post-body"><div class="post-title">LGU+ 가성비 진짜 실화냐 (주간 베스트)</div><div class="post-meta"><span class="post-views">👁 8,430</span><span>💬 213</span></div></div></div>
+        <div class="post-row"><div class="post-rank">2</div><div class="post-body"><div class="post-title">게릴라 때마다 SKT가 느린 이유</div><div class="post-meta"><span class="post-views">👁 5,870</span><span>💬 142</span></div></div></div>
+        <div class="comm-interp">💬 <strong>"SKT 느린 대응" 비판</strong> 주간 최다 — 30분 내 대응이 여론 관리에도 필수.</div>
+      </div>
+    </div>
+    <div class="sh">주간 요금제 현황</div>
+    <div class="two">
+      <div class="price-card">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;">RS 망별 최저가 비교</div>
+        <table class="ptbl">
+          <thead><tr><th>구간</th><th style="color:var(--skt)">SKT</th><th style="color:#059669">KT</th><th style="color:#d97706">LGU+</th></tr></thead>
+          <tbody>
+            <tr><td>7G+</td><td class="price-alert">8,470<span class="gbadge2">가이드↓</span></td><td>10,000</td><td>10,000</td></tr>
+            <tr><td>11G+</td><td>19,000</td><td>19,000</td><td class="price-low">18,000 ★</td></tr>
+            <tr><td>15G+100</td><td class="price-alert">13,970<span class="gbadge2">가이드↓</span></td><td>16,000</td><td>15,000</td></tr>
+          </tbody>
+        </table>
+        <div class="co co-d" style="padding:8px 12px;font-size:12px;"><div class="coi" style="font-size:13px;">🔴</div><div><strong>SKT망 가이드이하 2건</strong> 주간 내내 유지.</div></div>
+      </div>
+      <div class="price-card">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:10px;">망별 인기 요금제 Top 3</div>
+        <div style="font-size:10px;font-weight:700;color:var(--skt);margin-bottom:6px;">SKT망</div>
+        <div class="top-plan-row"><div class="tp-rank r1">1</div><div class="tp-body"><div class="tp-name">A 스마트 10GB</div><div class="tp-co">에이모바일</div></div><div class="tp-cnt">57,850명</div></div>
+        <div class="top-plan-row" style="margin-bottom:8px;"><div class="tp-rank">2</div><div class="tp-body"><div class="tp-name">가성비플러스(15GB/350분)</div><div class="tp-co">티플러스</div></div><div class="tp-cnt">49,043명</div></div>
+        <div style="font-size:10px;font-weight:700;color:#d97706;margin-bottom:6px;">LGU+망</div>
+        <div class="top-plan-row"><div class="tp-rank r1">1</div><div class="tp-body"><div class="tp-name">이야기 라이트 4.5GB+</div><div class="tp-co">이야기모바일</div></div><div class="tp-cnt">52,543명</div></div>
+      </div>
+    </div>
+    <div class="sh">W11 관리 포인트</div>
+    <div class="three">
+      <div style="background:#fff;border:1px solid var(--border);border-top:2px solid var(--danger);border-radius:7px;padding:13px;"><div style="font-size:10px;font-weight:700;color:var(--danger);text-transform:uppercase;margin-bottom:5px">🔴 최우선</div><div style="font-size:13px;font-weight:600;margin-bottom:5px">T Out 억제</div><div style="font-size:12px;color:var(--text2);line-height:1.6">수요일 10시 게릴라 감지 시 30분 내 집행.</div></div>
+      <div style="background:#fff;border:1px solid var(--border);border-top:2px solid #d97706;border-radius:7px;padding:13px;"><div style="font-size:10px;font-weight:700;color:var(--warn);text-transform:uppercase;margin-bottom:5px">🟡 병행</div><div style="font-size:13px;font-weight:600;margin-bottom:5px">해지 방어</div><div style="font-size:12px;color:var(--text2);line-height:1.6">S 해지 일 1,200건 이하. 해지 MS 20% 이하.</div></div>
+      <div style="background:#fff;border:1px solid var(--border);border-top:2px solid var(--skt);border-radius:7px;padding:13px;"><div style="font-size:10px;font-weight:700;color:var(--skt);text-transform:uppercase;margin-bottom:5px">🔵 모니터링</div><div style="font-size:13px;font-weight:600;margin-bottom:5px">가이드이하 감시</div><div style="font-size:12px;color:var(--text2);line-height:1.6">프리티 하나은행 뽐뿌 노출 추적.</div></div>
+    </div>
+    <div class="page-footer"><span>MVNO Intelligence · Weekly · W10 2026</span><span>자동 생성</span></div>
+  </div>
+  </div>
+
+  <!-- ═══ MONTHLY ═══ -->
+  <div class="view" id="view-monthly">
+  <div class="page">
+    <div class="page-cover" style="background:linear-gradient(90deg,#10b981,#3b82f6);"></div>
+    <div class="pta"><span class="page-emoji">📅</span><div class="page-title">월간 MVNO 현황 — 2026년 3월</div><div class="page-desc">누적 현황 · 2026.03.07 기준</div></div>
+    <div class="sh">월간 목표 달성률</div>
+    <table class="nt">
+      <thead><tr><th>지표</th><th class="r">목표</th><th class="r">누적</th><th class="r">달성률</th><th>상태</th></tr></thead>
+      <tbody>
+        <tr><td>S 신규 MS</td><td class="r">20.0%</td><td class="r td2">19.1%</td><td class="r"><div>95.5%</div><div class="pw"><div class="pf pd" style="width:95.5%"></div></div></td><td><span class="ptag pt-d">미달</span></td></tr>
+        <tr><td>S 순증</td><td class="r">+2,000건</td><td class="r td2">▲877건</td><td class="r"><div>역방향</div><div class="pw"><div class="pf pd" style="width:8%"></div></div></td><td><span class="ptag pt-d">역방향</span></td></tr>
+        <tr><td>T Out 목표 이하</td><td class="r">≤37천건</td><td class="r tw2">22.3천건</td><td class="r"><div>진행 중</div><div class="pw"><div class="pf" style="width:60%"></div></div></td><td><span class="ptag pt-w">주의</span></td></tr>
+        <tr><td>S 해지 MS</td><td class="r">≤20.0%</td><td class="r td2">21.1%</td><td class="r"><div>초과</div><div class="pw"><div class="pf pd" style="width:100%"></div></div></td><td><span class="ptag pt-d">초과</span></td></tr>
+      </tbody>
+    </table>
+    <div class="sh">월간 MS 추이</div>
+    <div class="cc"><div class="cct">S 신규 MS % (3월 일별)</div><div class="cwl"><canvas id="m-ms"></canvas></div></div>
+    <div class="sh">월간 순증 누적 추이</div>
+    <div class="cc"><div class="cct">S 순증 누적 (3월 일별)</div><div class="cwl"><canvas id="m-net"></canvas></div></div>
+    <div class="co co-i"><div class="coi">💡</div><div><strong>잔여 24일 시나리오</strong> — 해지 방어(일 1,200건↓) + 신규 MS 21% 이상 유지 동시 필요.</div></div>
+    <div class="page-footer"><span>MVNO Intelligence · Monthly · 2026.03</span><span>자동 생성</span></div>
+  </div>
+  </div>
+
+  <!-- ═══ ARCHIVE ═══ -->
+  <div class="view" id="view-archive">
+  <div class="page">
+    <div class="page-cover" style="background:linear-gradient(90deg,#64748b,#94a3b8);"></div>
+    <div class="pta"><span class="page-emoji">🗂️</span><div class="page-title">리포트 아카이브</div><div class="page-desc">전체 리포트 목록</div></div>
+    <div class="dbv">
+      <div class="dbtb"><button class="dbvb active">☰ 목록</button><button class="dbvb">📅 캘린더</button><button class="dbf">필터 ▾</button></div>
+      <div style="display:flex;padding:5px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text3);">
+        <div style="flex:1">리포트명</div><div style="width:86px">날짜</div><div style="width:76px">유형</div><div style="width:76px">판정</div><div style="width:54px;text-align:right">S MS</div>
+      </div>
+      <div class="dbr" onclick="loadD('0307');showView('daily')"><div class="dbt"><span>📊</span>실적 분석 리포트 — 3/07</div><div class="dbd">03.07 (토)</div><div class="dbs"><span class="ptag pt-b" style="font-size:10px">일일</span></div><div class="dbs"><span class="ptag pt-d" style="font-size:10px">조치필요</span></div><div class="dbsc" style="color:var(--danger)">16.9%</div></div>
+      <div class="dbr" onclick="loadD('0306');showView('daily')"><div class="dbt"><span>📊</span>실적 분석 리포트 — 3/06</div><div class="dbd">03.06 (금)</div><div class="dbs"><span class="ptag pt-b" style="font-size:10px">일일</span></div><div class="dbs"><span class="ptag pt-w" style="font-size:10px">관리필요</span></div><div class="dbsc" style="color:var(--warn)">19.4%</div></div>
+      <div class="dbr" onclick="showView('weekly')"><div class="dbt"><span>📈</span>주간 현황 — W10</div><div class="dbd">W10</div><div class="dbs"><span class="ptag pt-p" style="font-size:10px">주간</span></div><div class="dbs"><span class="ptag pt-d" style="font-size:10px">순증마이너스</span></div><div class="dbsc" style="color:var(--warn)">19.1%</div></div>
+      <div class="dbr" onclick="loadD('0302');showView('daily')"><div class="dbt"><span>📊</span>실적 분석 리포트 — 3/02</div><div class="dbd">03.02 (월)</div><div class="dbs"><span class="ptag pt-b" style="font-size:10px">일일</span></div><div class="dbs"><span class="ptag pt-g" style="font-size:10px">양호</span></div><div class="dbsc" style="color:var(--good)">21.3%</div></div>
+    </div>
+    <div class="co co-i"><div class="coi">💡</div><div>리포트를 클릭해서 상세 내용을 확인할 수 있습니다.</div></div>
+    <div class="page-footer"><span>MVNO Intelligence · Archive</span><span>총 4건</span></div>
+  </div>
+  </div>
+
+</main>
+
+<script>
+/* ─ DATA ─ */
+const DD = {
+  '0307':{title:'3/07 (토)',pd:'2026.03.07 (토)',st:'d',stTxt:'🔴 시급 조치 필요',ms:'16.9%',msc:'d',msL:'MS 16.9% / 목표 20%',net:'▲877건 (목표 +2,000)',netc:'d',ft:'2026.03.07 18:42'},
+  '0306':{title:'3/06 (금)',pd:'2026.03.06 (금)',st:'w',stTxt:'🟡 관리 필요',ms:'19.4%',msc:'w',msL:'MS 19.4% / 목표 20%',net:'▲699건 (목표 +2,000)',netc:'w',ft:'2026.03.06 18:35'},
+  '0305':{title:'3/05 (목)',pd:'2026.03.05 (목)',st:'d',stTxt:'🔴 시급 조치 필요',ms:'17.8%',msc:'d',msL:'MS 17.8% / 목표 20%',net:'▲521건 (목표 +2,000)',netc:'d',ft:'2026.03.05 18:40'},
+  '0304':{title:'3/04 (수)',pd:'2026.03.04 (수)',st:'w',stTxt:'🟡 관리 필요',ms:'18.9%',msc:'w',msL:'MS 18.9% / 목표 20%',net:'▲343건 (목표 +2,000)',netc:'w',ft:'2026.03.04 18:30'},
+  '0303':{title:'3/03 (화)',pd:'2026.03.03 (화)',st:'w',stTxt:'🟡 관리 필요',ms:'19.8%',msc:'w',msL:'MS 19.8% / 목표 20%',net:'+165건 (목표 +2,000)',netc:'w',ft:'2026.03.03 18:28'},
+  '0302':{title:'3/02 (월)',pd:'2026.03.02 (월)',st:'g',stTxt:'🟢 양호',ms:'21.3%',msc:'g',msL:'MS 21.3% / 목표 20%',net:'+253건 (목표 +2,000)',netc:'g',ft:'2026.03.02 18:25'},
+  '0228':{title:'2/28 (금)',pd:'2026.02.28 (금)',st:'g',stTxt:'🟢 양호',ms:'20.8%',msc:'g',msL:'MS 20.8% / 목표 20%',net:'+180건 (목표 +2,000)',netc:'g',ft:'2026.02.28 18:30'},
+  '0227':{title:'2/27 (목)',pd:'2026.02.27 (목)',st:'w',stTxt:'🟡 관리 필요',ms:'19.2%',msc:'w',msL:'MS 19.2% / 목표 20%',net:'+90건 (목표 +2,000)',netc:'w',ft:'2026.02.27 18:22'},
+};
+const clsMap={d:'pt-d',w:'pt-w',g:'pt-g'};
+
+function loadD(key) {
+  const d = DD[key]; if(!d) return;
+  document.getElementById('d-title').textContent = '실적 분석 리포트 — ' + d.title;
+  document.getElementById('d-desc').textContent = d.pd;
+  document.getElementById('p-date').textContent = d.pd;
+  const ps = document.getElementById('p-status');
+  ps.textContent = d.stTxt; ps.className = 'ptag ' + clsMap[d.st];
+  const pm = document.getElementById('p-ms');
+  pm.textContent = d.msL; pm.className = 'ptag ' + clsMap[d.msc];
+  const pn = document.getElementById('p-net');
+  pn.textContent = d.net; pn.className = 'ptag ' + clsMap[d.netc];
+  document.getElementById('k-ms').textContent = d.ms;
+  document.getElementById('k-ms').className = 'kv k' + (d.msc==='g'?'g':d.msc);
+  document.getElementById('bc-date').textContent = d.title;
+  document.getElementById('d-ft').textContent = d.ft;
+  showView('daily');
+}
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  const lbl={realtime:'실시간 현황',bw:'영업일수(BW)',fctrend:'월예측 추이',daily:'일일 리포트',weekly:'주간 리포트',monthly:'월간 리포트',archive:'아카이브'};
+  document.getElementById('bc-view').textContent = lbl[name]||name;
+  const isD = name==='daily';
+  document.getElementById('bc-s2').style.display = isD?'':'none';
+  document.getElementById('bc-date').style.display = isD?'':'none';
+  document.getElementById('date-strip').style.display = isD?'':'none';
+  if(window.innerWidth<=768) document.getElementById('sidebar').classList.remove('open');
+  if(name==='realtime') startRTClock();
+}
+
+function scrollToSh(kw){
+  setTimeout(()=>{
+    const els = document.querySelectorAll('#view-daily .sh');
+    for(const el of els){ if(el.textContent.includes(kw)){ el.scrollIntoView({behavior:'smooth',block:'start'}); break; } }
+  },80);
+}
+function toggleGrp(id,hdr){
+  document.getElementById(id).classList.toggle('open');
+  hdr.querySelector('.dg-arrow').classList.toggle('open');
+}
+function activeSbItem(el){ document.querySelectorAll('.dg-item').forEach(i=>i.classList.remove('active')); el.classList.add('active'); }
+function activeChip(el){ document.querySelectorAll('.dchip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); }
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
+
+/* ─ 실시간 모드 토글 ─ */
+let rtTimer = null;
+function setMode(mode) {
+  const isClose = mode === 'close';
+  // 버튼 스타일
+  document.getElementById('btn-live').style.cssText = !isClose
+    ? 'padding:4px 12px;border-radius:20px;border:1px solid var(--skt);background:var(--skt);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;'
+    : 'padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;';
+  document.getElementById('btn-close').style.cssText = isClose
+    ? 'padding:4px 12px;border-radius:20px;border:1px solid var(--good);background:var(--good-bg);color:var(--good);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;'
+    : 'padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:#fff;color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;';
+  // 배너 모드 표시
+  document.getElementById('mode-icon').textContent = isClose ? '✅' : '📡';
+  document.getElementById('mode-label').textContent = isClose ? '일마감 확정' : '장중 진행 중';
+  document.getElementById('mode-label').style.color = isClose ? '#22c55e' : '#22c55e';
+  document.getElementById('rt-pulse-el').style.display = isClose ? 'none' : 'inline-block';
+  // 페이스 게이지 — 장중만
+  document.getElementById('pace-section').style.display = isClose ? 'none' : 'block';
+  // SKT OUT 우측 컬럼 — 장중: 일마감예측 / 마감: 확정값
+  const rightCol = document.getElementById('tout-right-col');
+  const midLabel = document.getElementById('tout-mid-label');
+  if (isClose) {
+    midLabel.textContent = '당일 확정';
+    rightCol.innerHTML = '<div class="tout-col-label">월마감 예측 기준</div><div class="tout-col-val" style="font-size:14px;color:var(--text3);">↓ 아래 참조</div><div class="tout-col-sub">fc_low/mid/high</div>';
+  } else {
+    midLabel.textContent = '현재 실적';
+    rightCol.innerHTML = '<div class="tout-col-label">일마감 예측</div><div class="tout-col-val" style="color:var(--warn);">~870<span style="font-size:13px;color:var(--text3);font-family:sans-serif;"> 건</span></div><div class="tout-col-sub">목표比 △2건</div>';
+  }
+  // fc 시간 레이블
+  document.getElementById('fc-time-label').textContent = isClose ? '일마감 확정 기준' : '19시 기준';
+  // 월마감 전체 예측 섹션 — 마감만
+  document.getElementById('monthly-fc-section').style.display = isClose ? 'block' : 'none';
+  // MVNO IN/OUT 예측 컬럼 — 장중: 보임 / 마감: 숨김
+  document.querySelectorAll('.io-fc2').forEach(el => el.style.display = isClose ? 'none' : '');
+  document.querySelectorAll('.io-fc').forEach(el => el.style.display = isClose ? 'none' : '');
+}
+/* ─ 영업일수 테이블 ─ */
+const BW_DATA = [
+  {date:'5/01',day:'금',manual:1.0,ai:0.988,perf:0.781,mvno:8102,err:0.207,confirmed:true},
+  {date:'5/02',day:'토',manual:1.0,ai:0.650,perf:0.589,mvno:6106,err:0.061,confirmed:true},
+  {date:'5/03',day:'일',manual:null,ai:null,perf:null,mvno:null,err:null,holiday:true},
+  {date:'5/04',day:'월',manual:2.0,ai:1.255,perf:1.323,mvno:13723,err:0.068,confirmed:true},
+  {date:'5/05',day:'화(공)',manual:0.6,ai:0.997,perf:null,mvno:3948,err:null,confirmed:true},
+  {date:'5/06',day:'수',manual:1.5,ai:1.086,perf:1.154,mvno:11975,err:0.068,confirmed:true},
+  {date:'5/07',day:'목',manual:1.2,ai:0.958,perf:1.153,mvno:11963,err:0.195,confirmed:true},
+  {date:'5/08',day:'금',manual:1.1,ai:0.971,perf:0.985,mvno:11881,err:null,confirmed:true},
+  {date:'5/09',day:'토',manual:0.8,ai:0.646,perf:0.636,mvno:7418,err:null,confirmed:true},
+  {date:'5/10',day:'일',manual:null,ai:null,perf:null,mvno:null,err:null,holiday:true},
+  {date:'5/11',day:'월',manual:1.2,ai:1.232,perf:1.232,mvno:13360,err:null,confirmed:true},
+  {date:'5/12',day:'화',manual:1.0,ai:1.003,perf:1.003,mvno:10282,err:null,confirmed:true},
+  {date:'5/13',day:'수',manual:1.1,ai:1.046,perf:1.116,mvno:12146,err:null,confirmed:true},
+  {date:'5/14',day:'목',manual:1.0,ai:1.017,perf:1.096,mvno:10753,err:null,confirmed:true},
+  {date:'5/15',day:'금',manual:1.0,ai:1.113,perf:1.093,mvno:11268,err:null,confirmed:true},
+  {date:'5/16',day:'토',manual:0.6,ai:0.666,perf:null,mvno:null,err:null},
+  {date:'5/17',day:'일',manual:null,ai:null,perf:null,mvno:null,err:null,holiday:true},
+  {date:'5/18',day:'월',manual:1.2,ai:1.252,perf:null,mvno:null,err:null},
+  {date:'5/19',day:'화',manual:1.0,ai:1.024,perf:null,mvno:null,err:null},
+  {date:'5/20',day:'수',manual:1.1,ai:1.056,perf:null,mvno:null,err:null},
+  {date:'5/21',day:'목',manual:1.0,ai:0.994,perf:null,mvno:null,err:null},
+  {date:'5/22',day:'금',manual:1.0,ai:1.126,perf:null,mvno:null,err:null},
+  {date:'5/23',day:'토',manual:0.6,ai:0.657,perf:null,mvno:null,err:null},
+  {date:'5/25',day:'월',manual:0.8,ai:1.244,perf:null,mvno:null,err:null},
+  {date:'5/26',day:'화',manual:1.2,ai:1.022,perf:null,mvno:null,err:null},
+  {date:'5/27',day:'수',manual:1.2,ai:1.122,perf:null,mvno:null,err:null},
+  {date:'5/28',day:'목',manual:1.1,ai:1.003,perf:null,mvno:null,err:null},
+  {date:'5/29',day:'금',manual:1.3,ai:1.103,perf:null,mvno:null,err:null},
+  {date:'5/30',day:'토',manual:0.8,ai:0.713,perf:null,mvno:null,err:null},
+];
+const tbody = document.getElementById('bw-table-body');
+BW_DATA.forEach(r => {
+  const tr = document.createElement('tr');
+  if(r.holiday) {
+    tr.style.background='#f1f5f9';
+    tr.innerHTML=`<td style="padding:5px 10px;color:var(--text3);font-size:11px;">${r.date}</td><td style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">${r.day}</td><td colspan="5" style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">— 공휴일/일요일 —</td>`;
+  } else if(r.confirmed && r.perf) {
+    tr.style.background='#f0fdf4';
+    tr.innerHTML=`<td style="padding:5px 10px;font-size:11px;font-weight:500;">${r.date}</td><td style="padding:5px 10px;text-align:center;font-size:10px;">${r.day}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--warn);">${r.manual||'—'}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--skt);">${r.ai||'—'}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--good);font-weight:700;">${r.perf}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">${r.mvno?r.mvno.toLocaleString():'—'}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10px;color:${r.err>0.15?'var(--danger)':r.err>0.1?'var(--warn)':'var(--good)'};">${r.err||'—'}</td>`;
+  } else if(r.confirmed) {
+    tr.style.background='#fffbeb';
+    tr.innerHTML=`<td style="padding:5px 10px;font-size:11px;font-weight:500;">${r.date}</td><td style="padding:5px 10px;text-align:center;font-size:10px;">${r.day}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--warn);">${r.manual||'—'}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--skt);">${r.ai||'—'}</td><td style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">—</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;">${r.mvno?r.mvno.toLocaleString():'—'}</td><td style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">—</td>`;
+  } else {
+    tr.style.background='#f8faff';
+    tr.innerHTML=`<td style="padding:5px 10px;font-size:11px;color:var(--text3);">${r.date}</td><td style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">${r.day}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--warn);opacity:.6;">${r.manual||'—'}</td><td style="padding:5px 10px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--skt);opacity:.6;">${r.ai||'—'}</td><td colspan="3" style="padding:5px 10px;text-align:center;font-size:10px;color:var(--text3);">미확정</td>`;
+  }
+  tbody.appendChild(tr);
+});
+
+/* ─ BW 비교 차트 ─ */
+const BW_LABELS = ['5/01','5/02','5/04','5/06','5/07','5/08','5/09','5/11','5/12','5/13','5/14','5/15'];
+new Chart(document.getElementById('bw-chart'),{type:'bar',data:{labels:BW_LABELS,datasets:[
+  {label:'수동(bw_manual)',data:[1.0,1.0,2.0,1.5,1.2,1.1,0.8,1.2,1.0,1.1,1.0,1.0],backgroundColor:'rgba(160,80,0,.35)',borderRadius:3},
+  {label:'AI(bw_ai)',data:[0.988,0.650,1.255,1.086,0.958,0.971,0.646,1.232,1.003,1.046,1.017,1.113],backgroundColor:'rgba(37,99,235,.5)',borderRadius:3},
+  {label:'실적역산(bw_perf)',data:[0.781,0.589,1.323,1.154,1.153,0.985,0.636,1.232,1.003,1.116,1.096,1.093],type:'line',borderColor:'var(--good)',borderWidth:2,pointRadius:4,pointBackgroundColor:'var(--good)',fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:10},padding:8,boxWidth:16}}},scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}},min:0,max:2.2}}}});
+
+/* ─ 월예측 추이 차트 ─ */
+const FC_LABELS = ['5/01','5/02','5/04','5/05','5/06','5/07','5/08','5/09','5/11','5/12','5/13','5/14','5/15'];
+// T-Out 예측 추이
+new Chart(document.getElementById('fc-tout-trend'),{type:'line',data:{labels:FC_LABELS,datasets:[
+  {label:'Low',data:[30914,36017,39554,28927,33311,34971,34963,35383,36089,35817,34319,34412,34755],borderColor:'var(--good)',backgroundColor:'rgba(15,123,15,.06)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'Mid',data:[31211,36298,40221,28985,33771,35633,35667,36045,36713,36197,34442,34682,34755],borderColor:'var(--skt)',backgroundColor:'rgba(37,99,235,.06)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'High',data:[31211,36298,40221,28985,33771,36264,36459,36674,36943,36444,34442,34871,34504],borderColor:'var(--warn)',backgroundColor:'rgba(160,80,0,.06)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'목표 36,000',data:[36000,36000,36000,36000,36000,36000,36000,36000,36000,36000,36000,36000,36000],borderColor:'rgba(0,0,0,.2)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:10},padding:8,boxWidth:16}}},scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}},min:26000,max:42000}}}});
+
+// SM 순증감 예측 추이
+new Chart(document.getElementById('fc-net-trend'),{type:'line',data:{labels:FC_LABELS,datasets:[
+  {label:'Low',data:[-10194,-9808,-15022,-12751,-13237,-13361,-12973,-12882,-13322,-12800,-12294,-12027,-12430],borderColor:'var(--good)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'Mid',data:[-10194,-9808,-15022,-12751,-13237,-13361,-12973,-12882,-13322,-12800,-12294,-12027,-12430],borderColor:'var(--skt)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'High',data:[-9951,-9714,-14908,-12537,-13210,-13179,-12727,-12621,-13085,-12574,-12194,-11938,-12341],borderColor:'var(--danger)',fill:false,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'목표 △5,000',data:[-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000,-5000],borderColor:'rgba(0,0,0,.2)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:10},padding:8,boxWidth:16}}},scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}},max:-4000}}}});
+
+// SM MS% 누적 추이
+new Chart(document.getElementById('fc-ms-trend'),{type:'line',data:{labels:FC_LABELS,datasets:[
+  {label:'SM 신규 MS% 누적',data:[14.8,14.8,15.4,15.2,15.8,16.2,16.6,16.4,16.3,16.4,16.4,16.4,16.5],borderColor:'var(--skt)',backgroundColor:'rgba(37,99,235,.07)',fill:true,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'목표 19%',data:[19,19,19,19,19,19,19,19,19,19,19,19,19],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:10},padding:8,boxWidth:16}}},scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9},callback:v=>v+'%'},min:12,max:22}}}});
+
+/* ─ 지표 통합 카드 차트 ─ */
+const D5=['5/12(화)','5/13(수)','5/14(목)','5/15(금)','5/16(토)'];
+const mcBase={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}}}};
+
+// 시장 사이즈 — 혼합 차트 (선: MNP전체+MVNO / 막대: MNO·MVNO비율 그룹)
+new Chart(document.getElementById('mc-market'),{
+  data:{labels:D5,datasets:[
+    {type:'line',label:'MNP 전체',data:[25560,28960,24450,25660,17736],
+     borderColor:'#1e3a5f',backgroundColor:'rgba(30,58,95,.06)',
+     fill:false,tension:.4,pointRadius:3,borderWidth:2,yAxisID:'y'},
+    {type:'line',label:'MVNO 합계',data:[10080,11280,9580,10264,6953],
+     borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',
+     fill:true,tension:.4,pointRadius:3,borderWidth:2,yAxisID:'y'},
+    {type:'bar',label:'MNO%',data:[60.6,61.1,60.8,60.1,60.8],
+     backgroundColor:'rgba(71,85,105,.35)',borderRadius:3,yAxisID:'y2'},
+    {type:'bar',label:'MVNO%',data:[39.4,38.9,39.2,39.9,39.2],
+     backgroundColor:'rgba(37,99,235,.45)',borderRadius:3,yAxisID:'y2'}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+    scales:{
+      x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},
+      y:{type:'linear',position:'left',grid:{color:'rgba(0,0,0,.04)'},
+         ticks:{color:'#9b9b9b',font:{size:8}},title:{display:true,text:'건수',color:'#9b9b9b',font:{size:8}}},
+      y2:{type:'linear',position:'right',grid:{drawOnChartArea:false},
+          ticks:{color:'#9b9b9b',font:{size:8},callback:v=>v+'%'},
+          min:0,max:100,title:{display:true,text:'비율%',color:'#9b9b9b',font:{size:8}}}
+    }
+  }
+});
+
+// 군별 순증감 — 그룹 막대
+new Chart(document.getElementById('mc-gunbyul'),{type:'bar',data:{labels:D5,datasets:[
+  {label:'S군',data:[-180,-220,-310,-280,-236],backgroundColor:'rgba(199,48,10,.6)',borderRadius:3},
+  {label:'K군',data:[240,210,280,310,289],backgroundColor:'rgba(5,150,105,.6)',borderRadius:3},
+  {label:'L군',data:[-40,-20,-60,-90,-53],backgroundColor:'rgba(217,119,6,.5)',borderRadius:3}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}}}}});
+
+// T-Out 건수 — 라인
+new Chart(document.getElementById('mc-tout-line'),{type:'line',data:{labels:D5,datasets:[
+  {label:'T-Out(보정)',data:[1227,1222,1152,1170,1275],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.08)',fill:true,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'4주평균 1,345',data:[1345,1345,1345,1345,1345],borderColor:'rgba(0,0,0,.15)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}}}}});
+
+// T-Out 비율 % — 막대+기준선
+new Chart(document.getElementById('mc-tout-pct'),{type:'bar',data:{labels:D5,datasets:[
+  {label:'T-Out%',data:[49.0,46.2,46.5,45.6,44.2],backgroundColor:['rgba(199,48,10,.65)','rgba(15,123,15,.55)','rgba(15,123,15,.55)','rgba(15,123,15,.55)','rgba(15,123,15,.55)'],borderRadius:3},
+  {label:'기준 47.5%',data:[47.5,47.5,47.5,47.5,47.5],type:'line',borderColor:'rgba(0,0,0,.25)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,order:0}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8},callback:v=>v+'%'},min:40,max:55}}}});
+
+// SM 신규 MS% — 막대+목표선
+new Chart(document.getElementById('mc-sm-ms'),{type:'bar',data:{labels:D5,datasets:[
+  {label:'SM신규MS%',data:[17.0,16.8,16.8,16.9,14.3],backgroundColor:['rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.8)'],borderRadius:3},
+  {label:'목표 19%',data:[19,19,19,19,19],type:'line',borderColor:'rgba(0,0,0,.25)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,order:0}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8},callback:v=>v+'%'},min:10,max:22}}}});
+
+// SM 해지 MS% — 막대+기준선
+new Chart(document.getElementById('mc-sm-churn'),{type:'bar',data:{labels:D5,datasets:[
+  {label:'SM해지MS%',data:[19.4,19.3,20.5,20.2,18.3],backgroundColor:['rgba(15,123,15,.55)','rgba(15,123,15,.55)','rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(15,123,15,.55)'],borderRadius:3},
+  {label:'기준 19.4%',data:[19.4,19.4,19.4,19.4,19.4],type:'line',borderColor:'rgba(0,0,0,.25)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,order:0}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8},callback:v=>v+'%'},min:16,max:22}}}});
+
+// SM 순증감 — 막대 (0선 기준, 색상 자동)
+new Chart(document.getElementById('mc-sm-net'),{type:'bar',data:{labels:D5,datasets:[
+  {label:'SM순증(보정)',data:[-320,-304,-415,-407,-558],backgroundColor:['rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.6)','rgba(199,48,10,.8)'],borderRadius:3}
+]},options:{...mcBase}});
+
+// MNO Out — 라인
+new Chart(document.getElementById('mc-mno-out'),{type:'line',data:{labels:D5,datasets:[
+  {label:'MNO Out(보정)',data:[2502,2912,2478,2566,2883],borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.08)',fill:true,tension:.4,pointRadius:3,borderWidth:2},
+  {label:'4월평균 2,400',data:[2400,2400,2400,2400,2400],borderColor:'rgba(0,0,0,.15)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:6,boxWidth:14}}},
+  scales:{x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:8}}}}}});
+
+function startRTClock(){
+  if(rtTimer) return;
+  function tick(){
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2,'0');
+    const m = String(now.getMinutes()).padStart(2,'0');
+    const el = document.getElementById('rt-clock');
+    const ft = document.getElementById('rt-footer');
+    if(el) el.textContent = h+':'+m+' 기준';
+    if(ft) ft.textContent = (now.getMonth()+1)+'/'+now.getDate()+' '+h+':'+m+' 갱신 · 30초 자동갱신';
+  }
+  tick(); rtTimer = setInterval(tick, 30000);
+}
+startRTClock();
+
+/* ─ CHART BASE ─ */
+const D7=['3/01','3/02','3/03','3/04','3/05','3/06','3/07'];
+const DW=['3/02(월)','3/03(화)','3/04(수)','3/05(목)','3/06(금)','3/07(토)','3/08(일)'];
+const DM=['3/02','3/03','3/04','3/05','3/06','3/07'];
+const RT_H=['09시','10시','11시','12시','13시','14시','15시','16시','17시','18시','19시','20시'];
+const co={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9b9b9b',font:{size:10},padding:8}}}};
+const ax={x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}}};
+
+function line(id,labels,ds,yCb){
+  const opts=JSON.parse(JSON.stringify(co));
+  opts.scales=JSON.parse(JSON.stringify(ax));
+  if(yCb) opts.scales.y.ticks.callback=new Function('v','return '+yCb);
+  new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:ds},options:opts});
+}
+function bar(id,labels,ds){
+  new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:ds},options:{...co,scales:ax}});
+}
+
+/* ─ 실시간 차트 ─ */
+const rtOpts={
+  responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{display:true,labels:{color:'#9b9b9b',font:{size:9},padding:8,boxWidth:20}}},
+  scales:{
+    x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},
+    y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}}
+  }
+};
+
+// T-Out 누적 (오늘/어제/전주)
+new Chart(document.getElementById('rt-tout-chart'),{type:'line',data:{labels:RT_H,datasets:[
+  {label:'오늘(5/16)',data:[46,98,156,231,312,402,488,568,640,695,742,765],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.07)',fill:true,tension:.4,pointRadius:2,borderWidth:2},
+  {label:'어제(5/15)',data:[84,182,290,408,532,648,752,848,932,1002,1058,1095],borderColor:'#94a3b8',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false},
+  {label:'전주 同토(5/9)',data:[52,112,178,258,342,430,512,588,652,702,738,758],borderColor:'#fbbf24',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false}
+]},options:{...rtOpts,scales:{
+  x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},
+  y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}}
+}}});
+
+// SM 신규 MS% 시간별
+new Chart(document.getElementById('rt-ms-chart'),{type:'line',data:{labels:RT_H,datasets:[
+  {label:'오늘(5/16)',data:[16.8,16.2,15.6,15.1,14.8,14.6,14.4,14.3,14.3,14.3,14.3,14.3],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',fill:true,tension:.4,pointRadius:2,borderWidth:2},
+  {label:'어제(5/15)',data:[17.8,17.4,17.1,16.9,16.8,16.8,16.9,16.9,16.9,16.9,16.9,16.9],borderColor:'#94a3b8',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false},
+  {label:'전주 同토(5/9)',data:[15.2,14.8,14.5,14.3,14.3,14.4,14.4,14.4,14.4,14.4,14.4,14.4],borderColor:'#fbbf24',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false},
+  {label:'목표 19%',data:[19,19,19,19,19,19,19,19,19,19,19,19],borderColor:'rgba(0,0,0,.15)',borderDash:[3,3],borderWidth:1,pointRadius:0,fill:false}
+]},options:{...rtOpts,scales:{
+  x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},
+  y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9},callback:v=>v+'%'},min:10,max:22}
+}}});
+
+// SM 순증 누적
+new Chart(document.getElementById('rt-net-chart'),{type:'line',data:{labels:RT_H,datasets:[
+  {label:'오늘(5/16)',data:[-18,-40,-72,-115,-158,-202,-242,-278,-308,-325,-332,-335],borderColor:'#ef4444',backgroundColor:'rgba(239,68,68,.07)',fill:true,tension:.4,pointRadius:2,borderWidth:2},
+  {label:'어제(5/15)',data:[-28,-68,-115,-172,-228,-278,-320,-355,-385,-403,-411,-415],borderColor:'#94a3b8',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false}
+]},options:{...rtOpts,scales:{
+  x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},
+  y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}}
+}}});
+
+// MNO Out 누적
+new Chart(document.getElementById('rt-mno-chart'),{type:'line',data:{labels:RT_H,datasets:[
+  {label:'오늘(5/16)',data:[112,248,396,568,748,938,1112,1278,1430,1560,1660,1730],borderColor:'#8b5cf6',backgroundColor:'rgba(139,92,246,.07)',fill:true,tension:.4,pointRadius:2,borderWidth:2},
+  {label:'어제(5/15)',data:[188,412,658,932,1218,1492,1742,1968,2168,2340,2462,2540],borderColor:'#94a3b8',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false},
+  {label:'전주 同토(5/9)',data:[98,218,348,498,658,820,972,1108,1228,1332,1412,1458],borderColor:'#fbbf24',borderDash:[4,3],borderWidth:1.5,tension:.4,pointRadius:0,fill:false}
+]},options:{...rtOpts,scales:{
+  x:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}},
+  y:{grid:{color:'rgba(0,0,0,.04)'},ticks:{color:'#9b9b9b',font:{size:9}}}
+}}});
+
+/* ─ 일별 차트 ─ */
+line('c-ms',D7,[
+  {label:'S 신규 MS%',data:[20.5,21.3,19.8,18.9,17.8,19.4,16.9],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.07)',fill:true,tension:.4,pointRadius:3},
+  {label:'목표 20%',data:[20,20,20,20,20,20,20],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+],'v+"%"');
+line('c-net',D7,[{label:'S 순증 누적',data:[253,506,671,328,-193,-892,-1070],borderColor:'#c7300a',backgroundColor:'rgba(199,48,10,.06)',fill:true,tension:.4,pointRadius:3}]);
+bar('c-out',D7,[
+  {label:'MNO Out',data:[3640,3754,3860,4120,3740,2530,3281],backgroundColor:'rgba(100,116,139,.35)',borderRadius:3},
+  {label:'T Out',data:[2120,2194,2450,2260,2180,1637,1637],backgroundColor:'rgba(37,99,235,.6)',borderRadius:3}
+]);
+line('c-tout',D7,[
+  {label:'T Out%',data:[58.2,58.4,63.5,54.9,58.3,64.7,49.9],borderColor:'#c7300a',backgroundColor:'rgba(199,48,10,.06)',fill:true,tension:.4,pointRadius:3},
+  {label:'기준 47.5%',data:[47.5,47.5,47.5,47.5,47.5,47.5,47.5],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+],'v+"%"');
+bar('w-out',DW,[
+  {label:'MNO Out',data:[3754,3640,3860,4120,3740,2530,2210],backgroundColor:'rgba(100,116,139,.35)',borderRadius:3},
+  {label:'T Out',data:[2194,2120,2450,2260,2180,1637,1490],backgroundColor:'rgba(37,99,235,.65)',borderRadius:3}
+]);
+line('w-ratio',DW,[
+  {label:'T Out%',data:[58.4,58.2,63.5,54.9,58.3,64.7,67.4],borderColor:'#c7300a',backgroundColor:'rgba(199,48,10,.06)',fill:true,tension:.4,pointRadius:4},
+  {label:'기준 47.5%',data:[47.5,47.5,47.5,47.5,47.5,47.5,47.5],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+],'v+"%"');
+line('w-churn',DW,[{label:'S MVNO 해지',data:[2583,2490,3210,2743,2610,1763,1630],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.07)',fill:true,tension:.4,pointRadius:3}]);
+line('w-ms',DW,[
+  {label:'S 신규 MS%',data:[21.3,19.8,18.9,17.8,19.4,16.9,17.2],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.07)',fill:true,tension:.4,pointRadius:4},
+  {label:'목표 20%',data:[20,20,20,20,20,20,20],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+],'v+"%"');
+line('m-ms',DM,[
+  {label:'S 신규 MS%',data:[21.3,19.8,18.9,17.8,19.4,16.9],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.07)',fill:true,tension:.4,pointRadius:5},
+  {label:'목표 20%',data:[20,20,20,20,20,20],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+],'v+"%"');
+line('m-net',DM,[
+  {label:'S 순증 누적',data:[253,418,746,553,-339,-877],borderColor:'#c7300a',backgroundColor:'rgba(199,48,10,.07)',fill:true,tension:.4,pointRadius:5},
+  {label:'목표 +2,000',data:[2000,2000,2000,2000,2000,2000],borderColor:'rgba(0,0,0,.18)',borderDash:[4,3],borderWidth:1.5,pointRadius:0,fill:false}
+]);
+</script>
+
+<!-- ══════════════════════════════════════════════════════
+     🔌 FIRESTORE 실데이터 연동 — /api/realtime 폴링
+     ══════════════════════════════════════════════════ -->
+<script>
+// ── 설정 ──────────────────────────────────────────────────
+const API_REALTIME  = '/api/realtime';
+const API_ARCHIVE   = '/api/archive';
+const POLL_INTERVAL = 60 * 1000;  // 60초 자동갱신
+let   pollTimer     = null;
+let   rtCharts      = {};  // 실시간 차트 인스턴스 보관
+
+// ── 유틸 ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function setTxt(id, val) {
+  const el = $(id);
+  if (el && val !== undefined && val !== null) el.textContent = val;
+}
+function setHtml(id, html) {
+  const el = $(id);
+  if (el) el.innerHTML = html;
+}
+function fmtN(v, digits=0) {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  if (isNaN(n)) return '—';
+  return digits > 0 ? n.toLocaleString(undefined,{minimumFractionDigits:digits,maximumFractionDigits:digits}) : Math.round(n).toLocaleString();
+}
+function fmtPct(v) {
+  if (v === null || v === undefined) return '—';
+  return Number(v).toFixed(1) + '%';
+}
+function signStr(v, unit='건') {
+  if (v === null || v === undefined) return '—';
+  const n = Number(v);
+  return (n >= 0 ? '▲' : '▼') + Math.abs(n).toLocaleString() + unit;
+}
+
+// ── 실시간 탭 DOM 업데이트 ─────────────────────────────────
+function applyRealtimeData(d) {
+  if (!d || d.error) {
+    console.warn('[MVNO] API 오류:', d?.error);
+    return;
+  }
+
+  const isClose = d.is_close;
+
+  // ① 배너 ─────────────────────────────────────────────
+  const today = new Date();
+  const days  = ['일','월','화','수','목','금','토'];
+  const dateLbl = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}(${days[today.getDay()]})`;
+  const bwEl = $('mode-icon')?.parentElement;
+  if (bwEl) {
+    $('mode-icon').textContent = isClose ? '✅' : '📡';
+    // 날짜·영업일수 배너 텍스트
+    const banner = $('rt-banner-date-text');
+    if (banner) banner.textContent = `${dateLbl}  ·  영업일수 ${d.bw || '—'}  ·`;
+  }
+
+  // 모드 라벨
+  const modeLabel = $('mode-label');
+  if (modeLabel) {
+    modeLabel.textContent = isClose ? '일마감 확정' : '장중 진행 중';
+  }
+
+  // 배너 태그 — 동적 생성
+  const tagsEl = document.querySelector('.rt-banner-tags');
+  if (tagsEl && d.fc_low != null) {
+    const smMs  = d.sm_ms_pct;
+    const toutPct = d.tout_pct;
+    const netSm = d.net_sm;
+    const tags  = [];
+
+    // T-Out 상태
+    if (d.fc_low != null) {
+      const onTrack = d.fc_on_track !== false;
+      tags.push(`<div class="rt-btag ${onTrack ? 'good' : 'danger'}">
+        ${onTrack ? '✅' : '🔴'} T-Out — 마감예측 ${fmtN(d.fc_low)}~${fmtN(d.fc_high)} (목표 36,000↓)
+      </div>`);
+    }
+    if (smMs != null) {
+      const ok = smMs >= 20;
+      tags.push(`<div class="rt-btag ${ok ? 'good' : (smMs >= 18 ? 'warn' : 'danger')}">
+        ${ok ? '✅' : '⚠️'} SM신규MS ${fmtPct(smMs)} — 목표 20% 대비 ${signStr(smMs - 20, '%p')}
+      </div>`);
+    }
+    if (netSm != null) {
+      const ok = netSm > 0;
+      tags.push(`<div class="rt-btag ${ok ? 'good' : 'danger'}">
+        ${ok ? '✅' : '🔴'} SM순증 ${signStr(netSm)}
+      </div>`);
+    }
+    tagsEl.innerHTML = tags.join('');
+  }
+
+  // ② MNP 시장 구조 ────────────────────────────────────
+  const total     = d.total || 0;
+  const totalMno  = d.total_mno || 0;
+  const totalMvno = d.total_mvno || 0;
+
+  // 총계 텍스트 업데이트
+  const mnpTotalSpan = document.querySelector('.mnp-title .mono');
+  if (mnpTotalSpan) mnpTotalSpan.textContent = `${fmtN(total)}건`;
+
+  // MNO/MVNO 비율 바
+  if (total > 0) {
+    const mnoPct  = (totalMno  / total * 100).toFixed(1);
+    const mvnoPct = (totalMvno / total * 100).toFixed(1);
+    const segMno  = document.querySelector('.mnp-seg.seg-mno');
+    const segMvno = document.querySelector('.mnp-seg.seg-mvno');
+    if (segMno)  { segMno.style.width  = mnoPct + '%';  segMno.textContent  = `MNO ${mnoPct}%`;  }
+    if (segMvno) { segMvno.style.width = mvnoPct + '%'; segMvno.textContent = `MVNO ${mvnoPct}%`; }
+
+    // 텍스트 수치
+    const mnpTexts = document.querySelectorAll('.mnp-card > div > .mono');
+    if (mnpTexts[0]) mnpTexts[0].textContent = `MNO ${fmtN(totalMno)}건`;
+    if (mnpTexts[1]) mnpTexts[1].textContent = `MVNO ${fmtN(totalMvno)}건 (MNO의 ${totalMno > 0 ? (totalMvno/totalMno*100).toFixed(1) : '—'}%)`;
+  }
+
+  // ③ SKT OUT (T-Out) 카드 ──────────────────────────────
+  // 현재 실적
+  const toutValEl = document.querySelector('#tout-mid-label + .tout-col-val, .tout-col-val');
+  // 좀 더 안전한 방식으로 접근
+  const toutCols = document.querySelectorAll('.tout-col .tout-col-val');
+  if (toutCols[1]) {
+    toutCols[1].textContent = fmtN(d.mno_out_s) + '건';
+  }
+  // 일마감 예측 (장중)
+  if (!isClose && d.fc_daily && toutCols[2]) {
+    toutCols[2].innerHTML = `~${fmtN(d.fc_daily)}<span style="font-size:13px;color:var(--text3);font-family:sans-serif;"> 건</span>`;
+  }
+
+  // 월마감 예측 Low/Mid/High
+  const fcLowEl  = document.querySelector('.tout-fc .mono[style*="good"]');
+  const fcMidEl  = document.querySelector('.tout-fc .mono[style*="skt"]');
+  const fcHighEl = document.querySelector('.tout-fc .mono[style*="warn"]');
+  if (fcLowEl  && d.fc_low  != null) fcLowEl.textContent  = fmtN(d.fc_low);
+  if (fcMidEl  && d.fc_mid  != null) fcMidEl.textContent  = fmtN(d.fc_mid);
+  if (fcHighEl && d.fc_high != null) fcHighEl.textContent = fmtN(d.fc_high);
+
+  // 페이스 게이지
+  const paceSec = $('pace-section');
+  if (paceSec) paceSec.style.display = isClose ? 'none' : 'block';
+
+  // ④ 통합 지표 카드 8개 ────────────────────────────────
+  // 시장사이즈
+  applyMcCard('rt-total',    fmtN(total),          fmtN(totalMvno));
+  // T-Out 건수
+  applyMcCard('rt-tout',     fmtN(d.mno_out_s),    `${d.tout_pct != null ? (d.tout_pct.toFixed(1)+'%') : '—'} 비율`);
+  // T-Out 비율
+  applyMcCard('rt-tout-pct', fmtPct(d.tout_pct),   d.tout_pct_yd != null ? `전일 ${fmtPct(d.tout_pct_yd)}` : '—');
+  // SM신규MS
+  applyMcCard('rt-sm-ms',    fmtPct(d.sm_ms_pct),  `목표 19% / ${fmtN(d.mvno_in_sm)}건`);
+  // SM해지MS
+  applyMcCard('rt-sm-churn', fmtPct(d.sm_churn_pct), `${fmtN(d.mvno_out_sm)}건`);
+  // SM순증감
+  applyMcCard('rt-sm-net',   signStr(d.net_sm, ''),  `K군 ${signStr(d.net_km, '')} / L군 ${signStr(d.net_lm, '')}`);
+  // 군별순증감
+  applyMcCard('rt-gunbyul',
+    `S:${signStr(d.net_s,'')} K:${signStr(d.net_k,'')} L:${signStr(d.net_l,'')}`,
+    `MNO계 ${signStr(d.net_mno,'')}`
+  );
+  // MNO Out
+  applyMcCard('rt-mno-out',  fmtN(d.mno_out_계),   `S:${fmtN(d.mno_out_s)} K:${fmtN(d.mno_in_k)} L:${fmtN(d.mno_in_l)}`);
+
+  // ⑤ 트렌드 테이블 ─────────────────────────────────────
+  if (d.trend_rows && d.trend_rows.length) {
+    applyTrendTable(d.trend_rows);
+  }
+
+  // ⑥ 마감 모드 동기화 ──────────────────────────────────
+  if (typeof setMode === 'function') {
+    setMode(isClose ? 'close' : 'live');
+  }
+
+  console.log('[MVNO] 실데이터 적용 완료 —', new Date().toLocaleTimeString('ko-KR'));
+}
+
+// 지표 카드 헬퍼 (mc-num-val 클래스 기준으로 업데이트)
+function applyMcCard(cardId, mainVal, subVal) {
+  const card = $(cardId);
+  if (!card) return;
+  const mainEl = card.querySelector('.mc-num-val');
+  const subEl  = card.querySelector('.mc-num-sub');
+  if (mainEl && mainVal) mainEl.textContent = mainVal;
+  if (subEl  && subVal)  subEl.textContent  = subVal;
+}
+
+// 트렌드 테이블 업데이트
+function applyTrendTable(rows) {
+  const tbody = document.querySelector('.trend-table tbody');
+  if (!tbody) return;
+
+  const html = rows.map((r, i) => {
+    const isTodayRow = i === 0;
+    return `<tr class="${isTodayRow ? '' : ''}">
+      <td style="padding:7px 10px;font-weight:${isTodayRow?'700':'400'};">${r.date_label}</td>
+      <td>${r.total}</td>
+      <td class="${r.ms_cls}">${r.ms_pct}</td>
+      <td class="${r.tout_cls}">${r.tout_pct}</td>
+      <td class="${r.net_cls}">${r.net_sm}</td>
+    </tr>`;
+  }).join('');
+
+  tbody.innerHTML = html;
+}
+
+// ── 아카이브 사이드바 동적 업데이트 ───────────────────────
+async function loadArchiveSidebar() {
+  try {
+    const resp = await fetch(API_ARCHIVE);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const items = data.items || [];
+
+    const container = document.getElementById('archive-sidebar');
+    if (!container) return;
+
+    container.innerHTML = items.map(item => {
+      const tagCls = item.tag === 'g' ? 'dg2' : (item.tag === 'w' ? 'dy' : 'dr');
+      const tagTxt = item.tag === 'g' ? '양호' : (item.tag === 'w' ? '관리필요' : '조치필요');
+      return `<div class="dg-item" onclick="loadDayFromAPI('${item.doc_id}')">
+        <div class="ddot ${tagCls}"></div>
+        <span>${item.date_label}(${item.day_ko})</span>
+        <span class="mono" style="margin-left:auto;font-size:10px;color:var(--text3);">${item.ms_pct}%</span>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.warn('[MVNO] 아카이브 로딩 실패:', e);
+  }
+}
+
+// 일별 리포트 API 호출
+async function loadDayFromAPI(docId) {
+  try {
+    const resp = await fetch(`/api/daily?date=${docId}`);
+    const d    = await resp.json();
+    // 기존 loadD() 함수 포맷으로 변환하여 호출
+    const ms = d.sm_ms_pct != null ? d.sm_ms_pct.toFixed(1) + '%' : '—';
+    const netStr = signStr(d.net_sm);
+    const tag = d.sm_ms_pct >= 20 ? 'g' : (d.sm_ms_pct >= 18 ? 'w' : 'd');
+    const tagTxt = tag === 'g' ? '🟢 양호' : (tag === 'w' ? '🟡 관리 필요' : '🔴 시급 조치 필요');
+
+    // loadD 형식으로 UI 업데이트
+    const clsMap = {d:'pt-d', w:'pt-w', g:'pt-g'};
+    const title  = docId.replace(/(\d{4})-(\d{2})-(\d{2})/, '$2/$3');
+    const p      = {
+      title: title, pd: docId, st: tag, stTxt: tagTxt,
+      ms: ms, msc: tag, msL: `MS ${ms} / 목표 20%`,
+      net: `${netStr} (목표 +2,000)`, netc: tag, ft: docId + ' 18:00',
+    };
+
+    setTxt('d-title', '실적 분석 리포트 — ' + p.title);
+    setTxt('d-desc',  p.pd);
+    setTxt('p-date',  p.pd);
+    const ps = $('p-status');
+    if (ps) { ps.textContent = p.stTxt; ps.className = 'ptag ' + clsMap[p.st]; }
+    const pm = $('p-ms');
+    if (pm) { pm.textContent = p.msL; pm.className = 'ptag ' + clsMap[p.msc]; }
+    const pn = $('p-net');
+    if (pn) { pn.textContent = p.net; pn.className = 'ptag ' + clsMap[p.netc]; }
+    const km = $('k-ms');
+    if (km) { km.textContent = p.ms; km.className = 'kv k' + (p.msc === 'g' ? 'g' : p.msc); }
+    setTxt('bc-date', p.title);
+    setTxt('d-ft',    p.ft);
+
+    // AI 컨텍스트 텍스트 표시
+    if (d.context && d.context.text) {
+      const ctxEl = $('daily-context-text');
+      if (ctxEl) ctxEl.textContent = d.context.text;
+    }
+
+    showView('daily');
+  } catch(e) {
+    console.warn('[MVNO] 일별 리포트 로딩 실패:', e);
+    // 폴백: 기존 하드코딩 데이터 사용
+    const key = docId.replace(/\d{4}-(\d{2})-(\d{2})/, '$1$2');
+    if (typeof loadD === 'function') loadD(key);
+  }
+}
+
+// ── 폴링 메인 ─────────────────────────────────────────────
+async function fetchAndApplyRealtime() {
+  try {
+    const resp = await fetch(API_REALTIME);
+    if (!resp.ok) {
+      console.warn('[MVNO] API 응답 오류:', resp.status);
+      return;
+    }
+    const data = await resp.json();
+    applyRealtimeData(data);
+  } catch(e) {
+    console.warn('[MVNO] 폴링 실패 (네트워크?):', e);
+    // 실패해도 샘플 데이터로 계속 동작
+  }
+}
+
+function startPolling() {
+  fetchAndApplyRealtime();
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(fetchAndApplyRealtime, POLL_INTERVAL);
+}
+
+// ── 초기화 ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  startPolling();
+  loadArchiveSidebar();
+  console.log('[MVNO] Firestore 실데이터 연동 시작 — 60초 폴링');
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1746 @@
+============================================================
+GET https://www.moyoplan.com/plans/30592?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/26260?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/26257?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/mypage?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484401391&_gaz=1&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AgAAAGAC&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=19&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=1&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=0&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&dt=LG%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=page_view&_fv=1&_nsi=1&_ss=1&_ee=1&tfd=1652
+
+============================================================
+POST https://www.google.com/measurement/conversion?random=1783484401619&cv=11&tid=G-3RWD7XLFQC&fst=1783484401619&fmt=8&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&gtm=45je6761v9104447645za200zd9104447645xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&u_w=1280&u_h=720&hl=ko&gl=kr&url=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&gacid=146402313.1783484402&frm=0&tiba=LG%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&npa=0&pscdl=noapi&auid=687153940.1783484402&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uamb=0&uam=&uap=Windows&uapv=10.0&uaw=0&rcb=19
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484401391&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAgAAGQC&_prs=ok&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=19&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=2&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=0&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&dt=LG%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&_c=1&_et=7&tfd=1684
+
+============================================================
+GET https://www.moyoplan.com/event?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/internets?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/phones?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/30592?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/plans/26260?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/plans/26257?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/mypage?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/event?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/internets?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/phones?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "8a21f7f4-8ad0-45a6-b99e-61270c873d4d",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484401404,
+    "category": "pageview",
+    "navigation": "theme_detail",
+    "objectId": "11",
+    "objectSection": "search-plans",
+    "objectName": "lg-subsidiary",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 0,
+        "bulk_sequential": 0
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "bdad162c-e68a-4231-b244-b2a937bea4ed",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484402070,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "26257",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[평생할인] 7GB+/통화기본",
+    "objectPosition": 0,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 15900,
+      "original_fee": 15900,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "11",
+        "name": "lg-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 1,
+        "bulk_sequential": 1
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "e287f085-87f0-4910-a123-d117acb7b317",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484402071,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "26260",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[평생할인] 71GB+/통화기본",
+    "objectPosition": 1,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 32990,
+      "original_fee": 32990,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "11",
+        "name": "lg-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 2,
+        "bulk_sequential": 1
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/30995?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/24713?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/31026?_rsc=UD6QykOT5Z-GZ84k
+
+============================================================
+GET https://www.moyoplan.com/plans/31026?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/plans/30995?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+GET https://www.moyoplan.com/plans/24713?_rsc=Do5liVsbgMRyLD3m
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "0f602b50-cd30-4dfe-a25e-1281238c4711",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484404156,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "24713",
+    "objectSection": "lg-subsidiary",
+    "objectName": "교보문고 북 플러스알파 71GB+",
+    "objectPosition": 8,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 34490,
+      "original_fee": 34490,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "11",
+        "name": "lg-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 3,
+        "bulk_sequential": 2
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "d5dc4e0e-cd51-4656-8e9d-315e100c2483",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484404157,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "30995",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[다이소 12만] 71GB+",
+    "objectPosition": 9,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 34890,
+      "original_fee": 34890,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "11",
+        "name": "lg-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 4,
+        "bulk_sequential": 2
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55&_rsc=utPXXmeg5SaWDQDe
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484401391&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAGQC&ae=a&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=19&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=3&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=0&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&dt=LG%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=scroll&epn.percent_scrolled=90&_et=2001&tfd=8794
+
+============================================================
+GET https://www.moyoplan.com/gift-group/1683?plan=false&_rsc=_UycMjmVCfzzZOnm
+
+============================================================
+GET https://www.moyoplan.com/gift-group/1683?plan=false&_rsc=dCo66Gdfjx0BPVhI
+
+============================================================
+GET https://www.moyoplan.com/gift-group/1683?_rsc=_UycMjmVCfzzZOnm
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "a16a30de-8b08-4a4e-a256-bc5c2ee53222",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484408244,
+    "category": "click",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "26257",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[평생할인] 7GB+/통화기본",
+    "objectPosition": 0,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 15900,
+      "original_fee": 15900,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "11",
+        "name": "lg-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 5,
+        "bulk_sequential": 3
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "referer": "",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/lg-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "041dce3e-4dc5-44ec-8e01-8311a87d54d8",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484408721,
+    "category": "pageview",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "26257",
+    "objectName": "[평생할인] 7GB+/통화기본",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 15900,
+      "original_fee": 15900,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "has_perceived_discount": true,
+      "perceived_fee": 0,
+      "representative_gift_value": 16000,
+      "total_gift_period": 10,
+      "internet_combine": false,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "lg-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 6,
+        "bulk_sequential": 3
+      },
+      "$service": "web-core",
+      "plan_detail_visit_count": 1
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "3dc23837-afe2-43c9-b690-37e76fc8cbed",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484408765,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "26257",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[평생할인] 7GB+/통화기본",
+    "objectPosition": 0,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 15900,
+      "original_fee": 15900,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "lg-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "LGU",
+        "mvno": "U+유모바일",
+        "promotion_fee": 15900,
+        "original_fee": 15900,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 14,
+        "is_partnership": true,
+        "has_perceived_discount": true,
+        "perceived_fee": 0,
+        "representative_gift_value": 16000,
+        "total_gift_period": 10,
+        "internet_combine": false
+      },
+      "page_view_object": {
+        "id": "26257",
+        "name": "[평생할인] 7GB+/통화기본"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 7,
+        "bulk_sequential": 3
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "d1417c0d-e47a-4c59-9f43-9b49ff7b11f5",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484408767,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "26260",
+    "objectSection": "lg-subsidiary",
+    "objectName": "[평생할인] 71GB+/통화기본",
+    "objectPosition": 1,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "LGU",
+      "mvno": "U+유모바일",
+      "promotion_fee": 32990,
+      "original_fee": 32990,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 14,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "lg-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "LGU",
+        "mvno": "U+유모바일",
+        "promotion_fee": 15900,
+        "original_fee": 15900,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 14,
+        "is_partnership": true,
+        "has_perceived_discount": true,
+        "perceived_fee": 0,
+        "representative_gift_value": 16000,
+        "total_gift_period": 10,
+        "internet_combine": false
+      },
+      "page_view_object": {
+        "id": "26257",
+        "name": "[평생할인] 7GB+/통화기본"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 8,
+        "bulk_sequential": 3
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  }
+]
+============================================================
+POST https://www.google.com/measurement/conversion?random=1783484409663&cv=11&tid=G-3RWD7XLFQC&fst=1783484409663&fmt=8&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&gtm=45je6761v9104447645za200zd9104447645xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&u_w=1280&u_h=720&hl=ko&gl=kr&url=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F26257%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dlg-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&gacid=146402313.1783484402&frm=0&tiba=%5BU%2B%EC%9C%A0%EB%AA%A8%EB%B0%94%EC%9D%BC%5D%20%5B%ED%8F%89%EC%83%9D%ED%95%A0%EC%9D%B8%5D%207GB%2B%2F%ED%86%B5%ED%99%94%EA%B8%B0%EB%B3%B8%20%7C%2015%2C900%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&npa=0&pscdl=noapi&auid=687153940.1783484402&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uamb=0&uam=&uap=Windows&uapv=10.0&uaw=0&rcb=19
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484401391&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AkAAAGQC&ae=a&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=19&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=4&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F26257%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dlg-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&dr=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&sid=1783484401&sct=1&seg=1&dt=%5BU%2B%EC%9C%A0%EB%AA%A8%EB%B0%94%EC%9D%BC%5D%20%5B%ED%8F%89%EC%83%9D%ED%95%A0%EC%9D%B8%5D%207GB%2B%2F%ED%86%B5%ED%99%94%EA%B8%B0%EB%B3%B8%20%7C%2015%2C900%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=page_view&_et=6005&tfd=9708
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484401391&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAgAAGQC&_prs=ok&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=19&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=5&tag_exp=115616986~115938465~115938468~118897921~118897931~119027224~119576881~119576885~119576891~119576895&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F26257%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dlg-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&dr=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Flg-subsidiary%3Ffrom%3Dsearch-plans&sid=1783484401&sct=1&seg=1&dt=%5BU%2B%EC%9C%A0%EB%AA%A8%EB%B0%94%EC%9D%BC%5D%20%5B%ED%8F%89%EC%83%9D%ED%95%A0%EC%9D%B8%5D%207GB%2B%2F%ED%86%B5%ED%99%94%EA%B8%B0%EB%B3%B8%20%7C%2015%2C900%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&_c=1&_et=1&tfd=9709
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "8185704a-b384-43cf-8f5a-f64f1965cadf",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484409264,
+    "category": "impression",
+    "objectType": "section",
+    "navigation": "plan_detail",
+    "objectId": "title_section",
+    "objectName": "타이틀 섹션",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "lg-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "LGU",
+        "mvno": "U+유모바일",
+        "promotion_fee": 15900,
+        "original_fee": 15900,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 14,
+        "is_partnership": true,
+        "has_perceived_discount": true,
+        "perceived_fee": 0,
+        "representative_gift_value": 16000,
+        "total_gift_period": 10,
+        "internet_combine": false
+      },
+      "page_view_object": {
+        "id": "26257",
+        "name": "[평생할인] 7GB+/통화기본"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 9,
+        "bulk_sequential": 4
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "68efff09-5888-4ad9-94aa-7027ad67bfd5",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484409266,
+    "category": "impression",
+    "objectType": "toggle",
+    "navigation": "plan_detail",
+    "objectId": "payback_included_price",
+    "objectSection": "title_section",
+    "objectName": "페이백 포함 요금",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "toggle": "on",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "lg-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "LGU",
+        "mvno": "U+유모바일",
+        "promotion_fee": 15900,
+        "original_fee": 15900,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 14,
+        "is_partnership": true,
+        "has_perceived_discount": true,
+        "perceived_fee": 0,
+        "representative_gift_value": 16000,
+        "total_gift_period": 10,
+        "internet_combine": false
+      },
+      "page_view_object": {
+        "id": "26257",
+        "name": "[평생할인] 7GB+/통화기본"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 10,
+        "bulk_sequential": 4
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/26257?clickedNavigation=theme_detail&clickedSection=lg-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/18589?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/32516?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/23117?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/mypage?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+POST https://www.google.com/measurement/conversion?random=1783484411069&cv=11&tid=G-3RWD7XLFQC&fst=1783484411069&fmt=8&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&gtm=45je6761v9104447645za200zd9104447645xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&u_w=1280&u_h=720&hl=ko&gl=kr&url=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&gacid=146402313.1783484402&frm=0&tiba=KT%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&npa=0&pscdl=noapi&auid=687153940.1783484402&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uamb=0&uam=&uap=Windows&uapv=10.0&uaw=0&rcb=1
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484410974&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AgAAAGQC&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=1&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=1&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=1&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&dt=KT%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=page_view&_ee=1&tfd=817
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484410974&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAgAAGQC&_prs=ok&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=1&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=2&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=1&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&dt=KT%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&_c=1&_et=1&tfd=818
+
+============================================================
+GET https://www.moyoplan.com/event?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/internets?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/phones?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/18589?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/32516?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/23117?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/mypage?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/event?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/internets?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/phones?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "a9ae9972-2e0d-4047-b486-344e57b1511b",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484410982,
+    "category": "pageview",
+    "navigation": "theme_detail",
+    "objectId": "12",
+    "objectSection": "search-plans",
+    "objectName": "kt-subsidiary",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 12,
+        "bulk_sequential": 6
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  }
+]
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "8d376385-f3f8-4858-9223-fe6693ec01f8",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484411553,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "23117",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 7GB+(후후안심)",
+    "objectPosition": 0,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 16200,
+      "original_fee": 16200,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 13,
+        "bulk_sequential": 7
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "737f524b-ecb8-469f-bc77-1ac01b39d390",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484411554,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "32516",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 7GB+(모아진)",
+    "objectPosition": 1,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 16200,
+      "original_fee": 16200,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 14,
+        "bulk_sequential": 7
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/21269?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/12428?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/18583?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/29978?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/18583?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/29978?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/12428?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/21269?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "2a5e6471-adae-4e1e-8711-8d31b344d85c",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484414022,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "18583",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 11GB+(밀리의서재)",
+    "objectPosition": 10,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 33100,
+      "original_fee": 33100,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 15,
+        "bulk_sequential": 8
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "aa4bc00d-1409-4bda-9cba-7c5b4d89b22b",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484414024,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "12428",
+    "objectSection": "kt-subsidiary",
+    "objectName": "슬림 1GB/100분",
+    "objectPosition": 11,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 2900,
+      "original_fee": 2900,
+      "monthly_data_quota": 1,
+      "throttled_speed": 0,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 16,
+        "bulk_sequential": 8
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/18587?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/14757?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/10769?_rsc=K0Uu6P_Itt-MnYNL
+
+============================================================
+GET https://www.moyoplan.com/plans/18587?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/14757?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+GET https://www.moyoplan.com/plans/10769?_rsc=IJ4FVtFNX5csdqkw
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "5ba44ea3-9298-40a1-a9db-066365e4fdd0",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484415542,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "14757",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 11.0GB+(기프티쇼)",
+    "objectPosition": 18,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 36000,
+      "original_fee": 36000,
+      "monthly_data_quota": 11,
+      "throttled_speed": 3000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 17,
+        "bulk_sequential": 9
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  },
+  {
+    "eventId": "5dabe9ba-a2b3-487a-9fd5-cb941dd1a241",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484415543,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "theme_detail",
+    "objectId": "18587",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 100GB+(웨이브)",
+    "objectPosition": 19,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 41700,
+      "original_fee": 41700,
+      "monthly_data_quota": 100,
+      "throttled_speed": 5000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "from": "search-plans"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_object": {
+        "id": "12",
+        "name": "kt-subsidiary",
+        "section": "search-plans"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 18,
+        "bulk_sequential": 9
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "plan_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/themes/kt-subsidiary?from=search-plans"
+  }
+]
+============================================================
+GET https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55&_rsc=Z5HifkkVd28O_xQg
+
+============================================================
+GET https://www.moyoplan.com/events/kt-skylife-internet-2607?_rsc=bzBIJ0pdwSy3Vu6O
+
+============================================================
+GET https://www.moyoplan.com/events/kt-skylife-internet-2607?_rsc=X-6yDd1fSUiDA-uO
+
+============================================================
+POST https://log.moyoplan.com/api/v1/log
+[
+  {
+    "eventId": "f6f7fb4f-a8a8-4aa6-8f79-b457894fc4f5",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484418311,
+    "category": "pageview",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "23117",
+    "objectName": "모두 충분 7GB+(후후안심)",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 16200,
+      "original_fee": 16200,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "has_perceived_discount": false,
+      "internet_combine": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "kt-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 21,
+        "bulk_sequential": 11
+      },
+      "$service": "web-core",
+      "plan_detail_visit_count": 2
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "db4481b3-1c32-4500-8227-95fbb92ab691",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484418583,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "23117",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 7GB+(후후안심)",
+    "objectPosition": 0,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 16200,
+      "original_fee": 16200,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "kt-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "KT",
+        "mvno": "KT스카이라이프",
+        "promotion_fee": 16200,
+        "original_fee": 16200,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 19,
+        "is_partnership": true,
+        "has_perceived_discount": false,
+        "internet_combine": true
+      },
+      "page_view_object": {
+        "id": "23117",
+        "name": "모두 충분 7GB+(후후안심)"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 22,
+        "bulk_sequential": 11
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "eb3f0870-b872-414c-8bdc-3624cd4502d5",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484418584,
+    "category": "impression",
+    "objectType": "plan",
+    "navigation": "plan_detail",
+    "objectId": "32516",
+    "objectSection": "kt-subsidiary",
+    "objectName": "모두 충분 7GB+(모아진)",
+    "objectPosition": 1,
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "mno": "KT",
+      "mvno": "KT스카이라이프",
+      "promotion_fee": 16200,
+      "original_fee": 16200,
+      "monthly_data_quota": 7,
+      "throttled_speed": 1000,
+      "net": "LTE",
+      "mobile_plan_operator_id": 19,
+      "is_partnership": true,
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "kt-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "KT",
+        "mvno": "KT스카이라이프",
+        "promotion_fee": 16200,
+        "original_fee": 16200,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 19,
+        "is_partnership": true,
+        "has_perceived_discount": false,
+        "internet_combine": true
+      },
+      "page_view_object": {
+        "id": "23117",
+        "name": "모두 충분 7GB+(후후안심)"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 23,
+        "bulk_sequential": 11
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "664afcd0-31f3-4830-b2cc-baed1d7bdeb8",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484418841,
+    "category": "impression",
+    "objectType": "section",
+    "navigation": "plan_detail",
+    "objectId": "title_section",
+    "objectName": "타이틀 섹션",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "kt-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "KT",
+        "mvno": "KT스카이라이프",
+        "promotion_fee": 16200,
+        "original_fee": 16200,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 19,
+        "is_partnership": true,
+        "has_perceived_discount": false,
+        "internet_combine": true
+      },
+      "page_view_object": {
+        "id": "23117",
+        "name": "모두 충분 7GB+(후후안심)"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 24,
+        "bulk_sequential": 11
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  },
+  {
+    "eventId": "cd4beee9-cbb8-4b0f-96e1-0e2dfc68ec1c",
+    "deviceId": "c91dad13-3dda-4a65-b136-7c14b9d5ee55",
+    "timestamp": 1783484418843,
+    "category": "impression",
+    "objectType": "section",
+    "navigation": "plan_detail",
+    "objectId": "notice-danger",
+    "userProperties": {
+      "first_at": "2026-07-08T04:20:01.405Z",
+      "exp_comparison_home_hooking_ui": "coupang",
+      "exp_holyland_analysis_content": "exp",
+      "exp_phone_home_hooking": "control",
+      "exp_internet_select_ui": "exp",
+      "exp_search_phones_price_trend": "control",
+      "exp_plan_recommend_score": "control"
+    },
+    "eventProperties": {
+      "tab_session_id": "367d02b0-0eab-4dec-b864-d4eda4c25808",
+      "notice": "유심 비용은 개통 여부와 관계없이, 신청 시 등록하신 납부 방법으로 다음 달 요금에 함께 청구됩니다.",
+      "$screen_height": 720,
+      "$screen_width": 1280,
+      "login_yn": false,
+      "date_diff_first_to_event_minute": 0,
+      "query_params": {
+        "clicked_navigation": "theme_detail",
+        "clicked_section": "kt-subsidiary",
+        "clicked_by": "c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+      },
+      "ab_testing_policy": {
+        "exp_comparison_home_hooking_ui": "coupang",
+        "exp_holyland_analysis_content": "exp",
+        "exp_phone_home_hooking": "control",
+        "exp_internet_select_ui": "exp",
+        "exp_search_phones_price_trend": "control",
+        "exp_plan_recommend_score": "control"
+      },
+      "page_view_properties": {
+        "mno": "KT",
+        "mvno": "KT스카이라이프",
+        "promotion_fee": 16200,
+        "original_fee": 16200,
+        "monthly_data_quota": 7,
+        "throttled_speed": 1000,
+        "net": "LTE",
+        "mobile_plan_operator_id": 19,
+        "is_partnership": true,
+        "has_perceived_discount": false,
+        "internet_combine": true
+      },
+      "page_view_object": {
+        "id": "23117",
+        "name": "모두 충분 7GB+(후후안심)"
+      },
+      "sequential_object": {
+        "key": "8a4d25de-3601-44b3-8609-a21b96702a4d",
+        "sequential": 25,
+        "bulk_sequential": 11
+      },
+      "$service": "web-core"
+    },
+    "superProperties": {},
+    "previousNavigation": "theme_detail",
+    "pathUrl": "https://www.moyoplan.com/plans/23117?clickedNavigation=theme_detail&clickedSection=kt-subsidiary&clickedBy=c91dad13-3dda-4a65-b136-7c14b9d5ee55"
+  }
+]
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484410974&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAGQC&ae=a&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=1&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=3&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&sid=1783484401&sct=1&seg=1&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&dt=KT%20%EC%9E%90%ED%9A%8C%EC%82%AC%20%EC%9A%94%EA%B8%88%EC%A0%9C%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=scroll&epn.percent_scrolled=90&_et=3959&tfd=8992
+
+============================================================
+POST https://www.google.com/measurement/conversion?random=1783484419253&cv=11&tid=G-3RWD7XLFQC&fst=1783484419253&fmt=8&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&gtm=45je6761v9104447645za200zd9104447645xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&u_w=1280&u_h=720&hl=ko&gl=kr&url=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F23117%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dkt-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&gacid=146402313.1783484402&frm=0&tiba=%5BKT%EC%8A%A4%EC%B9%B4%EC%9D%B4%EB%9D%BC%EC%9D%B4%ED%94%84%5D%20%EB%AA%A8%EB%91%90%20%EC%B6%A9%EB%B6%84%207GB%2B(%ED%9B%84%ED%9B%84%EC%95%88%EC%8B%AC)%20%7C%2016%2C200%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&npa=0&pscdl=noapi&auid=687153940.1783484402&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uamb=0&uam=&uap=Windows&uapv=10.0&uaw=0&rcb=1
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484410974&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AkAAAGQC&ae=a&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=1&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=4&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F23117%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dkt-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&dr=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&sid=1783484401&sct=1&seg=1&dt=%5BKT%EC%8A%A4%EC%B9%B4%EC%9D%B4%EB%9D%BC%EC%9D%B4%ED%94%84%5D%20%EB%AA%A8%EB%91%90%20%EC%B6%A9%EB%B6%84%207GB%2B(%ED%9B%84%ED%9B%84%EC%95%88%EC%8B%AC)%20%7C%2016%2C200%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=page_view&_et=4208&tfd=8999
+
+============================================================
+POST https://analytics.google.com/g/collect?v=2&tid=G-3RWD7XLFQC&gtm=45je6761v9104447645za200zd9104447645&_p=1783484410974&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAgAAGQC&_prs=ok&are=1&cid=146402313.1783484402&frm=0&pscdl=noapi&rcb=1&sr=1280x720&uaa=x86&uab=64&uafvl=HeadlessChrome%3B149.0.7827.55%7CChromium%3B149.0.7827.55%7CNot)A%253BBrand%3B24.0.0.0&uam=&uamb=0&uap=Windows&uapv=10.0&uaw=0&ul=ko-kr&gaf=2&_s=5&tag_exp=115938465~115938468~118826210~118897921~118897931~119027224~119576881~119576885~119576891~119576895&dl=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2F23117%3FclickedNavigation%3Dtheme_detail%26clickedSection%3Dkt-subsidiary%26clickedBy%3Dc91dad13-3dda-4a65-b136-7c14b9d5ee55&dr=https%3A%2F%2Fwww.moyoplan.com%2Fplans%2Fthemes%2Fkt-subsidiary%3Ffrom%3Dsearch-plans&sid=1783484401&sct=1&seg=1&dt=%5BKT%EC%8A%A4%EC%B9%B4%EC%9D%B4%EB%9D%BC%EC%9D%B4%ED%94%84%5D%20%EB%AA%A8%EB%91%90%20%EC%B6%A9%EB%B6%84%207GB%2B(%ED%9B%84%ED%9B%84%EC%95%88%EC%8B%AC)%20%7C%2016%2C200%EC%9B%90%20%7C%20%EB%AA%A8%EC%9A%94%2C%20%EB%AA%A8%EB%91%90%EC%9D%98%EC%9A%94%EA%B8%88%EC%A0%9C&en=%EC%9E%90%EC%84%B8%ED%9E%88%EB%B3%B4%EA%B8%B0_%ED%81%B4%EB%A6%AD&_c=1&_et=2&tfd=9000
+

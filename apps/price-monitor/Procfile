@@ -1,0 +1,1 @@
+worker: python moyo_job.py
