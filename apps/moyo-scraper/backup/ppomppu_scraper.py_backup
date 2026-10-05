@@ -1,0 +1,306 @@
+"""
+ppomppu_scraper.py
+──────────────────────────────────────────────────────────────────────────────
+뽐뿌 커뮤니티 크롤링
+- 최근 7일 게시글 수집
+- MVNO 관련 글 필터링
+- 신규 글만 선별 (기존 수집 결과와 비교)
+──────────────────────────────────────────────────────────────────────────────
+"""
+
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+import re
+import time
+
+BASE_URL = "https://www.ppomppu.co.kr/zboard/zboard.php"
+BOARD_ID = "freeboard"  # 뽐뿌 자유게시판
+
+
+class PpomppuScraper:
+    def __init__(self, progress_callback=None):
+        self.progress_callback = progress_callback
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'
+        })
+    
+    def scrape(self, days=7, max_pages=10):
+        """
+        뽐뿌 게시판 크롤링
+        
+        Args:
+            days: 최근 N일 게시글 수집 (기본 7일)
+            max_pages: 최대 페이지 수 (기본 10페이지)
+        
+        Returns:
+            list of dict: 게시글 리스트
+            [
+                {
+                    'post_id': '680783',
+                    'title': '제목',
+                    'url': 'https://...',
+                    'author': '작성자',
+                    'views': 1234,
+                    'comments': 10,
+                    'posted_at': datetime,
+                    'content': '본문 내용',
+                    'scraped_at': datetime
+                },
+                ...
+            ]
+        """
+        print(f"🔍 뽐뿌 스크래핑 시작 (최근 {days}일)")
+        
+        cutoff_date = datetime.now() - timedelta(days=days)
+        all_posts = []
+        seen_ids = set()
+        
+        for page in range(1, max_pages + 1):
+            try:
+                posts = self._scrape_page(page, cutoff_date, seen_ids)
+                
+                if not posts:
+                    print(f"🛑 {page}페이지: 더 이상 새 글 없음 → 종료")
+                    break
+                
+                all_posts.extend(posts)
+                
+                msg = f"✅ {page}페이지 완료 | 이번 {len(posts)}개 | 누적 {len(all_posts)}개"
+                print(msg)
+                if self.progress_callback:
+                    self.progress_callback(msg)
+                
+                time.sleep(0.5)  # 서버 부하 방지
+                
+            except Exception as e:
+                print(f"⚠️ {page}페이지 에러: {e}")
+                continue
+        
+        print(f"🎉 최종 수집: {len(all_posts)}개")
+        return all_posts
+    
+    def _scrape_page(self, page_num, cutoff_date, seen_ids):
+        """단일 페이지 크롤링"""
+        url = f"{BASE_URL}?id={BOARD_ID}&page={page_num}"
+        
+        response = self.session.get(url, timeout=30)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 게시글 리스트 추출
+        posts = []
+        
+        # 뽐뿌 모바일 구조: <li> 태그 안에 게시글
+        for li in soup.select('li.list-group-item'):
+            try:
+                # 링크 추출
+                link = li.select_one('a')
+                if not link:
+                    continue
+                
+                href = link.get('href', '')
+                if 'bbs_view.php' not in href:
+                    continue
+                
+                # post_id 추출
+                match = re.search(r'no=(\d+)', href)
+                if not match:
+                    continue
+                post_id = match.group(1)
+                
+                # 중복 체크
+                if post_id in seen_ids:
+                    continue
+                
+                # 제목 추출
+                title = link.get_text(strip=True)
+                
+                # 조회수/댓글 추출
+                info_text = li.get_text()
+                views = self._extract_number(info_text, r'조회\s*(\d+)')
+                comments = self._extract_number(info_text, r'댓글\s*(\d+)')
+                
+                # 작성일 추출 (간단 파싱)
+                date_match = re.search(r'(\d{2})\.(\d{2})', info_text)
+                if date_match:
+                    month = int(date_match.group(1))
+                    day = int(date_match.group(2))
+                    year = datetime.now().year
+                    posted_at = datetime(year, month, day)
+                    
+                    # 날짜 필터링
+                    if posted_at < cutoff_date:
+                        continue
+                else:
+                    posted_at = datetime.now()
+                
+                # URL 완성
+                if not href.startswith('http'):
+                    full_url = f"https://m.ppomppu.co.kr/new/{href}"
+                else:
+                    full_url = href
+                
+                post = {
+                    'post_id': post_id,
+                    'title': title,
+                    'url': full_url,
+                    'views': views,
+                    'comments': comments,
+                    'posted_at': posted_at,
+                    'scraped_at': datetime.now(),
+                }
+                
+                posts.append(post)
+                seen_ids.add(post_id)
+                
+            except Exception as e:
+                print(f"⚠️ 게시글 파싱 실패: {e}")
+                continue
+        
+        return posts
+    
+    def fetch_content(self, post_url):
+        """
+        게시글 본문 내용 가져오기
+        
+        Args:
+            post_url: 게시글 URL
+        
+        Returns:
+            dict: {'content': '본문', 'author': '작성자'}
+        """
+        try:
+            response = self.session.get(post_url, timeout=30)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # 본문 추출
+            content_div = soup.select_one('div.bbs_basic')
+            content = content_div.get_text(strip=True) if content_div else ''
+            
+            # 작성자 추출
+            author_span = soup.select_one('span.list_name')
+            author = author_span.get_text(strip=True) if author_span else '익명'
+            
+            return {
+                'content': content,
+                'author': author
+            }
+        except Exception as e:
+            print(f"⚠️ 본문 가져오기 실패: {e}")
+            return {
+                'content': '',
+                'author': '익명'
+            }
+    
+    def _extract_number(self, text, pattern):
+        """정규표현식으로 숫자 추출"""
+        match = re.search(pattern, text)
+        if match:
+            return int(match.group(1).replace(',', ''))
+        return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 신규 글 필터링 (기존 수집 결과와 비교)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def filter_new_posts(scraped_posts, existing_post_ids):
+    """
+    기존 수집 결과와 비교하여 신규 글만 반환
+    
+    Args:
+        scraped_posts: 이번에 수집한 게시글 리스트
+        existing_post_ids: 기존에 수집했던 post_id 집합
+    
+    Returns:
+        list: 신규 게시글만
+    """
+    new_posts = [
+        post for post in scraped_posts
+        if post['post_id'] not in existing_post_ids
+    ]
+    
+    print(f"📊 신규 글 필터링: {len(new_posts)}/{len(scraped_posts)}개")
+    return new_posts
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MVNO 필터링 통합 (mvno_classifier 사용)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def filter_mvno_posts(posts, fetch_content=False, use_ai=False):
+    """
+    MVNO 관련 게시글만 필터링
+    
+    Args:
+        posts: 게시글 리스트
+        fetch_content: True면 본문도 가져와서 분석 (느림)
+        use_ai: True면 AI 체크 활성화
+    
+    Returns:
+        list: MVNO 관련 게시글
+    """
+    from core.mvno_classifier import classify_post
+    
+    scraper = PpomppuScraper()
+    filtered = []
+    ai_check_count = 0
+    
+    for post in posts:
+        title = post['title']
+        content = ''
+        
+        # 본문 가져오기 (옵션)
+        if fetch_content:
+            detail = scraper.fetch_content(post['url'])
+            content = detail.get('content', '')
+            post['content'] = content
+            post['author'] = detail.get('author', '익명')
+            time.sleep(0.3)  # 서버 부하 방지
+        
+        # MVNO 분류
+        result = classify_post(title, content, use_ai=use_ai)
+        
+        if result:
+            post['filter_result'] = result
+            filtered.append(post)
+            
+            if result['method'] == 'ai_check':
+                ai_check_count += 1
+    
+    print(f"✅ MVNO 필터링 완료: {len(filtered)}/{len(posts)}개 | AI 체크: {ai_check_count}개")
+    return filtered
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 테스트 코드
+# ══════════════════════════════════════════════════════════════════════════════
+
+if __name__ == '__main__':
+    # 테스트 실행
+    scraper = PpomppuScraper()
+    posts = scraper.scrape(days=7, max_pages=3)
+    
+    print("\n" + "=" * 80)
+    print("📋 수집된 게시글 샘플")
+    print("=" * 80)
+    for post in posts[:5]:
+        print(f"\n제목: {post['title']}")
+        print(f"URL: {post['url']}")
+        print(f"조회: {post['views']} | 댓글: {post['comments']}")
+        print(f"작성일: {post['posted_at']}")
+    
+    # MVNO 필터링 테스트
+    print("\n" + "=" * 80)
+    print("🔍 MVNO 필터링 테스트")
+    print("=" * 80)
+    mvno_posts = filter_mvno_posts(posts, fetch_content=False, use_ai=False)
+    
+    for post in mvno_posts:
+        print(f"\n✅ {post['title']}")
+        print(f"   → {post['filter_result']['provider']} ({post['filter_result']['method']})")

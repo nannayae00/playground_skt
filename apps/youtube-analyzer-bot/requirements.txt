@@ -1,0 +1,13 @@
+# requirements.txt
+# YouTube Market Analyzer
+# [수정 이력]
+# v1.0 | 2025-03-22 | 최초 작성
+
+python-telegram-bot==21.3
+google-cloud-firestore==2.16.0
+google-generativeai==0.7.2
+google-api-python-client==2.131.0
+youtube-transcript-api==1.2.4
+numpy==1.26.4
+flask==3.0.3
+gunicorn==22.0.0

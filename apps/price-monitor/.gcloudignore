@@ -1,0 +1,11 @@
+*credentials*.json
+*.env
+.env*
+__pycache__/
+*.pyc
+.DS_Store
+# [2026-09-20] service-account-key.json / service-account.json 더 이상 이미지에
+# 포함하지 않음 - firebase_handler.py가 ApplicationDefault()로 전환되어 불필요.
+# 실수로 다시 생기더라도 빌드에 안 올라가도록 명시적으로 제외.
+service-account-key.json
+service-account.json

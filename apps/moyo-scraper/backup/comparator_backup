@@ -1,0 +1,82 @@
+import yaml
+import os
+
+class Comparator:
+    def __init__(self):
+        self.load_config()
+        # 사용자님이 요청하신 데이터 구간 정의
+        self.segments = {
+            '7G+': (7, 10),
+            '10G+': (10, 11),
+            '11G+': (11, 15),
+            '15G+100': (15, 15.1), # 15G + 100분 등 미세 구분용
+            '15G+300': (15.1, 71),
+            '100G+': (100, 999)
+        }
+    
+    def load_config(self):
+        """설정 로드 (우리 회사 요금제 및 알림 기준)"""
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'sites.yaml')
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                self.our_plans = config.get('our_company', {}).get('plans', [])
+                self.alert_thresholds = config.get('alert_thresholds', {'price_difference': 1000})
+        except:
+            self.our_plans = []
+            self.alert_thresholds = {'price_difference': 1000}
+
+    def get_segment_min_prices(self, plans):
+        """요금제를 구간별/망별로 분류하여 최저가를 추출"""
+        summary = {}
+        
+        for seg_name, (low, high) in self.segments.items():
+            # 해당 데이터 구간에 속하는 요금제 필터링
+            seg_plans = [p for p in plans if low <= p.get('data_gb', 0) < high]
+            
+            summary[seg_name] = {
+                'SKT': self._get_min_price(seg_plans, 'SKT'),
+                'KT': self._get_min_price(seg_plans, 'KT'),
+                'LGU+': self._get_min_price(seg_plans, 'LGU+')
+            }
+        return summary
+
+    def _get_min_price(self, plans, network):
+        """특정 망의 최저가 추출 (데이터가 없으면 0 반환)"""
+        prices = [p['final_price'] for p in plans if p.get('network') == network and p.get('final_price', 0) > 0]
+        return min(prices) if prices else 0
+
+    def analyze_changes(self, current_summary, prev_summary):
+        """이전 수집 데이터와 비교하여 변동사항(↓, ↑) 계산"""
+        changes = {}
+        if not prev_summary:
+            return changes
+
+        for seg, networks in current_summary.items():
+            changes[seg] = {}
+            for net, price in networks.items():
+                prev_price = prev_summary.get(seg, {}).get(net, 0)
+                if prev_price > 0 and price > 0:
+                    diff = price - prev_price
+                    changes[seg][net] = diff
+                else:
+                    changes[seg][net] = 0
+        return changes
+
+    def analyze_competitiveness(self, competitor_plans):
+        """기존 알림 로직 (main.py에서 사용)"""
+        alerts = []
+        for our_plan in self.our_plans:
+            our_data = our_plan['data_gb']
+            our_price = our_plan['final_price']
+            
+            # 동일 데이터 구간의 경쟁사 요금제 중 최저가 찾기
+            comps = [p for p in competitor_plans if p.get('data_gb') == our_data and p.get('is_competitor')]
+            if comps:
+                cheapest = min(comps, key=lambda x: x['final_price'])
+                diff = our_price - cheapest['final_price']
+                if diff > self.alert_thresholds['price_difference']:
+                    alerts.append({
+                        'message': f"⚠️ {our_plan['name']}: {cheapest['display_name']} 대비 {diff:,}원 비쌈"
+                    })
+        return alerts

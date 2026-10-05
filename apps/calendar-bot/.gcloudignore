@@ -1,0 +1,8 @@
+env.yaml
+env.yaml.example
+.git
+.gitignore
+__pycache__/
+*.pyc
+SETUP.md
+deploy.sh
