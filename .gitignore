@@ -1,1 +1,22 @@
+# GCP 서비스 계정 키 (SessionStart 훅이 /tmp에 생성)
 gcp-sa*.json
+
+# 비밀값은 Secret Manager / Cloud Run 환경변수에만 둔다
+.env
+.env.*
+!.env.example
+*service-account*.json
+*credentials*.json
+*cookie*
+
+# 실행 산출물
+__pycache__/
+*.pyc
+*.log
+*.xlsx
+*.xls
+*.zip
+*.tgz
+debug.txt
+result.txt
+dump_*.json
