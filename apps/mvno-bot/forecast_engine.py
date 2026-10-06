@@ -4,6 +4,10 @@ forecast_engine.py  v1.3
 작성일: 2026-04-17
 
 [수정 이력]
+v3.0 | 2026-10-06 | 월마감 mid를 전월 동일시점 잔여속도법으로 교체 (Claude)
+  - _get_prev_month_analog_pred(): 직전 2개월 잔여 bw당 속도(pure)와 이번달 수준
+    반영분(scaled)을 50:50 → × 이번달 잔여bw. 기존 mid는 계산 불가 시 폴백
+  - 백테스트 330개 시점 평균오차 6.07% → 4.77%
 v2.8 | 2026-06-18 | Firestore 경로 tout_goal → target_goal 변경 (Claude)
   - get_tout_goal(): ktoa_config/tout_goal → ktoa_config/target_goal
   - 환경변수 폴백: KTOA_TOUT_GOAL → KTOA_TARGET_GOAL
@@ -1138,6 +1142,125 @@ def _select_adaptive_method(date_str: str, progress_ratio: float, trailing_month
 
 
 # ══════════════════════════════════════════════════════════════════
+# 전월 동일시점 잔여속도법 (v3.0, 추가 20261006)
+# ══════════════════════════════════════════════════════════════════
+# 실무자 지적: "10월이 9월보다 영업일수가 길어서 3.7~3.8만은 나올 것 같은데 36.8천이
+# 나온다. 9월 6일까지 누적/잔여영업일수/마감 vs 10월 6일까지로 계산해보라" -
+# 9월 6일 이후 잔여 실적 25,409 ÷ 잔여bw 20.57 = 1,235/bw 를 10월 잔여bw 23.40에
+# 적용하면 37.5천. 기존 방식(24개월 배수회귀 84% + 최근avg 16%, 진행률 16% 기준)은
+# 오늘 실적을 배수회귀에서 빼고, 잔여영업일수가 늘어난 효과도 약하게만 반영해서 낮았음.
+#
+# 방식: 직전 2개월 각각에서 "같은 날짜까지 누적 → 그 달 마감"을 보고
+#   - pure   = 그 달의 잔여 bw당 속도 (전월 흐름 그대로)
+#   - scaled = pure × (이번달 경과 속도 ÷ 그 달 같은 시점 경과 속도) (이번달 수준 반영)
+#   를 50:50으로 섞고(직전월 가중 2:1), 이번달 잔여bw를 곱해 누적에 더함.
+#   이번달 수준이 전월과 크게 다르면 scaled 쪽이 그만큼 따라감.
+# 경과 속도(수준 비교)는 bw가 아니라 달력가중(평일 1.0, 토요일·공휴일 0.66, bw=0인
+# 날 0)으로 계산 - 10월처럼 bw_manual에 월초 몰림(1일 1.7, 2일 1.6)을 넣어둔 달은
+# bw로 나누면 경과 속도가 낮게 잡혀 예측이 3.5만대로 떨어졌음(달마다 bw 입력
+# 방식이 달라 비교가 안 됨). 잔여 구간은 실무자 bw 그대로 사용.
+# 백테스트(2025-06~2026-09, 유심사태 3개월 제외 15개월, 매 영업일 330개 시점):
+#   진행률 0-20/20-40/40-60/60-80/80-90% 평균오차
+#   기존  12.0 / 9.2 / 5.2 / 2.0 / 1.1  → 전체 6.07% (편향 +3.4%)
+#   이방식  9.4 / 6.7 / 3.6 / 2.3 / 1.5  → 전체 4.77%
+ANALOG_REF_MONTHS = 2     # 참조할 직전 마감월 수 (1~3 비교 → 2가 가장 안정)
+ANALOG_SCALED_W   = 0.5   # scaled 비중 (0/0.25/0.5/0.75/1 비교 → 0.5)
+ANALOG_LIGHT_DAY_W = 0.66  # 토요일·공휴일 달력가중 (2025-08~ 토요일/같은주 평일 중앙값)
+
+_month_days_cache: dict = {}  # {(year, month): [(date_str, bw, skt|None)]} - 과거 달만
+
+
+def _get_month_days(year: int, month: int) -> list:
+    """해당 월 ktoa_daily 일별 (date_str, bw, mno_out.S) 목록. 과거 달은 캐싱."""
+    now = datetime.now(KST)
+    is_current_month = (year == now.year and month == now.month)
+    key = (year, month)
+    if not is_current_month and key in _month_days_cache:
+        return _month_days_cache[key]
+    from calendar import monthrange
+    last_day = monthrange(year, month)[1]
+    try:
+        docs = _get_db().collection('ktoa_daily') \
+            .where('date', '>=', f"{year:04d}-{month:02d}-01") \
+            .where('date', '<=', f"{year:04d}-{month:02d}-{last_day:02d}") \
+            .order_by('date').stream()
+        days = []
+        for doc in docs:
+            d = doc.to_dict()
+            bw = float(d.get('bw_ai_prev') or d.get('bw_manual') or 0)
+            skt = (d.get('mno_out') or {}).get('S')
+            days.append((d.get('date'), bw, None if skt is None else int(skt)))
+    except Exception as e:
+        log.warning(f"[analog] {year}-{month:02d} 조회 실패: {e}")
+        return []
+    if not is_current_month:
+        _month_days_cache[key] = days
+    return days
+
+
+def _calendar_weight(date_str: str, bw: float) -> float:
+    if bw <= 0:
+        return 0.0
+    import holidays as _hol
+    d = datetime.strptime(date_str, '%Y-%m-%d').date()
+    if d.weekday() == 5 or d in _hol.KR(years=d.year):
+        return ANALOG_LIGHT_DAY_W
+    return 1.0
+
+
+def _get_prev_month_analog_pred(date_str: str, cum_this: float,
+                                include_today: bool) -> Optional[dict]:
+    """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
+    cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
+    include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)"""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    if ref_day < 1 or cum_this <= 0:
+        return None
+
+    this_days = _get_month_days(d.year, d.month)
+    elapsed_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days
+                     if int(ds[8:]) <= ref_day)
+    remaining_bw = sum(bw for ds, bw, _ in this_days if int(ds[8:]) > ref_day)
+    if elapsed_cw <= 0:
+        return None
+    this_rate = cum_this / elapsed_cw
+
+    refs = []  # (경과 달력가중당 속도, 잔여 bw당 속도, 'YYYY-MM')
+    y, m = d.year, d.month
+    for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
+        if len(refs) >= ANALOG_REF_MONTHS:
+            break
+        m -= 1
+        if m <= 0:
+            m += 12
+            y -= 1
+        days = _get_month_days(y, m)
+        if not days or any(s is None and bw > 0 for _, bw, s in days):
+            continue
+        el = [(ds, bw, s or 0) for ds, bw, s in days if int(ds[8:]) <= ref_day]
+        fu = [(ds, bw, s or 0) for ds, bw, s in days if int(ds[8:]) > ref_day]
+        cum = sum(s for *_, s in el)
+        e_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in el)
+        r_bw = sum(bw for _, bw, _ in fu)
+        if cum <= 0 or e_cw <= 0 or r_bw <= 0:
+            continue
+        refs.append((cum / e_cw, sum(s for *_, s in fu) / r_bw, f"{y:04d}-{m:02d}"))
+    if len(refs) < ANALOG_REF_MONTHS:
+        return None
+
+    ws = [0.5 ** i for i in range(len(refs))]
+    pure = sum(w * r[1] for w, r in zip(ws, refs)) / sum(ws)
+    scaled = sum(w * r[1] * this_rate / r[0] for w, r in zip(ws, refs)) / sum(ws)
+    rate = (1 - ANALOG_SCALED_W) * pure + ANALOG_SCALED_W * scaled
+    return {
+        'pred': cum_this + rate * remaining_bw,
+        'rate': rate, 'pure': pure, 'scaled': scaled,
+        'remaining_bw': remaining_bw, 'refs': [r[2] for r in refs],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
 # 월마감 예측
 # ══════════════════════════════════════════════════════════════════
 
@@ -1394,6 +1517,21 @@ def predict_monthly(date_str: str, today_skt: int,
     # 기울기라 추가 보정이 중복/과도 적용될 위험이 있고, 백테스트도 "보정 없는 회귀
     # 단독"으로 검증했음(6.12%, 기존 보정판 7.60%보다 정확). _bias_correction()은
     # 혹시 다른 곳에서 필요할 수 있어 함수 자체는 유지.
+
+    # [v3.0, 20261006] 전월 동일시점 잔여속도법으로 mid 교체 (위 _get_prev_month_analog_pred
+    # 설명 참고). 직전 2개월 데이터가 없는 등 계산 불가 시에만 위 기존 mid 유지.
+    try:
+        _analog = _get_prev_month_analog_pred(
+            date_str, cum_skt, include_today=(_today_confirmed or fc_daily > 0))
+    except Exception as e:
+        log.warning(f"[forecast_engine] 전월 잔여속도법 실패 (기존 mid 유지): {e}")
+        _analog = None
+    if _analog:
+        log.info(f"[forecast_engine] 전월 잔여속도법: refs={_analog['refs']} "
+                 f"rate={_analog['rate']:,.0f}(pure {_analog['pure']:,.0f}/scaled "
+                 f"{_analog['scaled']:,.0f}) × 잔여bw {_analog['remaining_bw']:.2f} "
+                 f"→ fc_mid {fc_mid:,} → {int(round(_analog['pred'])):,}")
+        fc_mid = int(round(_analog['pred']))
 
     # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
     # 좁으면 그대로 쓰고, 넓으면 ±500으로 압축.
