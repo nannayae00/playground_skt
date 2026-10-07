@@ -781,6 +781,7 @@ def predict_hourly(date_str: str, hour: int, minute: int,
     # DB 조회 비용 때문에 정시(minute==0)에만 적용 - 10분단위는 어차피
     # 메시지에 본문 예측 섹션이 안 뜨므로(has_est는 정시에만 True) 기존
     # 캐스케이드 결과를 그대로 둬도 무방함.
+    est_mni, est_moall = {}, {}  # MNO 유입/전체이탈 (정시에만 계산)
     if minute == 0:
         try:
             _cur_mno = current_vals.get('mno_out', {}) or {}
@@ -801,18 +802,37 @@ def predict_hourly(date_str: str, hour: int, minute: int,
             est_mi['계'] = sum(est_mi[k] for k in ['SM', 'KM', 'LM'])
             est_mo['계'] = sum(est_mo[k] for k in ['SM', 'KM', 'LM'])
             source = 'completion_ratio_dow'
+
+            # [추가 20261007] MNO 유입(mno_in)/MNO 전체이탈(mno_out_all) S/K/L 일마감 예측
+            # (같은 방식). 최근 15영업일 검증 평균오차 - mno_in 12/15/18시 7.2/4.6/3.3%,
+            # mno_out_all 5.3/4.1/3.1% (기존 mno_out 6.5/3.3/1.5%와 비슷한 수준).
+            for _g, _dst in (('mno_in', est_mni), ('mno_out_all', est_moall)):
+                _cur = current_vals.get(_g, {}) or {}
+                for k in ['S', 'K', 'L']:
+                    v = _cur.get(k, 0) or 0
+                    if v > 0:
+                        _dst[k] = get_field_daily_forecast(date_str, hour, _g, k, v)
+                if all(k in _dst for k in ('S', 'K', 'L')):
+                    _dst['계'] = sum(_dst[k] for k in ['S', 'K', 'L'])
         except Exception as e:
             log.warning(f"[forecast_engine] 완료율곡선 예측 실패, 기존 캐스케이드 유지: {e}")
 
     # 순증감 = MVNO IN - MVNO OUT
     est_net = {k: est_mi.get(k, 0) - est_mo.get(k, 0) for k in ['SM','KM','LM']}
     est_net['계'] = sum(est_net[k] for k in ['SM','KM','LM'])
+    # MNO 순증 = MNO 유입 - MNO 전체이탈 (S/K/L/MNO계, net_change 키와 동일)
+    if all(k in est_mni and k in est_moall for k in ('S', 'K', 'L')):
+        for k in ('S', 'K', 'L'):
+            est_net[k] = est_mni[k] - est_moall[k]
+        est_net['MNO계'] = sum(est_net[k] for k in ('S', 'K', 'L'))
 
     result = {
         'mvno_in':  est_mi,
         'mno_out':  est_mno,
         'mvno_out': est_mo,
         'net':      est_net,
+        'mno_in':      est_mni,
+        'mno_out_all': est_moall,
         'source':   source,
     }
 
@@ -826,6 +846,8 @@ def predict_hourly(date_str: str, hour: int, minute: int,
             'forecast_source':   source,
             'forecast_hour':     hour,
             'forecast_minute':   minute,
+            **({'forecast_mno_in': est_mni} if est_mni else {}),
+            **({'forecast_mno_out_all': est_moall} if est_moall else {}),
         }, merge=True)
         log.info(f"[forecast_engine] hourly 저장: {doc_id} ({source}, {hour}:{minute:02d})")
     except Exception as e:

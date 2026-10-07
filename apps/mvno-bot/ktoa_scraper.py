@@ -721,6 +721,8 @@ def run() -> None:
                     'mvno_in':  _c.get('mvno_in',  {}),
                     'mno_out':  _c.get('mno_out',  {}),
                     'mvno_out': _c.get('mvno_out', {}),
+                    'mno_in':      _c.get('mno_in', {}),
+                    'mno_out_all': _c.get('mno_out_all', {}),
                 }
                 _forecast = _ph(today_str, _fh, _fm, _current_vals, doc_id)
         except Exception as _fe2:
