@@ -1187,7 +1187,11 @@ def _get_month_days(year: int, month: int) -> list:
         days = []
         for doc in docs:
             d = doc.to_dict()
-            bw = float(d.get('bw_ai_prev') or d.get('bw_manual') or 0)
+            # bw_ai_prev가 0.0으로 명시된 날(추석 등 휴무)은 그대로 0 - `or` 폴백으로
+            # bw_manual(엑셀 0.4 등)을 집으면 실적 없는 날에 bw가 생겨 그 달 전체가
+            # "데이터 결손"으로 빠짐(20261007, 9/25~26 사례). 필드가 없을 때만 manual.
+            bw = float(d['bw_ai_prev'] if d.get('bw_ai_prev') is not None
+                       else (d.get('bw_manual') or 0))
             skt = (d.get('mno_out') or {}).get('S')
             days.append((d.get('date'), bw, None if skt is None else int(skt)))
     except Exception as e:
