@@ -1053,6 +1053,8 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
             vi = fc_in.get(k)
             vo = fc_out.get(k)
             result[k] = (vi - vo) if (vi is not None and vo is not None) else None
+        if result['low'] is not None and result['high'] is not None and result['low'] > result['high']:
+            result['low'], result['high'] = result['high'], result['low']
         return result
 
     # ── 항목별 rolling avg (D-1 기준 최근 10 영업일, 월 경계 자동 포함)
@@ -1078,6 +1080,48 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     fc_mo_km = _trio(cum_mout.get('KM'), *_ravg(hist_items['KM_OUT']))
     fc_mo_lm = _trio(cum_mout.get('LM'), *_ravg(hist_items['LM_OUT']))
     fc_mo_out= _trio(cum_mout.get('계'), *_ravg(hist_items['MOUT_계']))
+
+    # [20261007] 전월 동일시점 잔여속도법으로 교체 (forecast_engine._get_prev_month_analog_pred
+    # 설명 참고). 백테스트에서 12개 항목 모두 위 단순 avg 방식보다 정확. mid=혼합값,
+    # low/high=전월흐름(pure)·이번달수준반영(scaled) 두 추정치 범위. 계산 불가 시 위 값 유지.
+    from forecast_engine import _get_prev_month_analog_pred as _analog
+
+    def _analog_trio(group, key, cum_val, fallback):
+        if not cum_val:
+            return fallback
+        try:
+            a = _analog(date_str, float(cum_val), include_today=True, group=group, key=key)
+        except Exception as _ae:
+            log.warning(f"전월 잔여속도법 실패 {group}.{key} (단순방식 유지): {_ae}")
+            return fallback
+        if not a:
+            return fallback
+        lo, hi = sorted([a['pred_pure'], a['pred_scaled']])
+        return {'low': int(round(lo)), 'mid': int(round(a['pred'])), 'high': int(round(hi))}
+
+    fc_sm     = _analog_trio('mvno_in',  'SM', cum_mi.get('SM'),   fc_sm)
+    fc_km     = _analog_trio('mvno_in',  'KM', cum_mi.get('KM'),   fc_km)
+    fc_lm     = _analog_trio('mvno_in',  'LM', cum_mi.get('LM'),   fc_lm)
+    fc_mi     = _analog_trio('mvno_in',  '계', cum_mi.get('계'),   fc_mi)
+    fc_k      = _analog_trio('mno_out',  'K',  cum_mo.get('K'),    fc_k)
+    fc_l      = _analog_trio('mno_out',  'L',  cum_mo.get('L'),    fc_l)
+    fc_mo     = _analog_trio('mno_out',  '계', cum_mo.get('계'),   fc_mo)
+    fc_mo_sm  = _analog_trio('mvno_out', 'SM', cum_mout.get('SM'), fc_mo_sm)
+    fc_mo_km  = _analog_trio('mvno_out', 'KM', cum_mout.get('KM'), fc_mo_km)
+    fc_mo_lm  = _analog_trio('mvno_out', 'LM', cum_mout.get('LM'), fc_mo_lm)
+    fc_mo_out = _analog_trio('mvno_out', '계', cum_mout.get('계'), fc_mo_out)
+
+    # SKT(S)는 predict_monthly()가 같은 날 먼저 저장한 공식 예측(fc_low/mid/high)과
+    # 동일하게 저장 - 대시보드/엑셀/AI봇이 텔레그램과 같은 숫자를 보도록 (20261007)
+    try:
+        _off = (db.collection('ktoa_daily').document(date_str).get().to_dict() or {})
+        if _off.get('fc_mid'):
+            fc_s = {'low': _off.get('fc_low'), 'mid': _off.get('fc_mid'),
+                    'high': _off.get('fc_high')}
+        else:
+            fc_s = _analog_trio('mno_out', 'S', cum_mo.get('S'), fc_s)
+    except Exception as _se:
+        log.warning(f"공식 fc_mid 조회 실패 (S 단순방식 유지): {_se}")
 
     # 순증감 = IN - OUT
     fc_net_sm = _net_trio(fc_sm, fc_mo_sm)

@@ -1167,11 +1167,12 @@ ANALOG_REF_MONTHS = 2     # 참조할 직전 마감월 수 (1~3 비교 → 2가 
 ANALOG_SCALED_W   = 0.5   # scaled 비중 (0/0.25/0.5/0.75/1 비교 → 0.5)
 ANALOG_LIGHT_DAY_W = 0.66  # 토요일·공휴일 달력가중 (2025-08~ 토요일/같은주 평일 중앙값)
 
-_month_days_cache: dict = {}  # {(year, month): [(date_str, bw, skt|None)]} - 과거 달만
+_month_days_cache: dict = {}  # {(year, month): [(date_str, bw, {group: {key: val}})]} - 과거 달만
 
 
 def _get_month_days(year: int, month: int) -> list:
-    """해당 월 ktoa_daily 일별 (date_str, bw, mno_out.S) 목록. 과거 달은 캐싱."""
+    """해당 월 ktoa_daily 일별 (date_str, bw, {'mno_out':{..},'mvno_in':{..},'mvno_out':{..}})
+    목록. 과거 달은 캐싱."""
     now = datetime.now(KST)
     is_current_month = (year == now.year and month == now.month)
     key = (year, month)
@@ -1187,13 +1188,13 @@ def _get_month_days(year: int, month: int) -> list:
         days = []
         for doc in docs:
             d = doc.to_dict()
+            vals = {g: (d.get(g) or {}) for g in ('mno_out', 'mvno_in', 'mvno_out')}
             # bw_ai_prev가 0.0으로 명시된 날(추석 등 휴무)은 그대로 0 - `or` 폴백으로
             # bw_manual(엑셀 0.4 등)을 집으면 실적 없는 날에 bw가 생겨 그 달 전체가
             # "데이터 결손"으로 빠짐(20261007, 9/25~26 사례). 필드가 없을 때만 manual.
             bw = float(d['bw_ai_prev'] if d.get('bw_ai_prev') is not None
                        else (d.get('bw_manual') or 0))
-            skt = (d.get('mno_out') or {}).get('S')
-            days.append((d.get('date'), bw, None if skt is None else int(skt)))
+            days.append((d.get('date'), bw, vals))
     except Exception as e:
         log.warning(f"[analog] {year}-{month:02d} 조회 실패: {e}")
         return []
@@ -1213,10 +1214,15 @@ def _calendar_weight(date_str: str, bw: float) -> float:
 
 
 def _get_prev_month_analog_pred(date_str: str, cum_this: float,
-                                include_today: bool) -> Optional[dict]:
+                                include_today: bool, group: str = 'mno_out',
+                                key: str = 'S') -> Optional[dict]:
     """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
     cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
-    include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)"""
+    include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)
+    group/key: 대상 항목 (mno_out S/K/L/계, mvno_in·mvno_out SM/KM/LM/계).
+      [20261007] 전 항목 확장 - 백테스트(330개 시점)에서 12개 항목 모두 기존
+      단순방식(최근10영업일 avg × 잔여bw)보다 정확 (예: mvno_in 계 5.4→3.6%,
+      mno_out K 7.4→5.8%, mvno_out SM 6.5→5.1%). 순증은 IN예측-OUT예측으로 계산."""
     d = datetime.strptime(date_str, '%Y-%m-%d')
     ref_day = d.day if include_today else d.day - 1
     if ref_day < 1 or cum_this <= 0:
@@ -1240,10 +1246,10 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
             m += 12
             y -= 1
         days = _get_month_days(y, m)
-        if not days or any(s is None and bw > 0 for _, bw, s in days):
+        if not days or any(v[group].get(key) is None and bw > 0 for _, bw, v in days):
             continue
-        el = [(ds, bw, s or 0) for ds, bw, s in days if int(ds[8:]) <= ref_day]
-        fu = [(ds, bw, s or 0) for ds, bw, s in days if int(ds[8:]) > ref_day]
+        el = [(ds, bw, v[group].get(key) or 0) for ds, bw, v in days if int(ds[8:]) <= ref_day]
+        fu = [(ds, bw, v[group].get(key) or 0) for ds, bw, v in days if int(ds[8:]) > ref_day]
         cum = sum(s for *_, s in el)
         e_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in el)
         r_bw = sum(bw for _, bw, _ in fu)
@@ -1259,6 +1265,8 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
     rate = (1 - ANALOG_SCALED_W) * pure + ANALOG_SCALED_W * scaled
     return {
         'pred': cum_this + rate * remaining_bw,
+        'pred_pure': cum_this + pure * remaining_bw,
+        'pred_scaled': cum_this + scaled * remaining_bw,
         'rate': rate, 'pure': pure, 'scaled': scaled,
         'remaining_bw': remaining_bw, 'refs': [r[2] for r in refs],
     }
