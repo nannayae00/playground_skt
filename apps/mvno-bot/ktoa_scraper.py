@@ -1102,14 +1102,19 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     fc_sm     = _analog_trio('mvno_in',  'SM', cum_mi.get('SM'),   fc_sm)
     fc_km     = _analog_trio('mvno_in',  'KM', cum_mi.get('KM'),   fc_km)
     fc_lm     = _analog_trio('mvno_in',  'LM', cum_mi.get('LM'),   fc_lm)
-    fc_mi     = _analog_trio('mvno_in',  '계', cum_mi.get('계'),   fc_mi)
     fc_k      = _analog_trio('mno_out',  'K',  cum_mo.get('K'),    fc_k)
     fc_l      = _analog_trio('mno_out',  'L',  cum_mo.get('L'),    fc_l)
-    fc_mo     = _analog_trio('mno_out',  '계', cum_mo.get('계'),   fc_mo)
     fc_mo_sm  = _analog_trio('mvno_out', 'SM', cum_mout.get('SM'), fc_mo_sm)
     fc_mo_km  = _analog_trio('mvno_out', 'KM', cum_mout.get('KM'), fc_mo_km)
     fc_mo_lm  = _analog_trio('mvno_out', 'LM', cum_mout.get('LM'), fc_mo_lm)
-    fc_mo_out = _analog_trio('mvno_out', '계', cum_mout.get('계'), fc_mo_out)
+
+    # MNO 유입(mno_in)/MNO 전체이탈(mno_out_all) S/K/L - 기존엔 예측 자체가 없었음.
+    # 백테스트: mno_in S/K/L 10.3/8.6/9.1%, mno_out_all 6.0/9.7/7.8% (단순avg 대비 모두 개선)
+    _none = {'low': None, 'mid': None, 'high': None}
+    cum_mni   = daily.get('cum_mno_in', {}) or {}
+    cum_moall = daily.get('cum_mno_out_all', {}) or {}
+    fc_mni    = {k: _analog_trio('mno_in',      k, cum_mni.get(k),   _none) for k in ('S', 'K', 'L')}
+    fc_moall  = {k: _analog_trio('mno_out_all', k, cum_moall.get(k), _none) for k in ('S', 'K', 'L')}
 
     # SKT(S)는 predict_monthly()가 같은 날 먼저 저장한 공식 예측(fc_low/mid/high)과
     # 동일하게 저장 - 대시보드/엑셀/AI봇이 텔레그램과 같은 숫자를 보도록 (20261007)
@@ -1123,17 +1128,36 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     except Exception as _se:
         log.warning(f"공식 fc_mid 조회 실패 (S 단순방식 유지): {_se}")
 
-    # 순증감 = IN - OUT
+    def _sum_trio(*trios):
+        """'계' = 세부 항목 합 (따로 예측하지 않음 - 세부합과 계가 어긋나지 않게, 20261007)"""
+        out = {}
+        for k in ('low', 'mid', 'high'):
+            vals = [t.get(k) for t in trios]
+            out[k] = None if any(v is None for v in vals) else sum(vals)
+        return out
+
+    fc_mi     = _sum_trio(fc_sm, fc_km, fc_lm)
+    fc_mo     = _sum_trio(fc_s, fc_k, fc_l)
+    fc_mo_out = _sum_trio(fc_mo_sm, fc_mo_km, fc_mo_lm)
+    fc_mni['계']   = _sum_trio(*(fc_mni[k] for k in ('S', 'K', 'L')))
+    fc_moall['계'] = _sum_trio(*(fc_moall[k] for k in ('S', 'K', 'L')))
+
+    # 순증감 = IN - OUT (MVNO: mvno_in - mvno_out / MNO: mno_in - mno_out_all)
     fc_net_sm = _net_trio(fc_sm, fc_mo_sm)
     fc_net_km = _net_trio(fc_km, fc_mo_km)
     fc_net_lm = _net_trio(fc_lm, fc_mo_lm)
-    fc_net    = _net_trio(fc_mi, fc_mo_out)
+    fc_net    = _sum_trio(fc_net_sm, fc_net_km, fc_net_lm)
+    fc_net_mno = {k: _net_trio(fc_mni[k], fc_moall[k]) for k in ('S', 'K', 'L')}
+    fc_net_mno['MNO계'] = _sum_trio(*(fc_net_mno[k] for k in ('S', 'K', 'L')))
 
     fc_data = {
         'fc_mvno_in':  {'SM': fc_sm,  'KM': fc_km,  'LM': fc_lm,  '계': fc_mi},
         'fc_mno_out':  {'S':  fc_s,   'K':  fc_k,   'L':  fc_l,   '계': fc_mo},
         'fc_mvno_out': {'SM': fc_mo_sm,'KM': fc_mo_km,'LM': fc_mo_lm,'계': fc_mo_out},
-        'fc_net':      {'SM': fc_net_sm,'KM': fc_net_km,'LM': fc_net_lm,'계': fc_net},
+        'fc_net':      {'SM': fc_net_sm,'KM': fc_net_km,'LM': fc_net_lm,'계': fc_net,
+                        **fc_net_mno},
+        'fc_mno_in':      fc_mni,
+        'fc_mno_out_all': fc_moall,
         'fc_all_saved_at': date_str,
     }
 

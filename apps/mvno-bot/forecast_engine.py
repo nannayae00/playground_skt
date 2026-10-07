@@ -1188,7 +1188,8 @@ def _get_month_days(year: int, month: int) -> list:
         days = []
         for doc in docs:
             d = doc.to_dict()
-            vals = {g: (d.get(g) or {}) for g in ('mno_out', 'mvno_in', 'mvno_out')}
+            vals = {g: (d.get(g) or {}) for g in ('mno_out', 'mvno_in', 'mvno_out',
+                                                 'mno_in', 'mno_out_all')}
             # bw_ai_prev가 0.0으로 명시된 날(추석 등 휴무)은 그대로 0 - `or` 폴백으로
             # bw_manual(엑셀 0.4 등)을 집으면 실적 없는 날에 bw가 생겨 그 달 전체가
             # "데이터 결손"으로 빠짐(20261007, 9/25~26 사례). 필드가 없을 때만 manual.
@@ -1219,7 +1220,7 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
     """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
     cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
     include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)
-    group/key: 대상 항목 (mno_out S/K/L/계, mvno_in·mvno_out SM/KM/LM/계).
+    group/key: 대상 항목 (mno_out·mno_in·mno_out_all S/K/L, mvno_in·mvno_out SM/KM/LM).
       [20261007] 전 항목 확장 - 백테스트(330개 시점)에서 12개 항목 모두 기존
       단순방식(최근10영업일 avg × 잔여bw)보다 정확 (예: mvno_in 계 5.4→3.6%,
       mno_out K 7.4→5.8%, mvno_out SM 6.5→5.1%). 순증은 IN예측-OUT예측으로 계산."""
