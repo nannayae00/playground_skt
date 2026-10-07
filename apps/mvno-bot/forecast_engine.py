@@ -822,6 +822,14 @@ def predict_hourly(date_str: str, hour: int, minute: int,
     est_net['계'] = sum(est_net[k] for k in ['SM','KM','LM'])
     # MNO 순증 = MNO 유입 - MNO 전체이탈 (S/K/L/MNO계, net_change 키와 동일)
     if all(k in est_mni and k in est_moall for k in ('S', 'K', 'L')):
+        # MNO계 = -(MVNO 계)로 맞춤 (reconcile_mno_to_mvno 설명 참고)
+        for k, (d_in, d_out) in reconcile_mno_to_mvno(est_net['계'], est_mni, est_moall).items():
+            est_mni[k] = int(round(est_mni[k] + d_in))
+            est_moall[k] = int(round(est_moall[k] + d_out))
+        # 반올림 잔차는 S 유입에 반영해 MNO계 = -(MVNO 계)를 정확히 맞춤
+        est_mni['S'] += -est_net['계'] - sum(est_mni[k] - est_moall[k] for k in ('S', 'K', 'L'))
+        est_mni['계'] = sum(est_mni[k] for k in ('S', 'K', 'L'))
+        est_moall['계'] = sum(est_moall[k] for k in ('S', 'K', 'L'))
         for k in ('S', 'K', 'L'):
             est_net[k] = est_mni[k] - est_moall[k]
         est_net['MNO계'] = sum(est_net[k] for k in ('S', 'K', 'L'))
@@ -1293,6 +1301,25 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
         'rate': rate, 'pure': pure, 'scaled': scaled,
         'remaining_bw': remaining_bw, 'refs': [r[2] for r in refs],
     }
+
+
+def reconcile_mno_to_mvno(mvno_net_total: float, mno_in: dict, mno_out_all: dict) -> dict:
+    """[20261007] MNO 순증 계 = -(MVNO 순증 계) 항등식에 맞추는 통신사별 보정량.
+    실제 데이터는 항상 정확히 반대부호(예: 10/06 MVNO -114 / MNO +114)인데 두 쪽을 따로
+    예측하면 어긋남. 백테스트(308개 시점)에서 MVNO 계 예측이 더 정확해서(평균오차 5,473
+    vs 6,765건) MVNO 계를 기준으로 삼고, MNO 쪽 차이를 통신사별 mno_out_all 비중으로
+    나눠 mno_in(+절반)/mno_out_all(-절반)에 반영 - 그래서 MNO 순증 = 유입 - 전체이탈도
+    그대로 성립. S/K/L 개별 오차 영향은 미미(7,421 → 7,436건).
+    반환: {'S': (in 보정, out_all 보정), ...}. 계산 불가 시 빈 dict."""
+    keys = ('S', 'K', 'L')
+    if any(mno_in.get(k) is None or mno_out_all.get(k) is None for k in keys):
+        return {}
+    mno_net = sum(mno_in[k] - mno_out_all[k] for k in keys)
+    diff = -mvno_net_total - mno_net
+    tw = sum(mno_out_all[k] for k in keys)
+    if tw <= 0:
+        return {}
+    return {k: (diff * mno_out_all[k] / tw / 2, -diff * mno_out_all[k] / tw / 2) for k in keys}
 
 
 # ══════════════════════════════════════════════════════════════════

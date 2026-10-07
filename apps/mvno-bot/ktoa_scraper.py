@@ -1149,6 +1149,24 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     fc_net_km = _net_trio(fc_km, fc_mo_km)
     fc_net_lm = _net_trio(fc_lm, fc_mo_lm)
     fc_net    = _sum_trio(fc_net_sm, fc_net_km, fc_net_lm)
+    # MNO 순증 계 = -(MVNO 순증 계)로 맞춤 - 중간값 기준 보정량을 low/high에도 같이 적용
+    # (forecast_engine.reconcile_mno_to_mvno 설명 참고)
+    from forecast_engine import reconcile_mno_to_mvno as _reconcile
+    if fc_net.get('mid') is not None:
+        _adj = _reconcile(fc_net['mid'], {k: fc_mni[k]['mid'] for k in ('S', 'K', 'L')},
+                          {k: fc_moall[k]['mid'] for k in ('S', 'K', 'L')})
+        for k, (d_in, d_out) in _adj.items():
+            for lv in ('low', 'mid', 'high'):
+                if fc_mni[k].get(lv) is not None:
+                    fc_mni[k][lv] = int(round(fc_mni[k][lv] + d_in))
+                if fc_moall[k].get(lv) is not None:
+                    fc_moall[k][lv] = int(round(fc_moall[k][lv] + d_out))
+        if _adj:
+            # 반올림 잔차는 S 유입(mid)에 반영해 MNO계 mid = -(MVNO 계 mid)를 정확히 맞춤
+            fc_mni['S']['mid'] += -fc_net['mid'] - sum(
+                fc_mni[k]['mid'] - fc_moall[k]['mid'] for k in ('S', 'K', 'L'))
+            fc_mni['계']   = _sum_trio(*(fc_mni[k] for k in ('S', 'K', 'L')))
+            fc_moall['계'] = _sum_trio(*(fc_moall[k] for k in ('S', 'K', 'L')))
     fc_net_mno = {k: _net_trio(fc_mni[k], fc_moall[k]) for k in ('S', 'K', 'L')}
     fc_net_mno['MNO계'] = _sum_trio(*(fc_net_mno[k] for k in ('S', 'K', 'L')))
 
