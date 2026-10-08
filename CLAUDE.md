@@ -81,6 +81,7 @@ d = db.collection("ktoa_daily").document("2026-10-07").get().to_dict()
 | `ktoa_hourly.forecast_*` | 그날 일마감 예측 (정시 문서) |
 
 - 월마감 로직: 직전 2개월의 "같은 날짜 이후 남은 영업일당 속도"를 전월 그대로(50%)와 이번 달 수준 반영(50%)으로 섞어 남은 영업일수에 곱함 (`forecast_engine._get_prev_month_analog_pred`).
+- 예외: SM의 `fc_mvno_in/fc_mvno_out/fc_net`(2026-10-08~)은 월말정렬 잔여예측 - 남은 영업일을 월말부터 직전 2개월의 같은 위치 영업일에 맞춰 달력가중으로 적용(`forecast_engine.get_end_aligned_mvno_pred`). IN 예측 - OUT 예측 = 순증감 예측이 정확히 성립하고, low/high는 진행시점별 과거 오차 70% 구간.
 - 2026-10-06 이전 `fc_*`는 옛 로직이라 기간 비교 시 주의.
 - 상세와 백테스트 결과: 팀 공유 문서 "월마감·일마감 예측 로직 개선 (2026-10-07)".
 
