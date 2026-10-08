@@ -1323,6 +1323,98 @@ def reconcile_mno_to_mvno(mvno_net_total: float, mno_in: dict, mno_out_all: dict
 
 
 # ══════════════════════════════════════════════════════════════════
+# SM 월말정렬 잔여예측 (v3.1, 추가 20261008)
+# ══════════════════════════════════════════════════════════════════
+# 실무자 지적: "10/7 SM 순증감 예측 ▲6,719인데 실무 감각은 ▲3~4천, 누적은 ▲399".
+# 원인: 위 잔여속도법은 IN·OUT(각 5만건대)에 "이번달 수준 배율"을 따로 곱함
+# (10/7: IN ×0.81~0.87, OUT ×0.87). 5만건대에서 배율 몇 %p 차이가 순증감엔
+# 수천 건 노이즈로 증폭됨 - 순증감 백테스트에서 오히려 가장 부정확했음.
+#
+# 방식: 이번달 남은 영업일을 "월말부터 거꾸로" 직전 2개월의 같은 위치 영업일에
+#   맞추고, 그 날의 실적 ÷ 달력가중(평일 1.0, 토·공휴일 0.66)에 이번달 그 날의
+#   달력가중을 곱해 합산(직전월 가중 2:1). 배율 보정이 없어 선형이므로
+#   IN 예측 - OUT 예측 = 순증감 예측이 정확히 성립 (따로 맞출 필요 없음).
+#   월말 몰림(해지·이동 집중)이 날짜 위치 그대로 반영되고, bw 입력 방식이 달마다
+#   달라도(10월 bw 합 29.0 vs 9월 25.6) 영향 없음.
+# 백테스트(2025-09~2026-09, 매 영업일 시점) SM 평균오차 (현행 → 이방식):
+#   순증감 2,373 → 1,766 (월초 1~10일 2,891 → 2,158)
+#   IN 3,580 → 3,267 / OUT 2,348 → 2,277
+#   KM은 이 방식이 더 나빠서(순증감 3,333 → 3,894) SM에만 적용.
+# 범위(low/high): 진행시점별 과거 오차의 70% 구간 (편향은 기간마다 부호가 바뀌어
+#   보정하지 않음). 예측값 ± 아래 폭.
+SM_ENDALIGN_BAND = {  # (일자 상한, {항목: 반폭})
+    'mvno_in':  ((10, 6000), (20, 3400), (31, 2500)),
+    'mvno_out': ((10, 5200), (20, 2400), (31, 1300)),
+    'net':      ((10, 2500), (20, 2300), (31, 1500)),
+}
+
+
+def _band_half(field: str, day: int) -> int:
+    for upto, half in SM_ENDALIGN_BAND[field]:
+        if day <= upto:
+            return half
+    return SM_ENDALIGN_BAND[field][-1][1]
+
+
+def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
+                              key: str = 'SM', include_today: bool = True) -> Optional[dict]:
+    """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
+    반환: {'mvno_in': trio, 'mvno_out': trio, 'net': trio, 'refs': [...]} 또는 None."""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    if ref_day < 1:
+        return None
+
+    # 이번달 남은 영업일 (월말부터 거꾸로)
+    future = [(ds, bw) for ds, bw, _ in _get_month_days(d.year, d.month)
+              if int(ds[8:]) > ref_day and bw > 0][::-1]
+
+    refs = []  # [(ym, [(cw, in, out), ...] 월말부터)]
+    y, m = d.year, d.month
+    for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
+        if len(refs) >= ANALOG_REF_MONTHS:
+            break
+        m -= 1
+        if m <= 0:
+            m += 12
+            y -= 1
+        days = _get_month_days(y, m)
+        biz = [(ds, bw, v) for ds, bw, v in days if bw > 0]
+        if not biz or any(v['mvno_in'].get(key) is None or v['mvno_out'].get(key) is None
+                          for _, _, v in biz):
+            continue
+        refs.append((f"{y:04d}-{m:02d}",
+                     [(_calendar_weight(ds, bw), v['mvno_in'][key], v['mvno_out'][key])
+                      for ds, bw, v in biz][::-1]))
+    if len(refs) < ANALOG_REF_MONTHS:
+        return None
+
+    ws = [0.5 ** i for i in range(len(refs))]
+    rem_in = rem_out = 0.0
+    for i, (ds, bw) in enumerate(future):
+        u = _calendar_weight(ds, bw)
+        r_in = r_out = 0.0
+        for w, (_, biz) in zip(ws, refs):
+            c, vi, vo = biz[min(i, len(biz) - 1)]
+            if c > 0:
+                r_in += w * vi / c
+                r_out += w * vo / c
+        rem_in += r_in / sum(ws) * u
+        rem_out += r_out / sum(ws) * u
+
+    mid_in = int(round(cum_in + rem_in))
+    mid_out = int(round(cum_out + rem_out))
+    mid_net = mid_in - mid_out
+
+    def _trio(mid, field):
+        h = _band_half(field, ref_day)
+        return {'low': mid - h, 'mid': mid, 'high': mid + h}
+
+    return {'mvno_in': _trio(mid_in, 'mvno_in'), 'mvno_out': _trio(mid_out, 'mvno_out'),
+            'net': _trio(mid_net, 'net'), 'refs': [r[0] for r in refs]}
+
+
+# ══════════════════════════════════════════════════════════════════
 # 월마감 예측
 # ══════════════════════════════════════════════════════════════════
 
