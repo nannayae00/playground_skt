@@ -47,13 +47,22 @@ import os
 import html
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify
 import requests
 
 from gemini_handler import GeminiHandler
 from calendar_handler import CalendarHandler, dedupe_events
 from session_manager import SessionManager
+
+# [v-fix 20261008] 서버(Cloud Run)는 UTC라 datetime.now()가 KST 오전 9시 전엔 전날로 잡힘
+# → 한국시간 기준 현재 시각(naive, 기존 코드와 동일하게 tzinfo 없이) 사용
+_KST = timezone(timedelta(hours=9))
+
+
+def now_kst() -> datetime:
+    return datetime.now(_KST).replace(tzinfo=None)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -215,7 +224,7 @@ def parse_date_range(date_from_str: str, date_to_str: str):
     [v2.8] date_to가 date_from보다 빠르게 계산되면(예: 12/29~1/3처럼 연말~연초를
     걸치는 구간) date_to를 다음해로 보정 — 예전엔 무조건 올해로만 계산해서
     종료일이 시작일보다 앞서는 역전된 범위가 되어 조회가 깨졌음"""
-    now = datetime.now()
+    now = now_kst()
     try:
         date_from = datetime.strptime(f"{now.year}/{date_from_str}", "%Y/%m/%d")
         date_to = datetime.strptime(f"{now.year}/{date_to_str}", "%Y/%m/%d")
@@ -249,6 +258,7 @@ def register_events(chat_id: int, events: list):
 
 # 중복 update 방지 (Firestore 기반 - 다중 인스턴스 대응)
 import threading
+
 
 def _process_update(data: dict):
     """백그라운드에서 실제 처리 - Firestore로 중복 방지"""
@@ -361,7 +371,7 @@ def handle_natural_language(chat_id: int, text: str):
         logger.info(f"Intent: {intent}")
 
         if action == "list":
-            date_from_str = intent.get("date_from", datetime.now().strftime("%m/%d"))
+            date_from_str = intent.get("date_from", now_kst().strftime("%m/%d"))
             date_to_str = intent.get("date_to", date_from_str)
             keyword = intent.get("keyword") or None
             date_from, date_to = parse_date_range(date_from_str, date_to_str)
@@ -404,7 +414,7 @@ def handle_natural_language(chat_id: int, text: str):
                     make_delete_keyboard(events))
 
         elif action == "analyze":
-            date_from_str = intent.get("date_from", datetime.now().strftime("%m/%d"))
+            date_from_str = intent.get("date_from", now_kst().strftime("%m/%d"))
             date_to_str = intent.get("date_to", date_from_str)
             question = intent.get("question", text)
             date_from, date_to = parse_date_range(date_from_str, date_to_str)
@@ -422,7 +432,7 @@ def handle_natural_language(chat_id: int, text: str):
 
         elif action == "modify":
             keyword = intent.get("keyword", "")
-            date_from_str = intent.get("date_from", datetime.now().strftime("%m/%d"))
+            date_from_str = intent.get("date_from", now_kst().strftime("%m/%d"))
             date_to_str = intent.get("date_to", date_from_str)
             request = intent.get("request", text)
             date_from, date_to = parse_date_range(date_from_str, date_to_str)
@@ -457,7 +467,7 @@ def handle_natural_language(chat_id: int, text: str):
                 date_from, date_to = parse_date_range(date_from_str, date_to_str)
                 label = date_from_str if date_from_str == date_to_str else f"{date_from_str}~{date_to_str}"
             else:
-                date_from = datetime.now()
+                date_from = now_kst()
                 date_to = date_from + timedelta(days=365)
                 label = "전체"
             send_message(chat_id, f"🔍 {esc(label)} 기간 중복 일정 확인 중...")
@@ -490,7 +500,7 @@ def handle_natural_language(chat_id: int, text: str):
 
 
 def handle_list(chat_id: int, arg: str):
-    now = datetime.now()
+    now = now_kst()
     if not arg:
         date_from = now
         date_to = now + timedelta(days=6 - now.weekday() if now.weekday() != 6 else 0)

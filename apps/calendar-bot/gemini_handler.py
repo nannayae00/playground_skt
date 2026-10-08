@@ -28,19 +28,28 @@ v2.5 | 2026-09-20 | cleanup_duplicates action 추가 - "다음주 중복된 일�
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import google.generativeai as genai
+
+# [v-fix 20261008] 서버(Cloud Run)는 UTC라 datetime.now()가 KST 오전 9시 전엔 전날로 잡힘
+# → 한국시간 기준 현재 시각(naive, 기존 코드와 동일하게 tzinfo 없이) 사용
+_KST = timezone(timedelta(hours=9))
+
+
+def now_kst() -> datetime:
+    return datetime.now(_KST).replace(tzinfo=None)
+
 
 logger = logging.getLogger(__name__)
 
 def _get_today() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
+    return now_kst().strftime("%Y-%m-%d")
 
 def _get_current_year() -> int:
-    return datetime.now().year
+    return now_kst().year
 
 def _get_weekday() -> str:
-    return datetime.now().strftime("%A")
+    return now_kst().strftime("%A")
 
 def _build_parse_prompt() -> str:
     today = _get_today()

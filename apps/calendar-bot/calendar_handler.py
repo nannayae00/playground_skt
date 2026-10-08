@@ -26,8 +26,17 @@ v1.9 | 2026-09-20 | list_events(keyword=)/search_events - Google Calendar API의
 import os
 import logging
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
+
+# [v-fix 20261008] 서버(Cloud Run)는 UTC라 datetime.now()가 KST 오전 9시 전엔 전날로 잡힘
+# → 한국시간 기준 현재 시각(naive, 기존 코드와 동일하게 tzinfo 없이) 사용
+_KST = timezone(timedelta(hours=9))
+
+
+def now_kst() -> datetime:
+    return datetime.now(_KST).replace(tzinfo=None)
+
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +198,7 @@ class CalendarHandler:
         return events
 
     def search_events(self, keyword: str, with_more: bool = False):
-        now = datetime.now()
+        now = now_kst()
         params = {
             "timeMin": now.strftime("%Y-%m-%dT00:00:00+09:00"),
             "timeMax": (now + timedelta(days=90)).strftime("%Y-%m-%dT23:59:59+09:00"),
