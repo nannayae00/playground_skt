@@ -50,6 +50,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from daily_memo import memo_daily  # [추가 20261009] Firestore 읽기 절감
+
 log = logging.getLogger(__name__)
 
 KTOA_TOUT_GOAL = int(os.environ.get('KTOA_TOUT_GOAL', 42000))
@@ -227,6 +229,7 @@ def calc_monthly_forecast(year: int, month: int, today_day: int,
     }
 
 
+@memo_daily
 def get_similar_days(date_str: str, bw: float, top_n: int = 5) -> dict:
     """
     유사 과거일 마감값 분포
