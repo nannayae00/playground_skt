@@ -47,4 +47,9 @@ COPY ktoa_context_period_builder.py .
 COPY ktoa_morning_check.py .
 COPY cafe_collector.py .
 COPY cafe_collector_runner.py .
+# [수정 20261007] bw_week_updater.py가 COPY 목록에서 누락돼 있었음 - bw-week-updater
+# Cloud Run Job이 이 파일을 실행해야 하는데 이미지에 없어서 Job이 (gunicorn $PORT
+# 오류로 가려진 채) 애초에 이 로직을 돌려본 적이 없었음. Job 전용 커맨드 오버라이드와
+# 함께 배포.
+COPY bw_week_updater.py .
 # 1778494812

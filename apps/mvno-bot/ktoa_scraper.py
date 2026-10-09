@@ -721,6 +721,8 @@ def run() -> None:
                     'mvno_in':  _c.get('mvno_in',  {}),
                     'mno_out':  _c.get('mno_out',  {}),
                     'mvno_out': _c.get('mvno_out', {}),
+                    'mno_in':      _c.get('mno_in', {}),
+                    'mno_out_all': _c.get('mno_out_all', {}),
                 }
                 _forecast = _ph(today_str, _fh, _fm, _current_vals, doc_id)
         except Exception as _fe2:
@@ -1053,6 +1055,8 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
             vi = fc_in.get(k)
             vo = fc_out.get(k)
             result[k] = (vi - vo) if (vi is not None and vo is not None) else None
+        if result['low'] is not None and result['high'] is not None and result['low'] > result['high']:
+            result['low'], result['high'] = result['high'], result['low']
         return result
 
     # ── 항목별 rolling avg (D-1 기준 최근 10 영업일, 월 경계 자동 포함)
@@ -1079,17 +1083,117 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     fc_mo_lm = _trio(cum_mout.get('LM'), *_ravg(hist_items['LM_OUT']))
     fc_mo_out= _trio(cum_mout.get('계'), *_ravg(hist_items['MOUT_계']))
 
-    # 순증감 = IN - OUT
+    # [20261007] 전월 동일시점 잔여속도법으로 교체 (forecast_engine._get_prev_month_analog_pred
+    # 설명 참고). 백테스트에서 12개 항목 모두 위 단순 avg 방식보다 정확. mid=혼합값,
+    # low/high=전월흐름(pure)·이번달수준반영(scaled) 두 추정치 범위. 계산 불가 시 위 값 유지.
+    from forecast_engine import _get_prev_month_analog_pred as _analog
+
+    def _analog_trio(group, key, cum_val, fallback):
+        if not cum_val:
+            return fallback
+        try:
+            a = _analog(date_str, float(cum_val), include_today=True, group=group, key=key)
+        except Exception as _ae:
+            log.warning(f"전월 잔여속도법 실패 {group}.{key} (단순방식 유지): {_ae}")
+            return fallback
+        if not a:
+            return fallback
+        lo, hi = sorted([a['pred_pure'], a['pred_scaled']])
+        return {'low': int(round(lo)), 'mid': int(round(a['pred'])), 'high': int(round(hi))}
+
+    fc_sm     = _analog_trio('mvno_in',  'SM', cum_mi.get('SM'),   fc_sm)
+    fc_km     = _analog_trio('mvno_in',  'KM', cum_mi.get('KM'),   fc_km)
+    fc_lm     = _analog_trio('mvno_in',  'LM', cum_mi.get('LM'),   fc_lm)
+    fc_k      = _analog_trio('mno_out',  'K',  cum_mo.get('K'),    fc_k)
+    fc_l      = _analog_trio('mno_out',  'L',  cum_mo.get('L'),    fc_l)
+    fc_mo_sm  = _analog_trio('mvno_out', 'SM', cum_mout.get('SM'), fc_mo_sm)
+    fc_mo_km  = _analog_trio('mvno_out', 'KM', cum_mout.get('KM'), fc_mo_km)
+    fc_mo_lm  = _analog_trio('mvno_out', 'LM', cum_mout.get('LM'), fc_mo_lm)
+
+    # [20261008] SM IN/OUT/순증감은 월말정렬 잔여예측으로 교체 (forecast_engine.
+    # get_end_aligned_mvno_pred 설명 참고) - 순증감 평균오차 2,373 → 1,766.
+    # IN 예측 - OUT 예측 = 순증감 예측이 정확히 성립. 계산 불가 시 위 값 유지.
+    _sm_ea = None
+    if cum_mi.get('SM') is not None and cum_mout.get('SM') is not None:
+        try:
+            from forecast_engine import get_end_aligned_mvno_pred as _ea
+            _sm_ea = _ea(date_str, float(cum_mi['SM']), float(cum_mout['SM']),
+                         key='SM', include_today=True)
+        except Exception as _ee:
+            log.warning(f"SM 월말정렬 예측 실패 (잔여속도법 유지): {_ee}")
+    if _sm_ea:
+        fc_sm, fc_mo_sm = _sm_ea['mvno_in'], _sm_ea['mvno_out']
+
+    # MNO 유입(mno_in)/MNO 전체이탈(mno_out_all) S/K/L - 기존엔 예측 자체가 없었음.
+    # 백테스트: mno_in S/K/L 10.3/8.6/9.1%, mno_out_all 6.0/9.7/7.8% (단순avg 대비 모두 개선)
+    _none = {'low': None, 'mid': None, 'high': None}
+    cum_mni   = daily.get('cum_mno_in', {}) or {}
+    cum_moall = daily.get('cum_mno_out_all', {}) or {}
+    fc_mni    = {k: _analog_trio('mno_in',      k, cum_mni.get(k),   _none) for k in ('S', 'K', 'L')}
+    fc_moall  = {k: _analog_trio('mno_out_all', k, cum_moall.get(k), _none) for k in ('S', 'K', 'L')}
+
+    # SKT(S)는 predict_monthly()가 같은 날 먼저 저장한 공식 예측(fc_low/mid/high)과
+    # 동일하게 저장 - 대시보드/엑셀/AI봇이 텔레그램과 같은 숫자를 보도록 (20261007)
+    try:
+        _off = (db.collection('ktoa_daily').document(date_str).get().to_dict() or {})
+        if _off.get('fc_mid'):
+            fc_s = {'low': _off.get('fc_low'), 'mid': _off.get('fc_mid'),
+                    'high': _off.get('fc_high')}
+        else:
+            fc_s = _analog_trio('mno_out', 'S', cum_mo.get('S'), fc_s)
+    except Exception as _se:
+        log.warning(f"공식 fc_mid 조회 실패 (S 단순방식 유지): {_se}")
+
+    def _sum_trio(*trios):
+        """'계' = 세부 항목 합 (따로 예측하지 않음 - 세부합과 계가 어긋나지 않게, 20261007)"""
+        out = {}
+        for k in ('low', 'mid', 'high'):
+            vals = [t.get(k) for t in trios]
+            out[k] = None if any(v is None for v in vals) else sum(vals)
+        return out
+
+    fc_mi     = _sum_trio(fc_sm, fc_km, fc_lm)
+    fc_mo     = _sum_trio(fc_s, fc_k, fc_l)
+    fc_mo_out = _sum_trio(fc_mo_sm, fc_mo_km, fc_mo_lm)
+    fc_mni['계']   = _sum_trio(*(fc_mni[k] for k in ('S', 'K', 'L')))
+    fc_moall['계'] = _sum_trio(*(fc_moall[k] for k in ('S', 'K', 'L')))
+
+    # 순증감 = IN - OUT (MVNO: mvno_in - mvno_out / MNO: mno_in - mno_out_all)
     fc_net_sm = _net_trio(fc_sm, fc_mo_sm)
+    if _sm_ea:
+        fc_net_sm = _sm_ea['net']  # 범위는 순증감 자체 오차 기준 (IN 범위 - OUT 범위 아님)
     fc_net_km = _net_trio(fc_km, fc_mo_km)
     fc_net_lm = _net_trio(fc_lm, fc_mo_lm)
-    fc_net    = _net_trio(fc_mi, fc_mo_out)
+    fc_net    = _sum_trio(fc_net_sm, fc_net_km, fc_net_lm)
+    # MNO 순증 계 = -(MVNO 순증 계)로 맞춤 - 중간값 기준 보정량을 low/high에도 같이 적용
+    # (forecast_engine.reconcile_mno_to_mvno 설명 참고)
+    from forecast_engine import reconcile_mno_to_mvno as _reconcile
+    if fc_net.get('mid') is not None:
+        _adj = _reconcile(fc_net['mid'], {k: fc_mni[k]['mid'] for k in ('S', 'K', 'L')},
+                          {k: fc_moall[k]['mid'] for k in ('S', 'K', 'L')})
+        for k, (d_in, d_out) in _adj.items():
+            for lv in ('low', 'mid', 'high'):
+                if fc_mni[k].get(lv) is not None:
+                    fc_mni[k][lv] = int(round(fc_mni[k][lv] + d_in))
+                if fc_moall[k].get(lv) is not None:
+                    fc_moall[k][lv] = int(round(fc_moall[k][lv] + d_out))
+        if _adj:
+            # 반올림 잔차는 S 유입(mid)에 반영해 MNO계 mid = -(MVNO 계 mid)를 정확히 맞춤
+            fc_mni['S']['mid'] += -fc_net['mid'] - sum(
+                fc_mni[k]['mid'] - fc_moall[k]['mid'] for k in ('S', 'K', 'L'))
+            fc_mni['계']   = _sum_trio(*(fc_mni[k] for k in ('S', 'K', 'L')))
+            fc_moall['계'] = _sum_trio(*(fc_moall[k] for k in ('S', 'K', 'L')))
+    fc_net_mno = {k: _net_trio(fc_mni[k], fc_moall[k]) for k in ('S', 'K', 'L')}
+    fc_net_mno['MNO계'] = _sum_trio(*(fc_net_mno[k] for k in ('S', 'K', 'L')))
 
     fc_data = {
         'fc_mvno_in':  {'SM': fc_sm,  'KM': fc_km,  'LM': fc_lm,  '계': fc_mi},
         'fc_mno_out':  {'S':  fc_s,   'K':  fc_k,   'L':  fc_l,   '계': fc_mo},
         'fc_mvno_out': {'SM': fc_mo_sm,'KM': fc_mo_km,'LM': fc_mo_lm,'계': fc_mo_out},
-        'fc_net':      {'SM': fc_net_sm,'KM': fc_net_km,'LM': fc_net_lm,'계': fc_net},
+        'fc_net':      {'SM': fc_net_sm,'KM': fc_net_km,'LM': fc_net_lm,'계': fc_net,
+                        **fc_net_mno},
+        'fc_mno_in':      fc_mni,
+        'fc_mno_out_all': fc_moall,
         'fc_all_saved_at': date_str,
     }
 

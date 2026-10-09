@@ -238,7 +238,7 @@ def main():
     current_week = get_week_of_month(now)
 
     # 환경변수로 모드 제어 (Cloud Scheduler에서 설정)
-    mode = os.environ.get('RUN_MODE', 'weekly')  # weekly | w0
+    mode = os.environ.get('RUN_MODE', 'weekly')  # weekly | w0 | backfill_week
 
     log.info(f"실행: {now.strftime('%Y-%m-%d %H:%M')} | 모드: {mode}")
 
@@ -247,6 +247,12 @@ def main():
         next_month = month % 12 + 1
         next_year  = year + (1 if month == 12 else 0)
         run_w0_precalc(next_year, next_month)
+
+    elif mode == 'backfill_week':
+        # [수정 20261007] 이 Job이 이미지에 아예 배포된 적이 없어 생긴 공백을 수동으로
+        # 메울 때 쓰는 1회성 모드. TARGET_WEEK(기본 1) 주차를 즉시 보정.
+        target_week = int(os.environ.get('TARGET_WEEK', '1'))
+        run_week_update(year, month, target_week)
 
     else:  # weekly
         # 직전 완료 주차들 보정

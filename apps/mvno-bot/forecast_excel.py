@@ -404,7 +404,7 @@ def _build_s0_month_summary(wb, year: int, month: int, date_str: str):
         t_out_goal, sm_net_goal, sm_ms_goal = _get_goals(year, month)
         sm_net_goal_val = sm_net_goal if sm_net_goal is not None else -5000
     except Exception:
-        t_out_goal, sm_net_goal_val, sm_ms_goal = 36000, -5000, 19.0
+        t_out_goal, sm_net_goal_val, sm_ms_goal = 37000, -5000, 19.0
 
     # 새 시트를 맨 앞에 생성 (기존 active 시트보다 먼저 오도록 index=0)
     ws = wb.create_sheet('월마감 요약', 0)
@@ -1922,10 +1922,12 @@ def _build_s4_forecast(wb, year: int, month: int, month_daily: dict,
             fc_mo_out = _use_db_or_calc(db_fc_mout.get('계'), _fc_trio(cum['mo_out'],h19.get('forecast_mvno_out',{}).get('계',0), rem_w2, rem_ai, rem_man, cum_bw_ai))
 
             # 순증감 예측 = MVNO IN 예측 - MVNO OUT 예측
-            fc_net_sm = _fc_net_from_inout(fc_sm, fc_mo_sm)
-            fc_net_km = _fc_net_from_inout(fc_km, fc_mo_km)
-            fc_net_lm = _fc_net_from_inout(fc_lm, fc_mo_lm)
-            fc_net    = _fc_net_from_inout(fc_mi, fc_mo_out)
+            # [20261008] DB에 저장된 순증감 예측 우선 - SM은 순증감 자체 오차 기준 범위로
+            # 저장되므로(ktoa_scraper 참고) IN 범위 - OUT 범위로 다시 만들면 범위가 틀어짐
+            fc_net_sm = _use_db_or_calc(db_fc_net.get('SM'), _fc_net_from_inout(fc_sm, fc_mo_sm))
+            fc_net_km = _use_db_or_calc(db_fc_net.get('KM'), _fc_net_from_inout(fc_km, fc_mo_km))
+            fc_net_lm = _use_db_or_calc(db_fc_net.get('LM'), _fc_net_from_inout(fc_lm, fc_mo_lm))
+            fc_net    = _use_db_or_calc(db_fc_net.get('계'), _fc_net_from_inout(fc_mi, fc_mo_out))
 
             day_data[ds] = {
                 'bw_ai': bw_ai, 'bw_man': bw_man, 'bw_w2': bw_w2,

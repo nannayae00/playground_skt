@@ -4,6 +4,10 @@ forecast_engine.py  v1.3
 작성일: 2026-04-17
 
 [수정 이력]
+v3.0 | 2026-10-06 | 월마감 mid를 전월 동일시점 잔여속도법으로 교체 (Claude)
+  - _get_prev_month_analog_pred(): 직전 2개월 잔여 bw당 속도(pure)와 이번달 수준
+    반영분(scaled)을 50:50 → × 이번달 잔여bw. 기존 mid는 계산 불가 시 폴백
+  - 백테스트 330개 시점 평균오차 6.07% → 4.77%
 v2.8 | 2026-06-18 | Firestore 경로 tout_goal → target_goal 변경 (Claude)
   - get_tout_goal(): ktoa_config/tout_goal → ktoa_config/target_goal
   - 환경변수 폴백: KTOA_TOUT_GOAL → KTOA_TARGET_GOAL
@@ -777,6 +781,7 @@ def predict_hourly(date_str: str, hour: int, minute: int,
     # DB 조회 비용 때문에 정시(minute==0)에만 적용 - 10분단위는 어차피
     # 메시지에 본문 예측 섹션이 안 뜨므로(has_est는 정시에만 True) 기존
     # 캐스케이드 결과를 그대로 둬도 무방함.
+    est_mni, est_moall = {}, {}  # MNO 유입/전체이탈 (정시에만 계산)
     if minute == 0:
         try:
             _cur_mno = current_vals.get('mno_out', {}) or {}
@@ -797,18 +802,45 @@ def predict_hourly(date_str: str, hour: int, minute: int,
             est_mi['계'] = sum(est_mi[k] for k in ['SM', 'KM', 'LM'])
             est_mo['계'] = sum(est_mo[k] for k in ['SM', 'KM', 'LM'])
             source = 'completion_ratio_dow'
+
+            # [추가 20261007] MNO 유입(mno_in)/MNO 전체이탈(mno_out_all) S/K/L 일마감 예측
+            # (같은 방식). 최근 15영업일 검증 평균오차 - mno_in 12/15/18시 7.2/4.6/3.3%,
+            # mno_out_all 5.3/4.1/3.1% (기존 mno_out 6.5/3.3/1.5%와 비슷한 수준).
+            for _g, _dst in (('mno_in', est_mni), ('mno_out_all', est_moall)):
+                _cur = current_vals.get(_g, {}) or {}
+                for k in ['S', 'K', 'L']:
+                    v = _cur.get(k, 0) or 0
+                    if v > 0:
+                        _dst[k] = get_field_daily_forecast(date_str, hour, _g, k, v)
+                if all(k in _dst for k in ('S', 'K', 'L')):
+                    _dst['계'] = sum(_dst[k] for k in ['S', 'K', 'L'])
         except Exception as e:
             log.warning(f"[forecast_engine] 완료율곡선 예측 실패, 기존 캐스케이드 유지: {e}")
 
     # 순증감 = MVNO IN - MVNO OUT
     est_net = {k: est_mi.get(k, 0) - est_mo.get(k, 0) for k in ['SM','KM','LM']}
     est_net['계'] = sum(est_net[k] for k in ['SM','KM','LM'])
+    # MNO 순증 = MNO 유입 - MNO 전체이탈 (S/K/L/MNO계, net_change 키와 동일)
+    if all(k in est_mni and k in est_moall for k in ('S', 'K', 'L')):
+        # MNO계 = -(MVNO 계)로 맞춤 (reconcile_mno_to_mvno 설명 참고)
+        for k, (d_in, d_out) in reconcile_mno_to_mvno(est_net['계'], est_mni, est_moall).items():
+            est_mni[k] = int(round(est_mni[k] + d_in))
+            est_moall[k] = int(round(est_moall[k] + d_out))
+        # 반올림 잔차는 S 유입에 반영해 MNO계 = -(MVNO 계)를 정확히 맞춤
+        est_mni['S'] += -est_net['계'] - sum(est_mni[k] - est_moall[k] for k in ('S', 'K', 'L'))
+        est_mni['계'] = sum(est_mni[k] for k in ('S', 'K', 'L'))
+        est_moall['계'] = sum(est_moall[k] for k in ('S', 'K', 'L'))
+        for k in ('S', 'K', 'L'):
+            est_net[k] = est_mni[k] - est_moall[k]
+        est_net['MNO계'] = sum(est_net[k] for k in ('S', 'K', 'L'))
 
     result = {
         'mvno_in':  est_mi,
         'mno_out':  est_mno,
         'mvno_out': est_mo,
         'net':      est_net,
+        'mno_in':      est_mni,
+        'mno_out_all': est_moall,
         'source':   source,
     }
 
@@ -822,6 +854,8 @@ def predict_hourly(date_str: str, hour: int, minute: int,
             'forecast_source':   source,
             'forecast_hour':     hour,
             'forecast_minute':   minute,
+            **({'forecast_mno_in': est_mni} if est_mni else {}),
+            **({'forecast_mno_out_all': est_moall} if est_moall else {}),
         }, merge=True)
         log.info(f"[forecast_engine] hourly 저장: {doc_id} ({source}, {hour}:{minute:02d})")
     except Exception as e:
@@ -1138,6 +1172,372 @@ def _select_adaptive_method(date_str: str, progress_ratio: float, trailing_month
 
 
 # ══════════════════════════════════════════════════════════════════
+# 전월 동일시점 잔여속도법 (v3.0, 추가 20261006)
+# ══════════════════════════════════════════════════════════════════
+# 실무자 지적: "10월이 9월보다 영업일수가 길어서 3.7~3.8만은 나올 것 같은데 36.8천이
+# 나온다. 9월 6일까지 누적/잔여영업일수/마감 vs 10월 6일까지로 계산해보라" -
+# 9월 6일 이후 잔여 실적 25,409 ÷ 잔여bw 20.57 = 1,235/bw 를 10월 잔여bw 23.40에
+# 적용하면 37.5천. 기존 방식(24개월 배수회귀 84% + 최근avg 16%, 진행률 16% 기준)은
+# 오늘 실적을 배수회귀에서 빼고, 잔여영업일수가 늘어난 효과도 약하게만 반영해서 낮았음.
+#
+# 방식: 직전 2개월 각각에서 "같은 날짜까지 누적 → 그 달 마감"을 보고
+#   - pure   = 그 달의 잔여 bw당 속도 (전월 흐름 그대로)
+#   - scaled = pure × (이번달 경과 속도 ÷ 그 달 같은 시점 경과 속도) (이번달 수준 반영)
+#   를 50:50으로 섞고(직전월 가중 2:1), 이번달 잔여bw를 곱해 누적에 더함.
+#   이번달 수준이 전월과 크게 다르면 scaled 쪽이 그만큼 따라감.
+# 경과 속도(수준 비교)는 bw가 아니라 달력가중(평일 1.0, 토요일·공휴일 0.66, bw=0인
+# 날 0)으로 계산 - 10월처럼 bw_manual에 월초 몰림(1일 1.7, 2일 1.6)을 넣어둔 달은
+# bw로 나누면 경과 속도가 낮게 잡혀 예측이 3.5만대로 떨어졌음(달마다 bw 입력
+# 방식이 달라 비교가 안 됨). 잔여 구간은 실무자 bw 그대로 사용.
+# 백테스트(2025-06~2026-09, 유심사태 3개월 제외 15개월, 매 영업일 330개 시점):
+#   진행률 0-20/20-40/40-60/60-80/80-90% 평균오차
+#   기존  12.0 / 9.2 / 5.2 / 2.0 / 1.1  → 전체 6.07% (편향 +3.4%)
+#   이방식  9.4 / 6.7 / 3.6 / 2.3 / 1.5  → 전체 4.77%
+ANALOG_REF_MONTHS = 2     # 참조할 직전 마감월 수 (1~3 비교 → 2가 가장 안정)
+ANALOG_SCALED_W   = 0.5   # scaled 비중 (0/0.25/0.5/0.75/1 비교 → 0.5)
+ANALOG_LIGHT_DAY_W = 0.66  # 토요일·공휴일 달력가중 (2025-08~ 토요일/같은주 평일 중앙값)
+
+_month_days_cache: dict = {}  # {(year, month): [(date_str, bw, {group: {key: val}})]} - 과거 달만
+
+
+def _get_month_days(year: int, month: int) -> list:
+    """해당 월 ktoa_daily 일별 (date_str, bw, {'mno_out':{..},'mvno_in':{..},'mvno_out':{..}})
+    목록. 과거 달은 캐싱."""
+    now = datetime.now(KST)
+    is_current_month = (year == now.year and month == now.month)
+    key = (year, month)
+    if not is_current_month and key in _month_days_cache:
+        return _month_days_cache[key]
+    from calendar import monthrange
+    last_day = monthrange(year, month)[1]
+    try:
+        docs = _get_db().collection('ktoa_daily') \
+            .where('date', '>=', f"{year:04d}-{month:02d}-01") \
+            .where('date', '<=', f"{year:04d}-{month:02d}-{last_day:02d}") \
+            .order_by('date').stream()
+        days = []
+        for doc in docs:
+            d = doc.to_dict()
+            vals = {g: (d.get(g) or {}) for g in ('mno_out', 'mvno_in', 'mvno_out',
+                                                 'mno_in', 'mno_out_all')}
+            # bw_ai_prev가 0.0으로 명시된 날(추석 등 휴무)은 그대로 0 - `or` 폴백으로
+            # bw_manual(엑셀 0.4 등)을 집으면 실적 없는 날에 bw가 생겨 그 달 전체가
+            # "데이터 결손"으로 빠짐(20261007, 9/25~26 사례). 필드가 없을 때만 manual.
+            bw = float(d['bw_ai_prev'] if d.get('bw_ai_prev') is not None
+                       else (d.get('bw_manual') or 0))
+            days.append((d.get('date'), bw, vals))
+    except Exception as e:
+        log.warning(f"[analog] {year}-{month:02d} 조회 실패: {e}")
+        return []
+    if not is_current_month:
+        _month_days_cache[key] = days
+    return days
+
+
+def _calendar_weight(date_str: str, bw: float) -> float:
+    if bw <= 0:
+        return 0.0
+    import holidays as _hol
+    d = datetime.strptime(date_str, '%Y-%m-%d').date()
+    if d.weekday() == 5 or d in _hol.KR(years=d.year):
+        return ANALOG_LIGHT_DAY_W
+    return 1.0
+
+
+def _get_prev_month_analog_pred(date_str: str, cum_this: float,
+                                include_today: bool, group: str = 'mno_out',
+                                key: str = 'S') -> Optional[dict]:
+    """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
+    cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
+    include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)
+    group/key: 대상 항목 (mno_out·mno_in·mno_out_all S/K/L, mvno_in·mvno_out SM/KM/LM).
+      [20261007] 전 항목 확장 - 백테스트(330개 시점)에서 12개 항목 모두 기존
+      단순방식(최근10영업일 avg × 잔여bw)보다 정확 (예: mvno_in 계 5.4→3.6%,
+      mno_out K 7.4→5.8%, mvno_out SM 6.5→5.1%). 순증은 IN예측-OUT예측으로 계산."""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    if ref_day < 1 or cum_this <= 0:
+        return None
+
+    this_days = _get_month_days(d.year, d.month)
+    elapsed_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days
+                     if int(ds[8:]) <= ref_day)
+    remaining_bw = sum(bw for ds, bw, _ in this_days if int(ds[8:]) > ref_day)
+    if elapsed_cw <= 0:
+        return None
+    this_rate = cum_this / elapsed_cw
+
+    refs = []  # (경과 달력가중당 속도, 잔여 bw당 속도, 'YYYY-MM')
+    y, m = d.year, d.month
+    for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
+        if len(refs) >= ANALOG_REF_MONTHS:
+            break
+        m -= 1
+        if m <= 0:
+            m += 12
+            y -= 1
+        days = _get_month_days(y, m)
+        if not days or any(v[group].get(key) is None and bw > 0 for _, bw, v in days):
+            continue
+        el = [(ds, bw, v[group].get(key) or 0) for ds, bw, v in days if int(ds[8:]) <= ref_day]
+        fu = [(ds, bw, v[group].get(key) or 0) for ds, bw, v in days if int(ds[8:]) > ref_day]
+        cum = sum(s for *_, s in el)
+        e_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in el)
+        r_bw = sum(bw for _, bw, _ in fu)
+        if cum <= 0 or e_cw <= 0 or r_bw <= 0:
+            continue
+        refs.append((cum / e_cw, sum(s for *_, s in fu) / r_bw, f"{y:04d}-{m:02d}"))
+    if len(refs) < ANALOG_REF_MONTHS:
+        return None
+
+    ws = [0.5 ** i for i in range(len(refs))]
+    pure = sum(w * r[1] for w, r in zip(ws, refs)) / sum(ws)
+    scaled = sum(w * r[1] * this_rate / r[0] for w, r in zip(ws, refs)) / sum(ws)
+    rate = (1 - ANALOG_SCALED_W) * pure + ANALOG_SCALED_W * scaled
+    return {
+        'pred': cum_this + rate * remaining_bw,
+        'pred_pure': cum_this + pure * remaining_bw,
+        'pred_scaled': cum_this + scaled * remaining_bw,
+        'rate': rate, 'pure': pure, 'scaled': scaled,
+        'remaining_bw': remaining_bw, 'refs': [r[2] for r in refs],
+    }
+
+
+def reconcile_mno_to_mvno(mvno_net_total: float, mno_in: dict, mno_out_all: dict) -> dict:
+    """[20261007] MNO 순증 계 = -(MVNO 순증 계) 항등식에 맞추는 통신사별 보정량.
+    실제 데이터는 항상 정확히 반대부호(예: 10/06 MVNO -114 / MNO +114)인데 두 쪽을 따로
+    예측하면 어긋남. 백테스트(308개 시점)에서 MVNO 계 예측이 더 정확해서(평균오차 5,473
+    vs 6,765건) MVNO 계를 기준으로 삼고, MNO 쪽 차이를 통신사별 mno_out_all 비중으로
+    나눠 mno_in(+절반)/mno_out_all(-절반)에 반영 - 그래서 MNO 순증 = 유입 - 전체이탈도
+    그대로 성립. S/K/L 개별 오차 영향은 미미(7,421 → 7,436건).
+    반환: {'S': (in 보정, out_all 보정), ...}. 계산 불가 시 빈 dict."""
+    keys = ('S', 'K', 'L')
+    if any(mno_in.get(k) is None or mno_out_all.get(k) is None for k in keys):
+        return {}
+    mno_net = sum(mno_in[k] - mno_out_all[k] for k in keys)
+    diff = -mvno_net_total - mno_net
+    tw = sum(mno_out_all[k] for k in keys)
+    if tw <= 0:
+        return {}
+    return {k: (diff * mno_out_all[k] / tw / 2, -diff * mno_out_all[k] / tw / 2) for k in keys}
+
+
+# ══════════════════════════════════════════════════════════════════
+# SM 월말정렬 잔여예측 (v3.1, 추가 20261008)
+# ══════════════════════════════════════════════════════════════════
+# 실무자 지적: "10/7 SM 순증감 예측 ▲6,719인데 실무 감각은 ▲3~4천, 누적은 ▲399".
+# 원인: 위 잔여속도법은 IN·OUT(각 5만건대)에 "이번달 수준 배율"을 따로 곱함
+# (10/7: IN ×0.81~0.87, OUT ×0.87). 5만건대에서 배율 몇 %p 차이가 순증감엔
+# 수천 건 노이즈로 증폭됨 - 순증감 백테스트에서 오히려 가장 부정확했음.
+#
+# 방식: 이번달 남은 영업일을 "월말부터 거꾸로" 직전 2개월의 같은 위치 영업일에
+#   맞추고, 그 날의 실적 ÷ 달력가중(평일 1.0, 토·공휴일 0.66)에 이번달 그 날의
+#   달력가중을 곱해 합산(직전월 가중 2:1). 배율 보정이 없어 선형이므로
+#   IN 예측 - OUT 예측 = 순증감 예측이 정확히 성립 (따로 맞출 필요 없음).
+#   월말 몰림(해지·이동 집중)이 날짜 위치 그대로 반영되고, bw 입력 방식이 달마다
+#   달라도(10월 bw 합 29.0 vs 9월 25.6) 영향 없음.
+# 백테스트(2025-09~2026-09, 매 영업일 시점) SM 평균오차 (현행 → 이방식):
+#   순증감 2,373 → 1,766 (월초 1~10일 2,891 → 2,158)
+#   IN 3,580 → 3,267 / OUT 2,348 → 2,277
+#   KM은 이 방식이 더 나빠서(순증감 3,333 → 3,894) SM에만 적용.
+# 범위(low/high): 진행시점별 과거 오차의 70% 구간 (편향은 기간마다 부호가 바뀌어
+#   보정하지 않음). 예측값 ± 아래 폭.
+# 참조월 수: 2(가중 2:1). 3개월(4:2:1)도 비교했으나 비정상월 없는 구간(2025-11~) 평균오차
+# 1,683 → 1,713으로 약간 나빠 2 유지 (20261009).
+SM_ENDALIGN_REF_MONTHS = 2
+SM_ENDALIGN_BAND = {  # (일자 상한, {항목: 반폭})
+    'mvno_in':  ((10, 6000), (20, 3400), (31, 2500)),
+    'mvno_out': ((10, 5200), (20, 2400), (31, 1300)),
+    'net':      ((10, 2500), (20, 2300), (31, 1500)),
+}
+
+
+def _band_half(field: str, day: int) -> int:
+    for upto, half in SM_ENDALIGN_BAND[field]:
+        if day <= upto:
+            return half
+    return SM_ENDALIGN_BAND[field][-1][1]
+
+
+# 유심 사태로 실적이 비정상인 달 - 월말정렬 참조월에서 제외 (CLAUDE.md 영업일수 규칙)
+ABNORMAL_MONTHS = {'2025-04', '2025-05', '2025-07'}
+
+
+def _end_aligned_remaining(date_str: str, include_today: bool, specs: list,
+                           n_refs: int = ANALOG_REF_MONTHS) -> Optional[dict]:
+    """월말정렬 잔여합 공통 계산. specs: [(group, key), ...] (예: ('mvno_in','SM')).
+    반환: {'ref_day', 'rem': {spec: 남은 영업일 예상합}, 'this_cw': 이번달 경과 달력가중,
+           'ref_rate': {spec: 참조월 같은 시점까지 달력가중당 속도}, 'refs': [...]} 또는 None."""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    if ref_day < 1:
+        return None
+
+    this_days = _get_month_days(d.year, d.month)
+    this_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) <= ref_day)
+    # 이번달 남은 영업일 (월말부터 거꾸로)
+    future = [(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) > ref_day and bw > 0][::-1]
+
+    refs = []  # [(ym, [(cw, {spec: val}), ...] 월말부터, {spec: 같은 시점까지 cw당 속도})]
+    y, m = d.year, d.month
+    for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
+        if len(refs) >= n_refs:
+            break
+        m -= 1
+        if m <= 0:
+            m += 12
+            y -= 1
+        if f"{y:04d}-{m:02d}" in ABNORMAL_MONTHS:
+            continue
+        days = _get_month_days(y, m)
+        biz = [(ds, bw, v) for ds, bw, v in days if bw > 0]
+        if not biz or any(v[g].get(k) is None for _, _, v in biz for g, k in specs):
+            continue
+        el = [(ds, bw, v) for ds, bw, v in biz if int(ds[8:]) <= ref_day]
+        el_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in el)
+        rate = {(g, k): (sum(v[g][k] for _, _, v in el) / el_cw if el_cw > 0 else 0.0)
+                for g, k in specs}
+        refs.append((f"{y:04d}-{m:02d}",
+                     [(_calendar_weight(ds, bw), {(g, k): v[g][k] for g, k in specs})
+                      for ds, bw, v in biz][::-1], rate))
+    if len(refs) < n_refs:
+        return None
+
+    ws = [0.5 ** i for i in range(len(refs))]
+    rem = {sp: 0.0 for sp in specs}
+    for i, (ds, bw) in enumerate(future):
+        u = _calendar_weight(ds, bw)
+        for sp in specs:
+            r = 0.0
+            for w, (_, biz, _) in zip(ws, refs):
+                c, vals = biz[min(i, len(biz) - 1)]
+                if c > 0:
+                    r += w * vals[sp] / c
+            rem[sp] += r / sum(ws) * u
+    ref_rate = {sp: sum(w * r[2][sp] for w, r in zip(ws, refs)) / sum(ws) for sp in specs}
+    return {'ref_day': ref_day, 'rem': rem, 'this_cw': this_cw, 'ref_rate': ref_rate,
+            'refs': [r[0] for r in refs]}
+
+
+SM_RECENT_PACE_FROM_DAY = 21  # 이 날짜(경과 기준일)부터 최근 페이스 혼합
+SM_RECENT_PACE_DAYS = 5       # 최근 영업일 수 (3/5/7/10 비교 → 5)
+
+
+def _recent_pace(date_str: str, ref_day: int, specs: list, n: int) -> Optional[dict]:
+    """최근 n영업일(월 경계 넘어 전월 포함) 달력가중당 속도와 이번달 남은 달력가중, 진행률.
+    반환: {'rate': {spec: cw당 속도}, 'rem_cw', 'progress'} 또는 None."""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    this_days = _get_month_days(d.year, d.month)
+    py, pm = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
+    hist = [(ds, bw, v) for ds, bw, v in this_days if int(ds[8:]) <= ref_day and bw > 0][::-1]
+    hist += [(ds, bw, v) for ds, bw, v in _get_month_days(py, pm) if bw > 0][::-1]
+    hist = hist[:n]
+    if len(hist) < n or any(v[g].get(k) is None for _, _, v in hist for g, k in specs):
+        return None
+    c = sum(_calendar_weight(ds, bw) for ds, bw, _ in hist)
+    total_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days)
+    if c <= 0 or total_cw <= 0:
+        return None
+    el_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) <= ref_day)
+    return {'rate': {(g, k): sum(v[g][k] for _, _, v in hist) / c for g, k in specs},
+            'rem_cw': total_cw - el_cw, 'progress': el_cw / total_cw}
+
+
+def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
+                              key: str = 'SM', include_today: bool = True) -> Optional[dict]:
+    """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
+    반환: {'mvno_in': trio, 'mvno_out': trio, 'net': trio, 'refs': [...]} 또는 None."""
+    sp_in, sp_out = ('mvno_in', key), ('mvno_out', key)
+    r = _end_aligned_remaining(date_str, include_today, [sp_in, sp_out], n_refs=SM_ENDALIGN_REF_MONTHS)
+    if not r:
+        return None
+
+    mid_in = cum_in + r['rem'][sp_in]
+    mid_out = cum_out + r['rem'][sp_out]
+
+    # [20261009] 21일 이후엔 최근 5영업일 페이스를 진행률만큼 섞음 (월 중 정책 변화 반영).
+    # IN·OUT에 같은 비중으로 섞어 IN - OUT = 순증감 유지. 백테스트(2025-10~2026-09)
+    # 21일~ 순증감 평균오차 1,298 → 1,146. 월초·중순은 섞으면 오히려 나빠서(최근 며칠
+    # 순증이 +100~-900으로 출렁임) 적용 안 함.
+    if r['ref_day'] >= SM_RECENT_PACE_FROM_DAY:
+        rp = _recent_pace(date_str, r['ref_day'], [sp_in, sp_out], SM_RECENT_PACE_DAYS)
+        if rp:
+            w = rp['progress']
+            mid_in = (1 - w) * mid_in + w * (cum_in + rp['rate'][sp_in] * rp['rem_cw'])
+            mid_out = (1 - w) * mid_out + w * (cum_out + rp['rate'][sp_out] * rp['rem_cw'])
+
+    mid_in = int(round(mid_in))
+    mid_out = int(round(mid_out))
+    mid_net = mid_in - mid_out
+
+    def _trio(mid, field):
+        h = _band_half(field, r['ref_day'])
+        return {'low': mid - h, 'mid': mid, 'high': mid + h}
+
+    return {'mvno_in': _trio(mid_in, 'mvno_in'), 'mvno_out': _trio(mid_out, 'mvno_out'),
+            'net': _trio(mid_net, 'net'), 'refs': r['refs']}
+
+
+# [v3.2, 추가 20261009] T Out(mno_out.S) 월마감 mid = 잔여속도법 70% + 월말정렬 30%.
+# T Out은 순증감과 달리 단일 양수 항목이라 "이번달 수준 배율"이 정보가 됨 - 월말정렬
+# 잔여합에 수준 배율(이번달 경과 속도 ÷ 참조월 같은 시점 속도)을 50% 반영한 값을 섞음.
+# 백테스트(2025-09~2026-09, 326개 시점) 평균오차 |%| (잔여속도법 단독 → 혼합):
+#   전체 4.83 → 4.39 / 1~10일 9.67 → 8.52 / 11~20일 3.48 → 3.33 / 21일~ 1.28 → 1.26
+#   앞반기 7.25 → 6.50 / 뒷반기 2.08 → 2.00 (월말정렬 단독은 7.35로 오히려 나쁨)
+TOUT_END_ALIGNED_W = 0.3  # 혼합 비중 (0.3/0.5/0.7 비교 → 0.3이 전 구간 고르게 개선)
+TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 비교 → 0.5)
+
+
+def get_end_aligned_tout_pred(date_str: str, cum_this: float,
+                              include_today: bool) -> Optional[float]:
+    """T Out 월말정렬(+수준 50%) 월마감 예측치. 계산 불가 시 None."""
+    sp = ('mno_out', 'S')
+    r = _end_aligned_remaining(date_str, include_today, [sp])
+    if not r or cum_this <= 0:
+        return None
+    scale = 1.0
+    if r['this_cw'] > 0 and r['ref_rate'][sp] > 0:
+        scale = (cum_this / r['this_cw']) / r['ref_rate'][sp]
+    return cum_this + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+
+
+def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
+                       today_confirmed: bool, intraday: bool) -> Optional[dict]:
+    """T Out 월마감 mid 재료 (predict_monthly v3.3 설명 참고).
+    cum_db : 확정 누적 (오늘 마감 확정이면 오늘 포함, 아니면 어제까지)
+    cum_now: 지금 누적 (장중이면 cum_db + 오늘 일마감 예상치)
+    intraday=True면 수준 배율은 어제까지 확정 실적 기준, 잔여는 내일부터.
+    반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
+    sp = ('mno_out', 'S')
+    if not intraday:
+        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed)
+        if not a:
+            return None
+        e = get_end_aligned_tout_pred(date_str, cum_now, include_today=today_confirmed)
+        return {'analog': a, 'pred_analog': a['pred'], 'pred_ea': e,
+                'remaining_bw': a['remaining_bw']}
+
+    # 장중: 어제까지 확정 실적으로 속도(수준 배율 포함)를 구하고, 잔여는 오늘 제외
+    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False)
+    if not a0:
+        return None
+    bw_today = next((bw for ds, bw, _ in _get_month_days(
+        int(date_str[:4]), int(date_str[5:7])) if ds == date_str), 0.0)
+    rem_bw = max(0.0, a0['remaining_bw'] - bw_today)
+    out = {'analog': a0, 'pred_analog': cum_now + a0['rate'] * rem_bw,
+           'pred_ea': None, 'remaining_bw': rem_bw}
+
+    r = _end_aligned_remaining(date_str, True, [sp])      # 잔여 = 내일부터
+    r0 = _end_aligned_remaining(date_str, False, [sp])    # 수준 배율 = 어제까지
+    if r and r0 and cum_db > 0:
+        scale = 1.0
+        if r0['this_cw'] > 0 and r0['ref_rate'][sp] > 0:
+            scale = (cum_db / r0['this_cw']) / r0['ref_rate'][sp]
+        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════
 # 월마감 예측
 # ══════════════════════════════════════════════════════════════════
 
@@ -1394,6 +1794,35 @@ def predict_monthly(date_str: str, today_skt: int,
     # 기울기라 추가 보정이 중복/과도 적용될 위험이 있고, 백테스트도 "보정 없는 회귀
     # 단독"으로 검증했음(6.12%, 기존 보정판 7.60%보다 정확). _bias_correction()은
     # 혹시 다른 곳에서 필요할 수 있어 함수 자체는 유지.
+
+    # [v3.0, 20261006] 전월 동일시점 잔여속도법으로 mid 교체 (위 _get_prev_month_analog_pred
+    # 설명 참고). 직전 2개월 데이터가 없는 등 계산 불가 시에만 위 기존 mid 유지.
+    # [v3.3, 20261009] 장중(오늘 미마감)에는 "이번달 수준 배율"을 확정 실적(어제까지)
+    # 기준으로만 계산하고 오늘 일마감 예상치(fc_daily)는 누적에만 더함. 기존엔 fc_daily가
+    # 누적과 수준 배율에 이중으로 들어가 장중 예상치 흔들림이 월마감에 2배로 증폭됐음
+    # (10/9 한글날 11:41 40,051 → 12:01 38,593). 2026-07~09 정시 648개 시점 백테스트:
+    # 하루 안 변동폭 평균 525 → 292 (최대 2,219 → 635), 평균오차 1.40% → 1.32%.
+    # 오늘이 마감 확정됐거나 fc_daily가 없으면(10시대) 기존과 동일.
+    _intraday = (not _today_confirmed) and fc_daily > 0
+    try:
+        _parts = get_tout_mid_parts(date_str, cum_skt_db, cum_skt, _today_confirmed, _intraday)
+    except Exception as e:
+        log.warning(f"[forecast_engine] 전월 잔여속도법 실패 (기존 mid 유지): {e}")
+        _parts = None
+    if _parts:
+        _analog = _parts['analog']
+        log.info(f"[forecast_engine] 전월 잔여속도법: refs={_analog['refs']} "
+                 f"rate={_analog['rate']:,.0f}(pure {_analog['pure']:,.0f}/scaled "
+                 f"{_analog['scaled']:,.0f}) × 잔여bw {_parts['remaining_bw']:.2f} "
+                 f"(장중={_intraday}) → fc_mid {fc_mid:,} → {int(round(_parts['pred_analog'])):,}")
+        fc_mid = int(round(_parts['pred_analog']))
+        # [v3.2] 월말정렬(+수준) 30% 혼합 (get_end_aligned_tout_pred 설명 참고)
+        if _parts.get('pred_ea'):
+            _mixed = int(round((1 - TOUT_END_ALIGNED_W) * _parts['pred_analog']
+                               + TOUT_END_ALIGNED_W * _parts['pred_ea']))
+            log.info(f"[forecast_engine] T Out 월말정렬 혼합: 잔여속도법 {fc_mid:,} / "
+                     f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
+            fc_mid = _mixed
 
     # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
     # 좁으면 그대로 쓰고, 넓으면 ±500으로 압축.
