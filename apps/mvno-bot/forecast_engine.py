@@ -157,6 +157,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from daily_memo import memo_daily, is_past_month  # [추가 20261009] Firestore 읽기 절감
+
 log = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
@@ -381,6 +383,7 @@ def _get_rolling_avg(date_str: str, top_n: int = 10, max_w: float = 5.0) -> floa
         return 0.0
 
 
+@memo_daily
 def _get_hour_completion_ratio(date_str: str, hour: int, top_n: int = 40) -> float:
     """
     [추가 20260928] D-1부터 최근 top_n 영업일 중, 그 시각(hour)까지의 누적 SKT OUT이
@@ -458,6 +461,7 @@ def _get_hour_completion_ratio(date_str: str, hour: int, top_n: int = 40) -> flo
     return ratio
 
 
+@memo_daily
 def _get_hour_completion_ratio_field(date_str: str, hour: int, group: str, key: str,
                                       top_n: int = 15) -> float:
     """
@@ -870,7 +874,7 @@ def predict_hourly(date_str: str, hour: int, minute: int,
 
 _month_series_cache: dict = {}  # {(year, month): series} - 마감된(과거) 달만 캐싱, 당월은 매번 새로 조회
 
-def _get_month_daily_series(year: int, month: int) -> list:
+def _get_month_daily_series_impl(year: int, month: int) -> list:
     """
     [v1.0] 해당 월의 (누적bw, 누적skt) 시계열 반환.
     - bw: bw_ai_prev 우선, 없으면 bw_manual (시기별로 필드명이 달라서 둘 다 폴백)
@@ -916,6 +920,19 @@ def _get_month_daily_series(year: int, month: int) -> list:
     if not is_current_month:
         _month_series_cache[cache_key] = series
     return series
+
+
+
+@memo_daily
+def _get_month_daily_series_past(year: int, month: int) -> list:
+    return _get_month_daily_series_impl(year, month)
+
+
+def _get_month_daily_series(year: int, month: int) -> list:
+    """[추가 20261009] 마감된 과거 달은 daily_memo로 하루 1회만 조회, 당월은 매번 조회."""
+    if is_past_month(year, month):
+        return _get_month_daily_series_past(year, month)
+    return _get_month_daily_series_impl(year, month)
 
 
 def _get_historical_month_ratio(date_str: str, progress_ratio: float,
@@ -1200,7 +1217,7 @@ ANALOG_LIGHT_DAY_W = 0.66  # 토요일·공휴일 달력가중 (2025-08~ 토요�
 _month_days_cache: dict = {}  # {(year, month): [(date_str, bw, {group: {key: val}})]} - 과거 달만
 
 
-def _get_month_days(year: int, month: int) -> list:
+def _get_month_days_impl(year: int, month: int) -> list:
     """해당 월 ktoa_daily 일별 (date_str, bw, {'mno_out':{..},'mvno_in':{..},'mvno_out':{..}})
     목록. 과거 달은 캐싱."""
     now = datetime.now(KST)
@@ -1232,6 +1249,19 @@ def _get_month_days(year: int, month: int) -> list:
     if not is_current_month:
         _month_days_cache[key] = days
     return days
+
+
+
+@memo_daily
+def _get_month_days_past(year: int, month: int) -> list:
+    return _get_month_days_impl(year, month)
+
+
+def _get_month_days(year: int, month: int) -> list:
+    """[추가 20261009] 마감된 과거 달은 daily_memo로 하루 1회만 조회, 당월은 매번 조회."""
+    if is_past_month(year, month):
+        return _get_month_days_past(year, month)
+    return _get_month_days_impl(year, month)
 
 
 def _calendar_weight(date_str: str, bw: float) -> float:

@@ -52,4 +52,6 @@ COPY cafe_collector_runner.py .
 # 오류로 가려진 채) 애초에 이 로직을 돌려본 적이 없었음. Job 전용 커맨드 오버라이드와
 # 함께 배포.
 COPY bw_week_updater.py .
+# [추가 20261009] forecast_engine/predict_gemini가 import - 누락 시 ImportError
+COPY daily_memo.py .
 # 1778494812
