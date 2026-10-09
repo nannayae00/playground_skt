@@ -404,7 +404,7 @@ def _build_s0_month_summary(wb, year: int, month: int, date_str: str):
         t_out_goal, sm_net_goal, sm_ms_goal = _get_goals(year, month)
         sm_net_goal_val = sm_net_goal if sm_net_goal is not None else -5000
     except Exception:
-        t_out_goal, sm_net_goal_val, sm_ms_goal = 36000, -5000, 19.0
+        t_out_goal, sm_net_goal_val, sm_ms_goal = 37000, -5000, 19.0
 
     # 새 시트를 맨 앞에 생성 (기존 active 시트보다 먼저 오도록 index=0)
     ws = wb.create_sheet('월마감 요약', 0)
