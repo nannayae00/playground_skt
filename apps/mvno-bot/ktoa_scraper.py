@@ -1110,6 +1110,20 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
     fc_mo_km  = _analog_trio('mvno_out', 'KM', cum_mout.get('KM'), fc_mo_km)
     fc_mo_lm  = _analog_trio('mvno_out', 'LM', cum_mout.get('LM'), fc_mo_lm)
 
+    # [20261008] SM IN/OUT/순증감은 월말정렬 잔여예측으로 교체 (forecast_engine.
+    # get_end_aligned_mvno_pred 설명 참고) - 순증감 평균오차 2,373 → 1,766.
+    # IN 예측 - OUT 예측 = 순증감 예측이 정확히 성립. 계산 불가 시 위 값 유지.
+    _sm_ea = None
+    if cum_mi.get('SM') is not None and cum_mout.get('SM') is not None:
+        try:
+            from forecast_engine import get_end_aligned_mvno_pred as _ea
+            _sm_ea = _ea(date_str, float(cum_mi['SM']), float(cum_mout['SM']),
+                         key='SM', include_today=True)
+        except Exception as _ee:
+            log.warning(f"SM 월말정렬 예측 실패 (잔여속도법 유지): {_ee}")
+    if _sm_ea:
+        fc_sm, fc_mo_sm = _sm_ea['mvno_in'], _sm_ea['mvno_out']
+
     # MNO 유입(mno_in)/MNO 전체이탈(mno_out_all) S/K/L - 기존엔 예측 자체가 없었음.
     # 백테스트: mno_in S/K/L 10.3/8.6/9.1%, mno_out_all 6.0/9.7/7.8% (단순avg 대비 모두 개선)
     _none = {'low': None, 'mid': None, 'high': None}
@@ -1146,6 +1160,8 @@ def _save_all_fc_to_daily(date_str: str, daily: dict, hourly_docs: list) -> None
 
     # 순증감 = IN - OUT (MVNO: mvno_in - mvno_out / MNO: mno_in - mno_out_all)
     fc_net_sm = _net_trio(fc_sm, fc_mo_sm)
+    if _sm_ea:
+        fc_net_sm = _sm_ea['net']  # 범위는 순증감 자체 오차 기준 (IN 범위 - OUT 범위 아님)
     fc_net_km = _net_trio(fc_km, fc_mo_km)
     fc_net_lm = _net_trio(fc_lm, fc_mo_lm)
     fc_net    = _sum_trio(fc_net_sm, fc_net_km, fc_net_lm)
