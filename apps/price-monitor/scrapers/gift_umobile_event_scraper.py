@@ -61,6 +61,9 @@ HEADERS = {
 }
 
 EVNT_IMG_PATH = "/upload/direct/img/evnt/"
+# [추가 20261010] 2026-10 신규 이벤트 템플릿은 본문 이미지를 /upload/event/images/event{번호}-*.jpg에 올림
+# (예: 12567 전설의 요금제) - 기존 경로만 인정해서 이미지 0장 → 요금제 0건으로 누락되던 문제
+EVNT_IMG_PATHS = (EVNT_IMG_PATH, "/upload/event/images/")
 BANNER_EXCLUDE_PATTERNS = ["이벤트목록배너", "이벤트 목록배너", "PC, MO", "목록배너"]
 GIFT_KEYWORDS = [
     "혜택", "사은품", "지급", "Npay", "N페이", "페이백",
@@ -266,7 +269,7 @@ def fetch_post_html_hash(post_url: str) -> tuple:
     seen = set()
     for img in main.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
-        if not src or EVNT_IMG_PATH not in src:
+        if not src or not any(p in src for p in EVNT_IMG_PATHS):
             continue
         if any(pat in src for pat in BANNER_EXCLUDE_PATTERNS):
             continue
@@ -294,6 +297,10 @@ def _download_image_b64(url: str):
     return base64.standard_b64encode(r.content).decode("utf-8"), mime
 
 
+# 직전 parse_images_with_vision() 호출의 이미지 다운로드/파싱 실패 수 (0이면 전부 정상 처리)
+LAST_VISION_FAILURES = 0
+
+
 def parse_images_with_vision(image_urls: list) -> list:
     """이미지 URL → Gemini Vision → [{plan_name, total_gb, base_gb, ...}]"""
     from google import genai
@@ -305,6 +312,8 @@ def parse_images_with_vision(image_urls: list) -> list:
     client = genai.Client(api_key=api_key)
     model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 
+    global LAST_VISION_FAILURES
+    LAST_VISION_FAILURES = 0
     merged = {}
     img_total = len(image_urls)
     for idx, url in enumerate(image_urls, 1):
@@ -314,6 +323,7 @@ def parse_images_with_vision(image_urls: list) -> list:
             b64, mime = _download_image_b64(url)
         except Exception as e:
             print(f"[vision] 다운로드 실패: {fname} | {e}")
+            LAST_VISION_FAILURES += 1
             continue
         try:
             resp = client.models.generate_content(
@@ -330,6 +340,7 @@ def parse_images_with_vision(image_urls: list) -> list:
             print(f"[vision] {fname} → {len(plans) if isinstance(plans, list) else 0}건 파싱 (유효 {hit}건)")
         except Exception as e:
             print(f"[vision] 파싱 실패: {fname} | {e}")
+            LAST_VISION_FAILURES += 1
             continue
 
         for plan in (plans if isinstance(plans, list) else []):
@@ -369,7 +380,9 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
             cached = cache_col.document(post_id).get()
             cached_data = cached.to_dict() if cached.exists else {}
 
-            if cached_data.get("html_hash") == html_hash and cached_data.get("plans"):
+            # [수정 20261010] 요금제 0건이어도 파싱이 오류 없이 끝난 게시글(parse_ok)은 재사용 -
+            # 기존엔 plans가 비면 매 실행마다 "변경감지"로 재파싱했음
+            if cached_data.get("html_hash") == html_hash and (cached_data.get("plans") or cached_data.get("parse_ok")):
                 # 변경 없음 → 캐시 재사용
                 # (이벤트 단위 캐시는 parse_images_with_vision()을 거치지 않으므로
                 #  _strip_device_linked_benefits()를 여기서도 적용)
@@ -381,6 +394,7 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
                 reason = "신규" if not cached_data else "변경감지"
                 print(f"[umobile] 🔍 {reason} → Vision 파싱 시작: [{post_id}] {post['title'][:25]} (이미지 {len(image_urls)}장)")
                 post["plans"] = parse_images_with_vision(image_urls) if image_urls else []
+                parse_ok = bool(image_urls) and LAST_VISION_FAILURES == 0
                 post["from_cache"] = False
                 valid = sum(1 for p in post["plans"] if p.get("total_won", 0) > 0)
                 print(f"[umobile] ✅ 파싱 완료: [{post_id}] 요금제 {len(post['plans'])}건 (유효 {valid}건)")
@@ -394,6 +408,7 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
                     "date_end":   post["date_end"],
                     "html_hash":  html_hash,
                     "plans":      post["plans"],
+                    "parse_ok":   parse_ok,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
 
