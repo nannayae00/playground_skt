@@ -1574,7 +1574,8 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
 def predict_monthly(date_str: str, today_skt: int,
                     hourly_docs: list = None,
                     save_to_daily: bool = True,
-                    current_hour: int = 19) -> dict:
+                    current_hour: int = 19,
+                    use_gemini: bool = True) -> dict:
     """
     [v1.1] 월마감 예측 — bw 3시나리오 기반 Low/Mid/High
     - fc_low  : bw_ai_w2 잔여합 (최신 주차 반영, 보수적)
@@ -1877,50 +1878,53 @@ def predict_monthly(date_str: str, today_skt: int,
     # ── Gemini: comment + on_track 판단에만 사용 (fc_low/high는 수식 고정)
     comment = ''
     source  = 'formula'
-    try:
-        similar = get_similar_days(date_str, bw)
-        pat     = get_hourly_pattern(date_str, 19, bw, 0)
-        pat_info = (f"진행률 패턴: 19시 {pat['rate_at_hour']*100:.1f}% "
-                    f"({pat['confidence']}, n={pat['sample_count']})"
-                    if pat.get('available') else
-                    f"패턴 학습 중 (n={pat.get('sample_count',0)})")
+    # [추가 20261009] comment/on_track(Gemini)은 정시 메시지·일마감에만 표시됨 - 10분 회차는
+    # use_gemini=False로 호출해 결과를 버리던 Gemini 호출(월 ~1,700회)을 생략
+    if use_gemini:
+        try:
+            similar = get_similar_days(date_str, bw)
+            pat     = get_hourly_pattern(date_str, 19, bw, 0)
+            pat_info = (f"진행률 패턴: 19시 {pat['rate_at_hour']*100:.1f}% "
+                        f"({pat['confidence']}, n={pat['sample_count']})"
+                        if pat.get('available') else
+                        f"패턴 학습 중 (n={pat.get('sample_count',0)})")
 
-        ctx = {
-            'date_str':       date_str,
-            'wd_name':        wd_name,
-            'bw':             bw,
-            'current_hour':   19,
-            'current_skt':    today_skt,
-            'today_goal':     today_goal,
-            'pct_of_goal':    pct_of_goal,
-            'remaining_avg':  remaining_avg,
-            'monthly_goal':   goal,
-            'cum_skt':        cum_skt,
-            'daily_avg':      avg_skt,
-            'remaining_bw':   rbw,
-            'need_avg':       need_avg,
-            'fc_low':         fc_low,
-            'fc_high':        fc_high,
-            'ach_rate':       ach_rate,
-            'on_track_formula': on_track,
-            'similar_count':  similar['count'],
-            'similar_dates':  similar['dates'],
-            'similar_p25':    similar['p25'],
-            'similar_p75':    similar['p75'],
-            'similar_median': similar['median'],
-            'pattern_info':   pat_info,
-            'pattern_conf':   pat.get('confidence', 'LOW'),
-            'pattern_n':      pat.get('sample_count', 0),
-            'daily_fc_formula': fc_daily,
-        }
-        gemini = call_gemini_forecast(ctx)
-        if gemini:
-            # Gemini fc_low/high는 무시, comment + on_track만 사용
-            comment  = gemini.get('comment', '')
-            on_track = gemini.get('on_track', on_track)
-            source   = 'gemini_comment'
-    except Exception as e:
-        log.debug(f"Gemini 호출 실패 (수식 결과 사용): {e}")
+            ctx = {
+                'date_str':       date_str,
+                'wd_name':        wd_name,
+                'bw':             bw,
+                'current_hour':   19,
+                'current_skt':    today_skt,
+                'today_goal':     today_goal,
+                'pct_of_goal':    pct_of_goal,
+                'remaining_avg':  remaining_avg,
+                'monthly_goal':   goal,
+                'cum_skt':        cum_skt,
+                'daily_avg':      avg_skt,
+                'remaining_bw':   rbw,
+                'need_avg':       need_avg,
+                'fc_low':         fc_low,
+                'fc_high':        fc_high,
+                'ach_rate':       ach_rate,
+                'on_track_formula': on_track,
+                'similar_count':  similar['count'],
+                'similar_dates':  similar['dates'],
+                'similar_p25':    similar['p25'],
+                'similar_p75':    similar['p75'],
+                'similar_median': similar['median'],
+                'pattern_info':   pat_info,
+                'pattern_conf':   pat.get('confidence', 'LOW'),
+                'pattern_n':      pat.get('sample_count', 0),
+                'daily_fc_formula': fc_daily,
+            }
+            gemini = call_gemini_forecast(ctx)
+            if gemini:
+                # Gemini fc_low/high는 무시, comment + on_track만 사용
+                comment  = gemini.get('comment', '')
+                on_track = gemini.get('on_track', on_track)
+                source   = 'gemini_comment'
+        except Exception as e:
+            log.debug(f"Gemini 호출 실패 (수식 결과 사용): {e}")
 
     result = {
         'fc_low':   fc_low,

@@ -523,9 +523,10 @@ def build_message(stats: dict, prev_stats: dict = None,
                 skt_lines.append(f'💬 {_mfc["comment"]}')
         else:
             # 10분 단위: 직전 정시 예측값 사용 (속도보정 제거 — 정시 기준 유지)
+            # [수정 20261009] 이 분기는 comment/on_track을 표시하지 않으므로 Gemini 호출 생략
             from forecast_engine import predict_monthly as _pm
             _mfc = _pm(site_date, today_tout, save_to_daily=False,
-                       current_hour=_ref_hour)
+                       current_hour=_ref_hour, use_gemini=False)
             cum_tout      = _mfc['cum_skt']
             goal_achieved = cum_tout >= tout_goal
 
