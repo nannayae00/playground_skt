@@ -629,7 +629,15 @@ def save_hourly_pattern(date_str: str, hourly_docs: list, closing_skt: int) -> b
 
 
 def call_gemini_forecast(ctx: dict) -> Optional[dict]:
-    """Gemini 호출 → JSON 결과"""
+    """Gemini 호출 → JSON 결과
+
+    [수정 20261009] 기본 비활성화 - 운영 로그상 2026-09-10 이후 성공 0건
+    (09-23까지 인증 오류, 이후 응답 JSON 파싱 오류 - 숫자에 천단위 쉼표가 섞여 옴).
+    항상 None(폴백)이었으므로 끄더라도 메시지는 동일하고, 과금만 되던 호출이 사라짐.
+    다시 쓰려면 파싱을 고친 뒤 환경변수 KTOA_GEMINI_COMMENT=1로 켤 것.
+    """
+    if os.environ.get('KTOA_GEMINI_COMMENT') != '1':
+        return None
     status_word = "정상 범위" if ctx['on_track_formula'] else "목표 초과 위험"
     prompt = f"""당신은 MVNO 번호이동 실적 분석 전문가입니다. JSON만 출력하세요.
 
