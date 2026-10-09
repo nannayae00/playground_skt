@@ -208,7 +208,7 @@ def _build_period_text(agg: dict, title: str, period_type: str,
         _t_out_goal, _sm_net_goal, _sm_ms_goal = _get_goals(_sy, _sm)
         _sm_goal_val = _sm_net_goal if _sm_net_goal is not None else -5000
     except Exception:
-        _t_out_goal, _sm_goal_val, _sm_ms_goal = 36000, -5000, 19.0
+        _t_out_goal, _sm_goal_val, _sm_ms_goal = 37000, -5000, 19.0
 
     L = []
     sep = '━' * 28
