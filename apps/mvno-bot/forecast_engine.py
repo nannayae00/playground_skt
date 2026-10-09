@@ -1342,6 +1342,9 @@ def reconcile_mno_to_mvno(mvno_net_total: float, mno_in: dict, mno_out_all: dict
 #   KM은 이 방식이 더 나빠서(순증감 3,333 → 3,894) SM에만 적용.
 # 범위(low/high): 진행시점별 과거 오차의 70% 구간 (편향은 기간마다 부호가 바뀌어
 #   보정하지 않음). 예측값 ± 아래 폭.
+# 참조월 수: 2(가중 2:1). 3개월(4:2:1)도 비교했으나 비정상월 없는 구간(2025-11~) 평균오차
+# 1,683 → 1,713으로 약간 나빠 2 유지 (20261009).
+SM_ENDALIGN_REF_MONTHS = 2
 SM_ENDALIGN_BAND = {  # (일자 상한, {항목: 반폭})
     'mvno_in':  ((10, 6000), (20, 3400), (31, 2500)),
     'mvno_out': ((10, 5200), (20, 2400), (31, 1300)),
@@ -1356,7 +1359,12 @@ def _band_half(field: str, day: int) -> int:
     return SM_ENDALIGN_BAND[field][-1][1]
 
 
-def _end_aligned_remaining(date_str: str, include_today: bool, specs: list) -> Optional[dict]:
+# 유심 사태로 실적이 비정상인 달 - 월말정렬 참조월에서 제외 (CLAUDE.md 영업일수 규칙)
+ABNORMAL_MONTHS = {'2025-04', '2025-05', '2025-07'}
+
+
+def _end_aligned_remaining(date_str: str, include_today: bool, specs: list,
+                           n_refs: int = ANALOG_REF_MONTHS) -> Optional[dict]:
     """월말정렬 잔여합 공통 계산. specs: [(group, key), ...] (예: ('mvno_in','SM')).
     반환: {'ref_day', 'rem': {spec: 남은 영업일 예상합}, 'this_cw': 이번달 경과 달력가중,
            'ref_rate': {spec: 참조월 같은 시점까지 달력가중당 속도}, 'refs': [...]} 또는 None."""
@@ -1373,12 +1381,14 @@ def _end_aligned_remaining(date_str: str, include_today: bool, specs: list) -> O
     refs = []  # [(ym, [(cw, {spec: val}), ...] 월말부터, {spec: 같은 시점까지 cw당 속도})]
     y, m = d.year, d.month
     for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
-        if len(refs) >= ANALOG_REF_MONTHS:
+        if len(refs) >= n_refs:
             break
         m -= 1
         if m <= 0:
             m += 12
             y -= 1
+        if f"{y:04d}-{m:02d}" in ABNORMAL_MONTHS:
+            continue
         days = _get_month_days(y, m)
         biz = [(ds, bw, v) for ds, bw, v in days if bw > 0]
         if not biz or any(v[g].get(k) is None for _, _, v in biz for g, k in specs):
@@ -1390,7 +1400,7 @@ def _end_aligned_remaining(date_str: str, include_today: bool, specs: list) -> O
         refs.append((f"{y:04d}-{m:02d}",
                      [(_calendar_weight(ds, bw), {(g, k): v[g][k] for g, k in specs})
                       for ds, bw, v in biz][::-1], rate))
-    if len(refs) < ANALOG_REF_MONTHS:
+    if len(refs) < n_refs:
         return None
 
     ws = [0.5 ** i for i in range(len(refs))]
@@ -1414,7 +1424,7 @@ def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
     """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
     반환: {'mvno_in': trio, 'mvno_out': trio, 'net': trio, 'refs': [...]} 또는 None."""
     sp_in, sp_out = ('mvno_in', key), ('mvno_out', key)
-    r = _end_aligned_remaining(date_str, include_today, [sp_in, sp_out])
+    r = _end_aligned_remaining(date_str, include_today, [sp_in, sp_out], n_refs=SM_ENDALIGN_REF_MONTHS)
     if not r:
         return None
 
