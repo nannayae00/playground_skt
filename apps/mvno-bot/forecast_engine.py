@@ -1419,6 +1419,30 @@ def _end_aligned_remaining(date_str: str, include_today: bool, specs: list,
             'refs': [r[0] for r in refs]}
 
 
+SM_RECENT_PACE_FROM_DAY = 21  # 이 날짜(경과 기준일)부터 최근 페이스 혼합
+SM_RECENT_PACE_DAYS = 5       # 최근 영업일 수 (3/5/7/10 비교 → 5)
+
+
+def _recent_pace(date_str: str, ref_day: int, specs: list, n: int) -> Optional[dict]:
+    """최근 n영업일(월 경계 넘어 전월 포함) 달력가중당 속도와 이번달 남은 달력가중, 진행률.
+    반환: {'rate': {spec: cw당 속도}, 'rem_cw', 'progress'} 또는 None."""
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    this_days = _get_month_days(d.year, d.month)
+    py, pm = (d.year, d.month - 1) if d.month > 1 else (d.year - 1, 12)
+    hist = [(ds, bw, v) for ds, bw, v in this_days if int(ds[8:]) <= ref_day and bw > 0][::-1]
+    hist += [(ds, bw, v) for ds, bw, v in _get_month_days(py, pm) if bw > 0][::-1]
+    hist = hist[:n]
+    if len(hist) < n or any(v[g].get(k) is None for _, _, v in hist for g, k in specs):
+        return None
+    c = sum(_calendar_weight(ds, bw) for ds, bw, _ in hist)
+    total_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days)
+    if c <= 0 or total_cw <= 0:
+        return None
+    el_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) <= ref_day)
+    return {'rate': {(g, k): sum(v[g][k] for _, _, v in hist) / c for g, k in specs},
+            'rem_cw': total_cw - el_cw, 'progress': el_cw / total_cw}
+
+
 def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
                               key: str = 'SM', include_today: bool = True) -> Optional[dict]:
     """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
@@ -1428,8 +1452,22 @@ def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
     if not r:
         return None
 
-    mid_in = int(round(cum_in + r['rem'][sp_in]))
-    mid_out = int(round(cum_out + r['rem'][sp_out]))
+    mid_in = cum_in + r['rem'][sp_in]
+    mid_out = cum_out + r['rem'][sp_out]
+
+    # [20261009] 21일 이후엔 최근 5영업일 페이스를 진행률만큼 섞음 (월 중 정책 변화 반영).
+    # IN·OUT에 같은 비중으로 섞어 IN - OUT = 순증감 유지. 백테스트(2025-10~2026-09)
+    # 21일~ 순증감 평균오차 1,298 → 1,146. 월초·중순은 섞으면 오히려 나빠서(최근 며칠
+    # 순증이 +100~-900으로 출렁임) 적용 안 함.
+    if r['ref_day'] >= SM_RECENT_PACE_FROM_DAY:
+        rp = _recent_pace(date_str, r['ref_day'], [sp_in, sp_out], SM_RECENT_PACE_DAYS)
+        if rp:
+            w = rp['progress']
+            mid_in = (1 - w) * mid_in + w * (cum_in + rp['rate'][sp_in] * rp['rem_cw'])
+            mid_out = (1 - w) * mid_out + w * (cum_out + rp['rate'][sp_out] * rp['rem_cw'])
+
+    mid_in = int(round(mid_in))
+    mid_out = int(round(mid_out))
     mid_net = mid_in - mid_out
 
     def _trio(mid, field):
