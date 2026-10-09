@@ -1463,6 +1463,42 @@ def get_end_aligned_tout_pred(date_str: str, cum_this: float,
     return cum_this + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
 
 
+def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
+                       today_confirmed: bool, intraday: bool) -> Optional[dict]:
+    """T Out 월마감 mid 재료 (predict_monthly v3.3 설명 참고).
+    cum_db : 확정 누적 (오늘 마감 확정이면 오늘 포함, 아니면 어제까지)
+    cum_now: 지금 누적 (장중이면 cum_db + 오늘 일마감 예상치)
+    intraday=True면 수준 배율은 어제까지 확정 실적 기준, 잔여는 내일부터.
+    반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
+    sp = ('mno_out', 'S')
+    if not intraday:
+        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed)
+        if not a:
+            return None
+        e = get_end_aligned_tout_pred(date_str, cum_now, include_today=today_confirmed)
+        return {'analog': a, 'pred_analog': a['pred'], 'pred_ea': e,
+                'remaining_bw': a['remaining_bw']}
+
+    # 장중: 어제까지 확정 실적으로 속도(수준 배율 포함)를 구하고, 잔여는 오늘 제외
+    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False)
+    if not a0:
+        return None
+    bw_today = next((bw for ds, bw, _ in _get_month_days(
+        int(date_str[:4]), int(date_str[5:7])) if ds == date_str), 0.0)
+    rem_bw = max(0.0, a0['remaining_bw'] - bw_today)
+    out = {'analog': a0, 'pred_analog': cum_now + a0['rate'] * rem_bw,
+           'pred_ea': None, 'remaining_bw': rem_bw}
+
+    r = _end_aligned_remaining(date_str, True, [sp])      # 잔여 = 내일부터
+    r0 = _end_aligned_remaining(date_str, False, [sp])    # 수준 배율 = 어제까지
+    if r and r0 and cum_db > 0:
+        scale = 1.0
+        if r0['this_cw'] > 0 and r0['ref_rate'][sp] > 0:
+            scale = (cum_db / r0['this_cw']) / r0['ref_rate'][sp]
+        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════
 # 월마감 예측
 # ══════════════════════════════════════════════════════════════════
@@ -1723,30 +1759,31 @@ def predict_monthly(date_str: str, today_skt: int,
 
     # [v3.0, 20261006] 전월 동일시점 잔여속도법으로 mid 교체 (위 _get_prev_month_analog_pred
     # 설명 참고). 직전 2개월 데이터가 없는 등 계산 불가 시에만 위 기존 mid 유지.
+    # [v3.3, 20261009] 장중(오늘 미마감)에는 "이번달 수준 배율"을 확정 실적(어제까지)
+    # 기준으로만 계산하고 오늘 일마감 예상치(fc_daily)는 누적에만 더함. 기존엔 fc_daily가
+    # 누적과 수준 배율에 이중으로 들어가 장중 예상치 흔들림이 월마감에 2배로 증폭됐음
+    # (10/9 한글날 11:41 40,051 → 12:01 38,593). 2026-07~09 정시 648개 시점 백테스트:
+    # 하루 안 변동폭 평균 525 → 292 (최대 2,219 → 635), 평균오차 1.40% → 1.32%.
+    # 오늘이 마감 확정됐거나 fc_daily가 없으면(10시대) 기존과 동일.
+    _intraday = (not _today_confirmed) and fc_daily > 0
     try:
-        _analog = _get_prev_month_analog_pred(
-            date_str, cum_skt, include_today=(_today_confirmed or fc_daily > 0))
+        _parts = get_tout_mid_parts(date_str, cum_skt_db, cum_skt, _today_confirmed, _intraday)
     except Exception as e:
         log.warning(f"[forecast_engine] 전월 잔여속도법 실패 (기존 mid 유지): {e}")
-        _analog = None
-    if _analog:
+        _parts = None
+    if _parts:
+        _analog = _parts['analog']
         log.info(f"[forecast_engine] 전월 잔여속도법: refs={_analog['refs']} "
                  f"rate={_analog['rate']:,.0f}(pure {_analog['pure']:,.0f}/scaled "
-                 f"{_analog['scaled']:,.0f}) × 잔여bw {_analog['remaining_bw']:.2f} "
-                 f"→ fc_mid {fc_mid:,} → {int(round(_analog['pred'])):,}")
-        fc_mid = int(round(_analog['pred']))
+                 f"{_analog['scaled']:,.0f}) × 잔여bw {_parts['remaining_bw']:.2f} "
+                 f"(장중={_intraday}) → fc_mid {fc_mid:,} → {int(round(_parts['pred_analog'])):,}")
+        fc_mid = int(round(_parts['pred_analog']))
         # [v3.2] 월말정렬(+수준) 30% 혼합 (get_end_aligned_tout_pred 설명 참고)
-        try:
-            _ea = get_end_aligned_tout_pred(
-                date_str, cum_skt, include_today=(_today_confirmed or fc_daily > 0))
-        except Exception as e:
-            log.warning(f"[forecast_engine] T Out 월말정렬 실패 (잔여속도법 단독 유지): {e}")
-            _ea = None
-        if _ea:
-            _mixed = int(round((1 - TOUT_END_ALIGNED_W) * _analog['pred']
-                               + TOUT_END_ALIGNED_W * _ea))
+        if _parts.get('pred_ea'):
+            _mixed = int(round((1 - TOUT_END_ALIGNED_W) * _parts['pred_analog']
+                               + TOUT_END_ALIGNED_W * _parts['pred_ea']))
             log.info(f"[forecast_engine] T Out 월말정렬 혼합: 잔여속도법 {fc_mid:,} / "
-                     f"월말정렬 {int(round(_ea)):,} → fc_mid {_mixed:,}")
+                     f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
             fc_mid = _mixed
 
     # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
