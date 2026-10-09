@@ -1356,20 +1356,21 @@ def _band_half(field: str, day: int) -> int:
     return SM_ENDALIGN_BAND[field][-1][1]
 
 
-def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
-                              key: str = 'SM', include_today: bool = True) -> Optional[dict]:
-    """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
-    반환: {'mvno_in': trio, 'mvno_out': trio, 'net': trio, 'refs': [...]} 또는 None."""
+def _end_aligned_remaining(date_str: str, include_today: bool, specs: list) -> Optional[dict]:
+    """월말정렬 잔여합 공통 계산. specs: [(group, key), ...] (예: ('mvno_in','SM')).
+    반환: {'ref_day', 'rem': {spec: 남은 영업일 예상합}, 'this_cw': 이번달 경과 달력가중,
+           'ref_rate': {spec: 참조월 같은 시점까지 달력가중당 속도}, 'refs': [...]} 또는 None."""
     d = datetime.strptime(date_str, '%Y-%m-%d')
     ref_day = d.day if include_today else d.day - 1
     if ref_day < 1:
         return None
 
+    this_days = _get_month_days(d.year, d.month)
+    this_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) <= ref_day)
     # 이번달 남은 영업일 (월말부터 거꾸로)
-    future = [(ds, bw) for ds, bw, _ in _get_month_days(d.year, d.month)
-              if int(ds[8:]) > ref_day and bw > 0][::-1]
+    future = [(ds, bw) for ds, bw, _ in this_days if int(ds[8:]) > ref_day and bw > 0][::-1]
 
-    refs = []  # [(ym, [(cw, in, out), ...] 월말부터)]
+    refs = []  # [(ym, [(cw, {spec: val}), ...] 월말부터, {spec: 같은 시점까지 cw당 속도})]
     y, m = d.year, d.month
     for _ in range(6):  # 데이터 결손 달은 건너뛰고 최대 6개월 전까지
         if len(refs) >= ANALOG_REF_MONTHS:
@@ -1380,38 +1381,76 @@ def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
             y -= 1
         days = _get_month_days(y, m)
         biz = [(ds, bw, v) for ds, bw, v in days if bw > 0]
-        if not biz or any(v['mvno_in'].get(key) is None or v['mvno_out'].get(key) is None
-                          for _, _, v in biz):
+        if not biz or any(v[g].get(k) is None for _, _, v in biz for g, k in specs):
             continue
+        el = [(ds, bw, v) for ds, bw, v in biz if int(ds[8:]) <= ref_day]
+        el_cw = sum(_calendar_weight(ds, bw) for ds, bw, _ in el)
+        rate = {(g, k): (sum(v[g][k] for _, _, v in el) / el_cw if el_cw > 0 else 0.0)
+                for g, k in specs}
         refs.append((f"{y:04d}-{m:02d}",
-                     [(_calendar_weight(ds, bw), v['mvno_in'][key], v['mvno_out'][key])
-                      for ds, bw, v in biz][::-1]))
+                     [(_calendar_weight(ds, bw), {(g, k): v[g][k] for g, k in specs})
+                      for ds, bw, v in biz][::-1], rate))
     if len(refs) < ANALOG_REF_MONTHS:
         return None
 
     ws = [0.5 ** i for i in range(len(refs))]
-    rem_in = rem_out = 0.0
+    rem = {sp: 0.0 for sp in specs}
     for i, (ds, bw) in enumerate(future):
         u = _calendar_weight(ds, bw)
-        r_in = r_out = 0.0
-        for w, (_, biz) in zip(ws, refs):
-            c, vi, vo = biz[min(i, len(biz) - 1)]
-            if c > 0:
-                r_in += w * vi / c
-                r_out += w * vo / c
-        rem_in += r_in / sum(ws) * u
-        rem_out += r_out / sum(ws) * u
+        for sp in specs:
+            r = 0.0
+            for w, (_, biz, _) in zip(ws, refs):
+                c, vals = biz[min(i, len(biz) - 1)]
+                if c > 0:
+                    r += w * vals[sp] / c
+            rem[sp] += r / sum(ws) * u
+    ref_rate = {sp: sum(w * r[2][sp] for w, r in zip(ws, refs)) / sum(ws) for sp in specs}
+    return {'ref_day': ref_day, 'rem': rem, 'this_cw': this_cw, 'ref_rate': ref_rate,
+            'refs': [r[0] for r in refs]}
 
-    mid_in = int(round(cum_in + rem_in))
-    mid_out = int(round(cum_out + rem_out))
+
+def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
+                              key: str = 'SM', include_today: bool = True) -> Optional[dict]:
+    """월말정렬 잔여예측 (위 설명 참고). cum_in/cum_out: 이번달 경과 누적 MVNO IN/OUT.
+    반환: {'mvno_in': trio, 'mvno_out': trio, 'net': trio, 'refs': [...]} 또는 None."""
+    sp_in, sp_out = ('mvno_in', key), ('mvno_out', key)
+    r = _end_aligned_remaining(date_str, include_today, [sp_in, sp_out])
+    if not r:
+        return None
+
+    mid_in = int(round(cum_in + r['rem'][sp_in]))
+    mid_out = int(round(cum_out + r['rem'][sp_out]))
     mid_net = mid_in - mid_out
 
     def _trio(mid, field):
-        h = _band_half(field, ref_day)
+        h = _band_half(field, r['ref_day'])
         return {'low': mid - h, 'mid': mid, 'high': mid + h}
 
     return {'mvno_in': _trio(mid_in, 'mvno_in'), 'mvno_out': _trio(mid_out, 'mvno_out'),
-            'net': _trio(mid_net, 'net'), 'refs': [r[0] for r in refs]}
+            'net': _trio(mid_net, 'net'), 'refs': r['refs']}
+
+
+# [v3.2, 추가 20261009] T Out(mno_out.S) 월마감 mid = 잔여속도법 70% + 월말정렬 30%.
+# T Out은 순증감과 달리 단일 양수 항목이라 "이번달 수준 배율"이 정보가 됨 - 월말정렬
+# 잔여합에 수준 배율(이번달 경과 속도 ÷ 참조월 같은 시점 속도)을 50% 반영한 값을 섞음.
+# 백테스트(2025-09~2026-09, 326개 시점) 평균오차 |%| (잔여속도법 단독 → 혼합):
+#   전체 4.83 → 4.39 / 1~10일 9.67 → 8.52 / 11~20일 3.48 → 3.33 / 21일~ 1.28 → 1.26
+#   앞반기 7.25 → 6.50 / 뒷반기 2.08 → 2.00 (월말정렬 단독은 7.35로 오히려 나쁨)
+TOUT_END_ALIGNED_W = 0.3  # 혼합 비중 (0.3/0.5/0.7 비교 → 0.3이 전 구간 고르게 개선)
+TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 비교 → 0.5)
+
+
+def get_end_aligned_tout_pred(date_str: str, cum_this: float,
+                              include_today: bool) -> Optional[float]:
+    """T Out 월말정렬(+수준 50%) 월마감 예측치. 계산 불가 시 None."""
+    sp = ('mno_out', 'S')
+    r = _end_aligned_remaining(date_str, include_today, [sp])
+    if not r or cum_this <= 0:
+        return None
+    scale = 1.0
+    if r['this_cw'] > 0 and r['ref_rate'][sp] > 0:
+        scale = (cum_this / r['this_cw']) / r['ref_rate'][sp]
+    return cum_this + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1686,6 +1725,19 @@ def predict_monthly(date_str: str, today_skt: int,
                  f"{_analog['scaled']:,.0f}) × 잔여bw {_analog['remaining_bw']:.2f} "
                  f"→ fc_mid {fc_mid:,} → {int(round(_analog['pred'])):,}")
         fc_mid = int(round(_analog['pred']))
+        # [v3.2] 월말정렬(+수준) 30% 혼합 (get_end_aligned_tout_pred 설명 참고)
+        try:
+            _ea = get_end_aligned_tout_pred(
+                date_str, cum_skt, include_today=(_today_confirmed or fc_daily > 0))
+        except Exception as e:
+            log.warning(f"[forecast_engine] T Out 월말정렬 실패 (잔여속도법 단독 유지): {e}")
+            _ea = None
+        if _ea:
+            _mixed = int(round((1 - TOUT_END_ALIGNED_W) * _analog['pred']
+                               + TOUT_END_ALIGNED_W * _ea))
+            log.info(f"[forecast_engine] T Out 월말정렬 혼합: 잔여속도법 {fc_mid:,} / "
+                     f"월말정렬 {int(round(_ea)):,} → fc_mid {_mixed:,}")
+            fc_mid = _mixed
 
     # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
     # 좁으면 그대로 쓰고, 넓으면 ±500으로 압축.
