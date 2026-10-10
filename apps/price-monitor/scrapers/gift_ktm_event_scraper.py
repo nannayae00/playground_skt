@@ -169,11 +169,11 @@ def _strip_device_linked_benefits(plan: dict) -> dict:
     일괄 적용되도록 캐시/신규 파싱 양쪽 병합 시점에서 다시 한번 필터링.
     """
     # [수정 20261010] 자급제뿐 아니라 친구추천·구독 이용권·할인쿠폰도 비교 금액에서 제외 (core.gift_rules - 모요와 같은 규칙)
-    from core.gift_rules import is_compare_excluded
+    from core.gift_rules import is_compare_excluded, normalize_bbaek_benefit
     benefits = plan.get('benefits') or []
-    kept = [b for b in benefits
+    kept = [normalize_bbaek_benefit(b) for b in benefits
             if not is_compare_excluded(f"{b.get('name', '')} {b.get('condition', '')}")]
-    if len(kept) == len(benefits):
+    if kept == benefits:
         return plan
     plan = dict(plan)
     plan['benefits']   = kept
