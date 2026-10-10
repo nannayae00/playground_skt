@@ -38,15 +38,20 @@ def is_compare_excluded(text: str) -> bool:
     return bool(compare_exclusion(text))
 
 
-# ── 빽다방 커피 단가 (사용자 결정 2026-10-10: 1잔 1,500원으로 모요·직영 통일) ──
+# ── 빽다방 커피 단가 (사용자 결정 2026-10-10) ──
+# 사업자가 금액을 적어 둔 경우(예: "100잔 17만원")는 그 금액을 그대로 쓰고,
+# 잔수만 있을 때만 1잔 1,500원으로 환산 (모요·직영 공통)
 BBAEK_CUP_WON = 1500
 _RE_CUPS = re.compile(r'(매월|매달)?\s*(\d+)\s*잔')
 
 
 def bbaek_value(text: str, months: int = 1):
-    """모요 문구 → 빽다방 환산액(잔수×1,500원). 빽다방 문구가 아니거나 잔수가 없으면 None.
+    """모요 문구 → 빽다방 환산액(잔수×1,500원). 빽다방 문구가 아니거나 잔수가 없거나,
+    금액(만원/천원/원)이 적혀 있으면 None (적힌 금액을 쓰도록 일반 파싱에 맡김).
     "100잔 (25개월간 매월 4잔)"처럼 총 잔수가 먼저 나오면 그 값, "매월 4잔"만 있으면 ×개월수."""
     if '빽다방' not in (text or ''):
+        return None
+    if re.search(r'\d\s*(?:만|천)?\s*원', text):
         return None
     m = _RE_CUPS.search(text)
     if not m:
@@ -56,20 +61,17 @@ def bbaek_value(text: str, months: int = 1):
 
 
 def normalize_bbaek_benefit(b: dict) -> dict:
-    """직영 Vision 결과의 빽다방 혜택을 1잔 1,500원으로 재환산.
-    유모바일 프롬프트는 1잔 2,000원(4잔=8,000원)으로 뽑고, 이미지에 총액(17만/100잔)이 적힌 경우
-    1,700원 단가로 나오므로 둘 중 나누어떨어지는 단가로 잔수를 역산한다."""
+    """직영 Vision 결과의 빽다방 혜택 재환산.
+    유모바일 프롬프트는 잔수만 있을 때 1잔 2,000원(4잔=8,000원)으로 계산하므로 그 경우만 1,500원으로 바꾼다.
+    이미지에 총액이 적혀 있던 경우(예: 17만/100잔 → 월 6,800원)는 적힌 금액이라 그대로 둔다."""
     if '빽다방' not in (b.get('name') or ''):
         return b
     amount = int(b.get('amount_won') or 0)
     if amount <= 0:
         return b
-    for unit in (2000, 1700):
-        if amount % unit == 0:
-            cups = amount // unit
-            break
-    else:
-        return b
+    if amount % 2000:
+        return b                       # 2,000원 단가로 계산된 값이 아님 = 이미지에 적힌 금액
+    cups = amount // 2000
     months = max(int(b.get('months') or 1), 1)
     nb = dict(b)
     nb['amount_won'] = cups * BBAEK_CUP_WON

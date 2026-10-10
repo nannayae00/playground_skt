@@ -29,7 +29,7 @@ import re
 # ※ 단가는 유모바일 공식 표기 총액 기준 역산 (2026-07-07)
 # ─────────────────────────────────────────────
 GIFT_UNIT_PRICES = {
-    '빽다방':   (r'커피\s*(\d+)\s*잔', 1500),          # [수정 20261010] 1,500원 통일 (실제로는 위 1-b에서 먼저 처리)
+    '빽다방':   (r'커피\s*(\d+)\s*잔', 1500),          # [수정 20261010] 잔수만 있을 때 1,500원 (실제로는 위 1-b에서 먼저 처리)
     '야쿠르트': (r'(\d+)\s*개',       380000 / 240),   # 공식 38만원/240개
     '밀리':     (r'(\d+)\s*개월',     9900, 'qty_is_months'),  # 월 구독가
 }
@@ -123,9 +123,8 @@ def parse_gift(text: str, base_price: int = 0) -> dict:
                       confidence='exact' if base_price else 'unknown')
         return result
 
-    # 1-b) 빽다방 커피 → 잔수 × 1,500원 (문구에 총액이 적혀 있어도 잔수 기준, 직영과 같은 단가)
-    #      [수정 20261010] 사용자 결정 - 모요 문구 총액(100잔 15만)·유모바일 공식(17만)·직영 프롬프트(2,000원)로
-    #      제각각이던 단가를 1,500원으로 통일 (core.gift_rules.BBAEK_CUP_WON)
+    # 1-b) 빽다방 커피 - 금액이 적혀 있으면 그 금액(아래 일반 파싱), 잔수만 있으면 잔수 × 1,500원
+    #      [수정 20261010] 사용자 결정 - 직영과 같은 규칙 (core.gift_rules.BBAEK_CUP_WON)
     from core.gift_rules import bbaek_value
     bv = bbaek_value(text, months)
     if bv is not None:
