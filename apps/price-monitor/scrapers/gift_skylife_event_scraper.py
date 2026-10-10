@@ -53,8 +53,10 @@ GEMINI_PROMPT = """당신은 통신사(KT스카이라이프 알뜰폰) 가입혜
 2. kind: 요금제 가격 조건만 맞으면 누구나 받는 혜택은 "regular",
    선착순/연령/특정 요금제명/단말 구매/개통 경로(바로유심, 편의점 등) 같은 추가 조건이 있으면 "extra"
 3. "6개월*1만원 → 6만원"처럼 표기된 경우 amount_won=10000, months=6, total_won=60000
-4. 데이터 추가, 결합 할인처럼 금액이 아닌 혜택, 안내/유의사항/교환처 소개는 넣지 않는다
-5. 혜택 박스가 없는 이미지는 빈 배열 []
+4. 지급되는 혜택(S-머니, 상품권, 네이버페이 등 페이, 포인트, 캐시)만 넣는다.
+   요금 할인, 결합 할인(통신비 반값 등), 제휴카드 할인, 구독/제휴 서비스 할인, 데이터 추가는 넣지 않는다
+5. 안내/유의사항/교환처 소개, 같은 혜택을 다시 요약한 문구는 넣지 않는다
+6. 혜택 박스가 없는 이미지는 빈 배열 []
 """
 
 
@@ -130,12 +132,19 @@ def parse_images_with_gemini(image_urls: list) -> tuple:
                 n += 1
         print(f"[skylife] 이미지 {idx}/{len(image_urls)}: {fname} → 혜택 {n}건")
 
-    # 같은 혜택이 여러 이미지에 반복되면 1건만 (이름+조건+금액 기준)
-    uniq, seen = [], set()
+    # 할인성 항목 제외 (프롬프트 규칙의 안전장치)
+    benefits = [b for b in benefits if "할인" not in (b["name"] + b["condition"])]
+    # 가격대 조건이 없는 regular는 비교값을 부풀리므로 extra로 강등
     for b in benefits:
-        key = (b["name"], b["condition"], b["total_won"])
+        if b["kind"] == "regular" and not (b["min_fee"] or b["max_fee"]):
+            b["kind"] = "extra"
+    # regular: 같은 가격대(min_fee, max_fee)는 1건만 - 이미지마다 이름만 다르게 반복 안내되는 경우
+    # (예: "S-머니 정기혜택"과 "정기혜택 (3만원 미만 요금제)")가 합산되지 않도록 금액 큰 것 1건
+    uniq, seen = [], {}
+    for b in sorted(benefits, key=lambda x: -x["total_won"]):
+        key = ("regular", b["min_fee"], b["max_fee"]) if b["kind"] == "regular" else ("extra", b["name"], b["condition"], b["total_won"])
         if key not in seen:
-            seen.add(key)
+            seen[key] = True
             uniq.append(b)
     return uniq, failures
 
