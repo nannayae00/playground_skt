@@ -154,10 +154,11 @@ def _strip_device_linked_benefits(plan: dict) -> dict:
     프로모션계산에서 빼야함"). Vision 프롬프트에도 제외 지시를 추가했지만 LLM
     프롬프트 준수는 비결정적이라, 신규 파싱 병합 시점에서 다시 한번 필터링.
     """
+    # [수정 20261010] 자급제뿐 아니라 친구추천·구독 이용권·할인쿠폰도 비교 금액에서 제외 (core.gift_rules - 모요와 같은 규칙)
+    from core.gift_rules import is_compare_excluded
     benefits = plan.get('benefits') or []
     kept = [b for b in benefits
-            if not any(kw in f"{b.get('name', '')} {b.get('condition', '')}"
-                       for kw in _DEVICE_LINKED_KEYWORDS)]
+            if not is_compare_excluded(f"{b.get('name', '')} {b.get('condition', '')}")]
     if len(kept) == len(benefits):
         return plan
     plan = dict(plan)

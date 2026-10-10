@@ -203,6 +203,9 @@ def channel_benefits(benefits: list) -> list:
 def direct_benefits_for_fee(benefits: list, fee: int) -> list:
     """월 요금 fee 요금제의 직영 비교 대상 혜택 = 해당 가격대 정기혜택 + 바로유심/바로배송 혜택(1건, 최대값).
     정기혜택 대상이 아닌 요금제(예: 월 5천원 미만)는 공통 제외 대상이라 빈 리스트."""
+    from core.gift_rules import is_compare_excluded
+    benefits = [b for b in benefits
+                if not is_compare_excluded(f"{b.get('name', '')} {b.get('condition', '')}")]
     regular = [b for b in benefits if b.get("kind") == "regular"
                and fee >= (b.get("min_fee") or 0) and (not b.get("max_fee") or fee < b["max_fee"])]
     if not regular:

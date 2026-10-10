@@ -309,8 +309,18 @@ def parse_event_images(image_urls: list) -> tuple:
 # 비교값
 # ──────────────────────────────────────────
 def _is_service(b: dict) -> bool:
-    name = b.get("name", "").lower()
-    return any(k.lower() in name for k in SERVICE_KEYWORDS)
+    """비교 제외 혜택(구독 이용권·할인·추천·단말조건) - 모요와 같은 규칙(core.gift_rules)"""
+    from core.gift_rules import is_compare_excluded
+    name = b.get("name", "")
+    return is_compare_excluded(name) or any(k.lower() in name.lower() for k in SERVICE_KEYWORDS)
+
+
+def _excl_label(b: dict) -> str:
+    from core.gift_rules import compare_exclusion
+    if b["category"] not in DIRECT_CATEGORIES:
+        return CATEGORY_LABEL[b["category"]]
+    return {"구독": "제휴이용권", "할인": "할인쿠폰", "추천": "친구추천", "단말조건": "자급제/단말"}.get(
+        compare_exclusion(b.get("name", "")), "제휴이용권")
 
 
 def direct_benefits(plan: dict, common: list) -> list:
@@ -474,12 +484,12 @@ def format_telegram_message(posts: list, now_str: str = None) -> tuple:
             ex = excluded_benefits(p)
             if ex:
                 line += " / 조건부 " + ", ".join(
-                f"{'제휴이용권' if _is_service(b) else CATEGORY_LABEL[b['category']]}{_won(b['total_won'])}" for b in ex)
+                f"{_excl_label(b)}{_won(b['total_won'])}" for b in ex)
             lines.append(line)
         lines.append("")
         buttons.append({"text": f"🌐 {post.get('title', '')[:20]}", "url": post.get("url", "")})
     if not posts:
         lines.append("ℹ️ 진행중 알뜰요금제 이벤트 없음")
     elif any_plan:
-        lines.append("※ 금액 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등). 친구추천·자급제·제휴이용권은 조건부로 별도 표시")
+        lines.append("※ 금액 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등). 친구추천·자급제·제휴이용권·할인쿠폰은 조건부로 별도 표시")
     return "\n".join(lines).strip(), buttons[:4]

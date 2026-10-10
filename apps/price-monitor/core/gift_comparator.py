@@ -133,6 +133,7 @@ gift_comparator.py - 사이트간 동일 데이터 스펙 요금제 사은품 �
 import re
 import unicodedata
 from core.gift_parser import parse_gifts
+from core.gift_rules import is_compare_excluded
 
 DIFF_THRESHOLD  = 10000
 GIFT_VAL_CAP    = 500000
@@ -252,13 +253,20 @@ def _voice_key(plan: dict) -> str:
     return '기타'
 
 
-# 단말 구매·등록이 조건인 혜택 (모요 vs 직영 비교에서 제외 - 직영 쪽 _strip_device_linked_benefits와 같은 취지)
-_DEVICE_GIFT_KEYWORDS = ('자급제', '휴대폰 지원금', '교체 지원금', '단말 지원금', '기기 지원금')
-
-
+# 모요 vs 직영 비교에서 빼는 혜택(단말조건·추천·구독 이용권·할인) - 직영 스크래퍼와 같은 규칙(core.gift_rules)
 def _is_device_gift(text: str) -> bool:
-    t = text or ''
-    return any(k in t for k in _DEVICE_GIFT_KEYWORDS)
+    return is_compare_excluded(text)
+
+
+# 비교 경로의 모요 금액 상한 - 직영 PLAN_VAL_CAP과 같게 60만원에서 자름
+# (기존 GIFT_VAL_CAP은 50만 초과를 0으로 만들어 큰 사은품 요금제가 비교에서 조용히 빠졌음)
+COMPARE_VAL_CAP = 600000
+
+
+def _cap_value(val: int, exclude_device: bool) -> int:
+    if exclude_device:
+        return min(val, COMPARE_VAL_CAP)
+    return 0 if val > GIFT_VAL_CAP else val
 
 
 def _gift_summary(plan: dict, exclude_device: bool = False) -> dict:
@@ -296,8 +304,7 @@ def build_group_index(plans: list, exclude_device: bool = False) -> dict:
     for p in plans:
         key     = (p['provider'], _data_key(p), _voice_key(p))
         summary = _gift_summary(p, exclude_device=exclude_device)
-        val     = summary['total_value']
-        if val > GIFT_VAL_CAP: val = 0
+        val     = _cap_value(summary['total_value'], exclude_device)
         gift_texts = [t for t in (p.get('gift_texts') or []) if isinstance(t, str)
                       and not (exclude_device and _is_device_gift(t))]
         if key not in groups:
@@ -376,8 +383,7 @@ def compute_datakey_max(plans: list, provider: str = None, exclude_device: bool 
         if provider and p.get('provider') != provider:
             continue
         summary = _gift_summary(p, exclude_device=exclude_device)
-        val = summary['total_value']
-        if val > GIFT_VAL_CAP: val = 0
+        val = _cap_value(summary['total_value'], exclude_device)
         dk = _data_key(p)
         if dk == 'unknown': continue
         if val > dk_max.get(dk, 0):
@@ -769,7 +775,7 @@ def format_moyo_vs_direct(moyo_plans: list, direct_dk_max: dict,
     return (
         f'⚖️ <b>모요 vs {direct_label} 비교</b>  📅 {today}\n\n'
         f'<pre>{table}</pre>\n'
-        f'※ 모요 금액은 자급제·휴대폰 지원금 쿠폰 등 단말 조건 혜택 제외'
+        f'※ 모요·직영 모두 단말조건(자급제·지원금 쿠폰)·친구추천·구독 이용권·할인쿠폰 제외'
     )
 
 
