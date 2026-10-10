@@ -3,6 +3,11 @@
 gift_comparator.py - 사이트간 동일 데이터 스펙 요금제 사은품 총액 비교
 
 [수정 이력]
+- v0.23 (2026-10-10) 모요 vs 직영 비교에서 모요 쪽 단말 연동 혜택 제외
+    * 직영 쪽은 자급제 등 단말 조건 혜택을 이미 빼고 비교하는데 모요 쪽은 "갤럭시/아이폰
+      자급제 등록 시 10만원", "휴대폰 지원금 쿠폰 10만원"을 포함해 편차가 최대 20만원 부풀던 문제.
+      사용자 결정(2번안)으로 비교 경로(format_moyo_vs_direct, build_kcup_records, compare_kcup)에서만
+      exclude_device=True로 제외. 모요 요약 리포트·일별 스냅샷(추이)은 광고 금액 그대로 유지.
 - v0.22 (2026-08-28) _gift_breakdown_lines를 core.gift_parser.parse_gift 기반으로 교체
     * 그동안 항목별 금액을 정규식으로 추측(첫/마지막 'N만원' 매칭)하던 걸 실제
       core.gift_parser.parse_gift()의 total_value로 교체 - build_group_index()가
@@ -247,7 +252,16 @@ def _voice_key(plan: dict) -> str:
     return '기타'
 
 
-def _gift_summary(plan: dict) -> dict:
+# 단말 구매·등록이 조건인 혜택 (모요 vs 직영 비교에서 제외 - 직영 쪽 _strip_device_linked_benefits와 같은 취지)
+_DEVICE_GIFT_KEYWORDS = ('자급제', '휴대폰 지원금', '교체 지원금', '단말 지원금', '기기 지원금')
+
+
+def _is_device_gift(text: str) -> bool:
+    t = text or ''
+    return any(k in t for k in _DEVICE_GIFT_KEYWORDS)
+
+
+def _gift_summary(plan: dict, exclude_device: bool = False) -> dict:
     texts = []
     for t in plan.get('gift_texts') or []:
         if isinstance(t, list): texts.extend(t)
@@ -257,6 +271,8 @@ def _gift_summary(plan: dict) -> dict:
         if isinstance(builtin, list): texts.extend(builtin)
         elif isinstance(builtin, str): texts.append(builtin)
     texts = list(dict.fromkeys(texts))
+    if exclude_device:
+        texts = [t for t in texts if not (isinstance(t, str) and _is_device_gift(t))]
     return parse_gifts(texts, base_price=plan.get('base_price', 0))
 
 
@@ -275,14 +291,15 @@ def _data_tier(data_key: str) -> tuple:
 
 # ── 그룹 인덱스 ───────────────────────────────────────────────────────────────
 
-def build_group_index(plans: list) -> dict:
+def build_group_index(plans: list, exclude_device: bool = False) -> dict:
     groups = {}
     for p in plans:
         key     = (p['provider'], _data_key(p), _voice_key(p))
-        summary = _gift_summary(p)
+        summary = _gift_summary(p, exclude_device=exclude_device)
         val     = summary['total_value']
         if val > GIFT_VAL_CAP: val = 0
-        gift_texts = [t for t in (p.get('gift_texts') or []) if isinstance(t, str)]
+        gift_texts = [t for t in (p.get('gift_texts') or []) if isinstance(t, str)
+                      and not (exclude_device and _is_device_gift(t))]
         if key not in groups:
             groups[key] = {
                 'provider':      p['provider'],
@@ -347,7 +364,7 @@ def _data_key_label(data_key: str) -> str:
     return f'{gb_str}GB'
 
 
-def compute_datakey_max(plans: list, provider: str = None) -> dict:
+def compute_datakey_max(plans: list, provider: str = None, exclude_device: bool = False) -> dict:
     """
     [추가 20260925] format_summary_report()를 구간(TIER_ORDER) 대신 데이터제공량별로
     바꿔달라는 요청 반영 - 플랜 리스트 → {data_key: max_val} dict (구간 없이 정확한
@@ -358,7 +375,7 @@ def compute_datakey_max(plans: list, provider: str = None) -> dict:
     for p in plans:
         if provider and p.get('provider') != provider:
             continue
-        summary = _gift_summary(p)
+        summary = _gift_summary(p, exclude_device=exclude_device)
         val = summary['total_value']
         if val > GIFT_VAL_CAP: val = 0
         dk = _data_key(p)
@@ -722,7 +739,7 @@ def format_moyo_vs_direct(moyo_plans: list, direct_dk_max: dict,
     if direct_label is None:
         direct_label = provider.replace('U+', '').replace('KT', '') + '직영'
 
-    moyo_dk = compute_datakey_max(moyo_plans, provider=provider)
+    moyo_dk = compute_datakey_max(moyo_plans, provider=provider, exclude_device=True)  # [수정 20261010] 단말 연동 혜택 제외
 
     row_cells = []
     for dk in sorted(set(moyo_dk) & set(direct_dk_max), key=_data_key_gb):
@@ -751,7 +768,8 @@ def format_moyo_vs_direct(moyo_plans: list, direct_dk_max: dict,
 
     return (
         f'⚖️ <b>모요 vs {direct_label} 비교</b>  📅 {today}\n\n'
-        f'<pre>{table}</pre>'
+        f'<pre>{table}</pre>\n'
+        f'※ 모요 금액은 자급제·휴대폰 지원금 쿠폰 등 단말 조건 혜택 제외'
     )
 
 
@@ -870,7 +888,7 @@ def compare_kcup(moyo_plans: list, direct_posts: list,
 
     # 1) 모요: provider 필터 → 그룹핑 → data_key(GB)별 최고금액 그룹
     moyo_filtered = [p for p in moyo_plans if p.get('provider') == moyo_provider]
-    moyo_groups = build_group_index(moyo_filtered)
+    moyo_groups = build_group_index(moyo_filtered, exclude_device=True)  # [수정 20261010] 단말 연동 혜택 제외
     moyo_by_dk = {}
     for g in moyo_groups.values():
         dk = g['data_key']
@@ -943,7 +961,7 @@ def build_kcup_records(moyo_plans: list, direct_posts: list,
     min_rank = STAGE_RANK.get(min_stage, 2)
 
     moyo_filtered = [p for p in moyo_plans if p.get('provider') == moyo_provider]
-    moyo_groups = build_group_index(moyo_filtered)
+    moyo_groups = build_group_index(moyo_filtered, exclude_device=True)  # [수정 20261010] 단말 연동 혜택 제외
     moyo_by_dk = {}
     for g in moyo_groups.values():
         dk = g['data_key']
