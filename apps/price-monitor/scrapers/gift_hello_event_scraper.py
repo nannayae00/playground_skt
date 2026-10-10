@@ -30,6 +30,7 @@ BASE_URL = "https://direct.lghellovision.net"
 LIST_URL = f"{BASE_URL}/m/event/viewEventList.do?returnTab=allli"
 DETAIL_URL = f"{BASE_URL}/m/event/viewEventDetailGuest.do?idxOfEvent={{idx}}"
 CACHE_COLLECTION = "hello_event_cache"
+PARSE_VERSION = "2"   # 파싱 규칙이 바뀌면 올려서 캐시 무효화
 
 MOBILE_UA = ("Mozilla/5.0 (Linux; Android 13; SM-S918N) AppleWebKit/537.36 "
              "(KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
@@ -80,10 +81,13 @@ category 분류 (반드시 아래 중 하나):
 2. "1.5만원 x 8개월"이면 amount_won=15000, months=8, total_won=120000. 1회성은 months=1
 3. plans: 요금제 카드(요금제명/데이터/월 요금이 함께 보이는 박스)마다 1개. 카드 안에 혜택 목록이
    있으면 benefits에 넣고, "매월 Npay 15,000원"처럼 카드에 붙은 매월 혜택은 category "요금제", months는 안내된 개월수(없으면 24)
-4. common: 카드 밖에서 여러 요금제에 공통으로 안내된 혜택 (예: "15,900원 이상 요금제 가입 시 코드 입력 12만원")
-5. 지급되는 혜택(Npay·상품권·포인트·캐시·쿠폰)만 넣는다. 요금 할인, 데이터 추가, 총합/최대 금액 요약 문구,
-   월별 지급 일정표는 넣지 않는다
-6. 해당 내용이 없으면 {"plans": [], "common": []}
+4. common: 카드 밖에서 안내된 "프로모션 코드 입력 시" 혜택만 넣는다 (예: "15,900원 이상 요금제 가입 시 코드 입력 12만원").
+   그 외 카드 밖 안내(매월 N만원 x N개월 요약, 쿠폰팩/친구추천/자급제 안내 등)는 common에 넣지 않는다
+5. 지급되는 혜택(Npay·상품권·포인트·캐시·쿠폰)만 넣는다. 요금 할인, 데이터 추가, 월별 지급 일정표는 넣지 않는다
+6. 여러 혜택을 합친 금액(예: "총 혜택 47.6만원", "최대 57.6만원", "헬로모바일 혜택 25.6만원"처럼 구성 항목의 합계)은 넣지 않는다.
+   구성 항목이 보이면 항목별로 넣고, 안 보이면 넣지 않는다
+7. 요금제명/월 요금만 나열되고 혜택이 적혀 있지 않은 요금제 목록은 benefits를 빈 배열로 둔다
+8. 해당 내용이 없으면 {"plans": [], "common": []}
 """
 
 
@@ -275,7 +279,13 @@ def parse_event_images(image_urls: list) -> tuple:
                 slot["benefits"][nb["category"]] = nb
     plans = []
     for slot in merged.values():
-        slot["benefits"] = sorted(slot["benefits"].values(), key=lambda b: CATEGORIES.index(b["category"]))
+        bens = list(slot["benefits"].values())
+        # 합계 문구가 '기본'으로 잡힌 경우(다른 항목 합과 같으면) 제외
+        others = sum(b["total_won"] for b in bens if b["category"] != "기본")
+        bens = [b for b in bens if not (b["category"] == "기본" and others and b["total_won"] == others)]
+        if not bens:
+            continue    # 혜택이 적히지 않은 요금제 목록(더 많은 요금제 보기 등)은 비교 대상 아님
+        slot["benefits"] = sorted(bens, key=lambda b: CATEGORIES.index(b["category"]))
         plans.append(slot)
     plans.sort(key=lambda p: (p["base_gb"], p["monthly_fee"]))
 
@@ -283,7 +293,8 @@ def parse_event_images(image_urls: list) -> tuple:
     for c in raw_common:
         nb = _norm_benefit(c)
         nb["min_fee"] = _to_int(c.get("min_fee"))
-        if nb["total_won"] <= 0 or "할인" in nb["name"]:
+        # 공통 혜택은 프로모션 코드만 인정 (요약 문구·쿠폰팩·교체지원금 등이 전 요금제에 붙는 것 방지)
+        if nb["total_won"] <= 0 or nb["category"] != "코드" or "코드" not in nb["name"] or "할인" in nb["name"]:
             continue
         key = (nb["category"], nb["min_fee"], nb["total_won"])
         if key not in seen:
@@ -337,7 +348,7 @@ def scrape_with_cache(db) -> list:
                 except Exception as e:
                     print(f"[hello] 상세 수집 실패 [{ev['idx']}]: {e}")
                     continue
-                img_hash = hashlib.md5("|".join(urls).encode("utf-8")).hexdigest()
+                img_hash = hashlib.md5(("|".join(urls) + "|v" + PARSE_VERSION).encode("utf-8")).hexdigest()
                 ref = db.collection(CACHE_COLLECTION).document(ev["idx"])
                 snap = ref.get()
                 cached = snap.to_dict() if snap.exists else {}
