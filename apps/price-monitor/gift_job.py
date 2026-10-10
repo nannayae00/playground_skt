@@ -578,7 +578,7 @@ def run():
                 hello_vs_msg = format_moyo_vs_direct(
                     moyo_plans, hello_dk_max,
                     provider='LG헬로모바일', direct_label='헬로직영')
-                _send_telegram(hello_vs_msg + '\n※ 헬로직영 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등) (친구추천·자급제 등 조건부 혜택 제외)')
+                _send_telegram(hello_vs_msg + '\n※ 헬로직영 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등) (친구추천·자급제·제휴이용권 제외)')
                 _log('✅ 모요 vs 헬로직영 비교 발송 완료')
         except Exception as e:
             _log(f'❌ 헬로모바일 비교 메시지 실패: {e}')

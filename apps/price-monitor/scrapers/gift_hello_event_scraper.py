@@ -44,6 +44,8 @@ MAX_CHUNKS_PER_EVENT = 40
 
 CATEGORIES = ("기본", "코드", "요금제", "친구추천", "단말", "결합", "기타")
 DIRECT_CATEGORIES = ("기본", "코드", "요금제")
+# 제휴 서비스 이용권(전자책·구독 등)은 현금성이 아니라 비교값에서 제외 (스카이라이프 규칙과 동일)
+SERVICE_KEYWORDS = ("교보", "sam", "구독", "이용권", "멤버십")
 CATEGORY_LABEL = {"기본": "기본혜택", "코드": "프로모션코드", "요금제": "요금제혜택",
                   "친구추천": "친구추천", "단말": "자급제/단말", "결합": "결합", "기타": "기타"}
 
@@ -306,9 +308,17 @@ def parse_event_images(image_urls: list) -> tuple:
 # ──────────────────────────────────────────
 # 비교값
 # ──────────────────────────────────────────
+def _is_service(b: dict) -> bool:
+    name = b.get("name", "").lower()
+    return any(k.lower() in name for k in SERVICE_KEYWORDS)
+
+
 def direct_benefits(plan: dict, common: list) -> list:
-    """비교값에 넣는 혜택 = 카드의 기본/코드/요금제 혜택 + 카드에 없는 category의 공통 혜택(월 요금 조건 충족 시)"""
-    own = [b for b in plan.get("benefits", []) if b["category"] in DIRECT_CATEGORIES]
+    """비교값에 넣는 혜택 = 카드의 기본/코드/요금제 혜택 + 카드에 없는 category의 공통 혜택(월 요금 조건 충족 시).
+    카드 자체에 비교 대상 혜택이 없으면(제휴 이용권만 있는 요금제 등) 빈 리스트 - 공통 코드만으로는 비교하지 않음."""
+    own = [b for b in plan.get("benefits", []) if b["category"] in DIRECT_CATEGORIES and not _is_service(b)]
+    if not own:
+        return []
     have = {b["category"] for b in own}
     fee = plan.get("monthly_fee") or 0
     extra = {}
@@ -320,7 +330,7 @@ def direct_benefits(plan: dict, common: list) -> list:
 
 
 def excluded_benefits(plan: dict) -> list:
-    return [b for b in plan.get("benefits", []) if b["category"] not in DIRECT_CATEGORIES]
+    return [b for b in plan.get("benefits", []) if b["category"] not in DIRECT_CATEGORIES or _is_service(b)]
 
 
 def _attach_values(post: dict) -> None:
@@ -463,12 +473,13 @@ def format_telegram_message(posts: list, now_str: str = None) -> tuple:
                 line += f" ({parts})"
             ex = excluded_benefits(p)
             if ex:
-                line += " / 조건부 " + ", ".join(f"{CATEGORY_LABEL[b['category']]}{_won(b['total_won'])}" for b in ex)
+                line += " / 조건부 " + ", ".join(
+                f"{'제휴이용권' if _is_service(b) else CATEGORY_LABEL[b['category']]}{_won(b['total_won'])}" for b in ex)
             lines.append(line)
         lines.append("")
         buttons.append({"text": f"🌐 {post.get('title', '')[:20]}", "url": post.get("url", "")})
     if not posts:
         lines.append("ℹ️ 진행중 알뜰요금제 이벤트 없음")
     elif any_plan:
-        lines.append("※ 금액 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등). 친구추천·자급제 등 조건부는 별도 표시")
+        lines.append("※ 금액 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등). 친구추천·자급제·제휴이용권은 조건부로 별도 표시")
     return "\n".join(lines).strip(), buttons[:4]
