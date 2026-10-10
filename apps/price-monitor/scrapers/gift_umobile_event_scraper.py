@@ -359,6 +359,82 @@ def parse_images_with_vision(image_urls: list) -> list:
 # ──────────────────────────────────────────
 # STEP 4: Firestore 캐시 기반 수집
 # ──────────────────────────────────────────
+# ──────────────────────────────────────────
+# STEP 3-2: 본문 글자 이벤트 파싱 [추가 20261010]
+# ──────────────────────────────────────────
+# 이미지 없이 본문 글자로만 혜택을 안내하는 이벤트(예: 11998 "빠르게 개통하고 신세계상품권 더!"
+# - 쿠팡/편의점/다이소 유심·eSIM 개통 시 N페이 2만원)는 Vision 파싱 대상 이미지가 0장이라
+# 항상 0건이었음. 이런 혜택은 특정 요금제가 아니라 개통 경로 등에 붙으므로 plans(데이터 구간
+# 비교용)에 섞지 않고 post["common_benefits"]로 따로 저장·표시한다.
+GEMINI_TEXT_PROMPT = """당신은 알뜰폰 통신사 이벤트 페이지 본문에서 사은품/혜택을 추출하는 분석기입니다.
+아래 본문에서 고객이 받는 금전성 혜택(상품권, 포인트, 페이, 할인 등)을 JSON 배열로만 답하세요.
+
+스키마:
+[
+  {"name": "혜택명 (예: 네이버페이)", "condition": "받는 조건 (예: 쿠팡·편의점·다이소에서 유심 개통 시)",
+   "amount_won": 1회 금액(정수), "months": 지급 개월수(1회성=1), "total_won": amount_won*months}
+]
+
+규칙:
+1. 숫자는 쉼표 없이 정수로만 쓴다 (예: 20000). "N천원"=N*1000, "N만원"=N*10000
+2. 금액이 없는 혜택(추첨, 데이터 추가 등)은 제외한다
+3. 같은 혜택이 여러 번 나오면 한 번만 쓴다
+4. 혜택이 없으면 빈 배열 []
+
+본문:
+"""
+
+
+def fetch_post_text(post_url: str, max_chars: int = 4000) -> str:
+    """게시글 main 영역 본문 글자 (공백 정리, 최대 max_chars자)."""
+    r = requests.get(post_url, headers=HEADERS, timeout=15)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+    main = soup.find("main") or soup
+    text = re.sub(r"\s+", " ", main.get_text(" ", strip=True))
+    return text[:max_chars]
+
+
+def parse_text_with_gemini(text: str) -> list:
+    """본문 글자 → Gemini → [{name, condition, amount_won, months, total_won}] (total_won>0만)."""
+    global LAST_VISION_FAILURES
+    LAST_VISION_FAILURES = 0
+    if not text:
+        return []
+    from google import genai
+    from google.genai import types
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY 환경변수 없음")
+    client = genai.Client(api_key=api_key)
+    model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
+    try:
+        resp = client.models.generate_content(
+            model=model_name,
+            contents=[GEMINI_TEXT_PROMPT + text],
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        items = json.loads((resp.text or "[]").strip())
+    except Exception as e:
+        print(f"[text] 파싱 실패: {e}")
+        LAST_VISION_FAILURES += 1
+        return []
+    out = []
+    for b in (items if isinstance(items, list) else []):
+        try:
+            amount = int(b.get("amount_won") or 0)
+            months = int(b.get("months") or 1)
+        except (TypeError, ValueError):
+            continue
+        total = amount * max(months, 1)
+        if total > 0:
+            out.append({"name": str(b.get("name", "")).strip(), "condition": str(b.get("condition", "")).strip(),
+                        "amount_won": amount, "months": months, "total_won": total})
+    print(f"[text] 공통 혜택 {len(out)}건 파싱")
+    return out
+
+
 def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
     """
     변경감지 기반 수집
@@ -388,6 +464,7 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
                 #  _strip_device_linked_benefits()를 여기서도 적용)
                 post["plans"] = [_strip_device_linked_benefits(p) for p in cached_data["plans"]]
                 post["from_cache"] = True
+                post["common_benefits"] = cached_data.get("common_benefits", [])
                 print(f"[umobile] ⏭️  캐시 재사용: [{post_id}] {post['title'][:25]}")
             else:
                 # 신규 or 변경 → Vision 파싱
@@ -395,9 +472,20 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
                 print(f"[umobile] 🔍 {reason} → Vision 파싱 시작: [{post_id}] {post['title'][:25]} (이미지 {len(image_urls)}장)")
                 post["plans"] = parse_images_with_vision(image_urls) if image_urls else []
                 parse_ok = bool(image_urls) and LAST_VISION_FAILURES == 0
+                post["common_benefits"] = []
+                if not image_urls:
+                    # 이미지 없는 글자 이벤트 → 본문에서 공통 혜택 추출
+                    try:
+                        body = fetch_post_text(post["url"])
+                        post["common_benefits"] = parse_text_with_gemini(body)
+                        parse_ok = bool(body) and LAST_VISION_FAILURES == 0
+                    except Exception as te:
+                        print(f"[umobile] 본문 파싱 실패: [{post_id}] {te}")
+                        parse_ok = False
                 post["from_cache"] = False
                 valid = sum(1 for p in post["plans"] if p.get("total_won", 0) > 0)
-                print(f"[umobile] ✅ 파싱 완료: [{post_id}] 요금제 {len(post['plans'])}건 (유효 {valid}건)")
+                print(f"[umobile] ✅ 파싱 완료: [{post_id}] 요금제 {len(post['plans'])}건 (유효 {valid}건)"
+                      + (f" / 공통 혜택 {len(post['common_benefits'])}건" if post.get("common_benefits") else ""))
 
                 # Firestore 저장
                 cache_col.document(post_id).set({
@@ -409,6 +497,7 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
                     "html_hash":  html_hash,
                     "plans":      post["plans"],
                     "parse_ok":   parse_ok,
+                    "common_benefits": post.get("common_benefits", []),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 })
 
@@ -553,7 +642,22 @@ def format_telegram_message(posts: list, now_str: str = None) -> tuple:
             lines.append(f"  ↳ {event_label}")
             lines.append("")
 
-    if not any(band_max.values()):
+    # [추가 20261010] 요금제 무관 공통 혜택(글자 이벤트) - 데이터 구간 비교(band_max/dk_max)에는 넣지 않음
+    common_posts = [p for p in posts if p.get("common_benefits")]
+    if common_posts:
+        lines.append("📌 공통 혜택 (요금제 무관)")
+        for p in common_posts:
+            ds, de = _short_date(p.get("date_start")), _short_date(p.get("date_end"))
+            period = f" ({ds}~{de})" if ds and de else ""
+            lines.append(f"• {_short_title(p.get('title', ''))}{period}")
+            for b in p["common_benefits"]:
+                amt = b["total_won"]
+                amt_s = f"{amt // 10000}만원" if amt % 10000 == 0 else f"{amt:,}원"
+                cond = f" ({b['condition']})" if b.get("condition") else ""
+                lines.append(f"  ↳ {b['name']} {amt_s}{cond}")
+        lines.append("")
+
+    if not any(band_max.values()) and not common_posts:
         lines.append("ℹ️ 현재 수집된 사은품 금액 없음")
 
     text = "\n".join(lines).strip()
@@ -578,6 +682,13 @@ def format_telegram_message(posts: list, now_str: str = None) -> tuple:
                 "text": f"🌐 {label}{date_str}",
                 "url":  plan["_event_url"],
             })
+
+    for p in common_posts:
+        if p.get("post_id") not in seen_ids:
+            seen_ids.add(p.get("post_id"))
+            ds, de = _short_date(p.get("date_start")), _short_date(p.get("date_end"))
+            buttons.append({"text": f"🌐 {_short_title(p.get('title', ''))}" + (f" ({ds}~{de})" if ds and de else ""),
+                            "url": p.get("url")})
 
     # [수정 20260925] dk_max(GB 정확 매칭용, "서로 비교값 있는 것만" 요청 반영해
     # format_moyo_vs_direct/K CUP 특이사항에서 씀) 추가 반환. band_max는 7일 추이
