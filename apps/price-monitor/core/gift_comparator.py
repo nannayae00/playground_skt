@@ -1046,7 +1046,7 @@ def format_kcup_summary(records_by_provider: dict, run_time: str = None) -> str:
     return '\n'.join(lines)
 
 
-_KCUP_SHORT_PROVIDER = {'KT엠모바일': 'KT', 'U+유모바일': 'U+'}
+_KCUP_SHORT_PROVIDER = {'KT엠모바일': 'KT', 'U+유모바일': 'U+', 'KT스카이라이프': '스카'}
 
 
 def build_kcup_buttons(records_by_provider: dict, date_str: str,

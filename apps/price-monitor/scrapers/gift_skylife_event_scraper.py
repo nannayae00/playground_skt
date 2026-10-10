@@ -190,6 +190,52 @@ def regular_value_for_fee(benefits: list, fee: int) -> int:
     return total
 
 
+# [추가 20261010] 직영 비교값에 포함하는 개통경로 혜택 - 바로유심(편의점)/바로배송은 누구나 받을 수 있어
+# 사용자 결정(2번안)으로 정기혜택에 더해서 비교 (골드·아이폰 등 대상 제한 혜택은 제외)
+CHANNEL_KEYWORDS = ("바로유심", "바로배송")
+
+
+def channel_benefits(benefits: list) -> list:
+    return [b for b in benefits
+            if b.get("kind") == "extra" and any(k in (b.get("name", "") + b.get("condition", "")) for k in CHANNEL_KEYWORDS)]
+
+
+def direct_benefits_for_fee(benefits: list, fee: int) -> list:
+    """월 요금 fee 요금제의 직영 비교 대상 혜택 = 해당 가격대 정기혜택 + 바로유심/바로배송 혜택(1건, 최대값).
+    정기혜택 대상이 아닌 요금제(예: 월 5천원 미만)는 공통 제외 대상이라 빈 리스트."""
+    regular = [b for b in benefits if b.get("kind") == "regular"
+               and fee >= (b.get("min_fee") or 0) and (not b.get("max_fee") or fee < b["max_fee"])]
+    if not regular:
+        return []
+    ch = sorted(channel_benefits(benefits), key=lambda b: -b["total_won"])[:1]
+    return regular + ch
+
+
+def direct_value_for_fee(benefits: list, fee: int) -> int:
+    return sum(b["total_won"] for b in direct_benefits_for_fee(benefits, fee))
+
+
+def build_kcup_direct_posts(moyo_plans: list, page: dict) -> list:
+    """K CUP 비교(build_kcup_records)용 직영 post 형식 - 모요의 스카이라이프 요금제마다
+    직영 비교값(정기+바로유심)을 붙인 가상 plan 목록."""
+    plans = []
+    for p in moyo_plans:
+        if p.get("provider") != "KT스카이라이프":
+            continue
+        fee = int(p.get("base_price") or 0)
+        bens = direct_benefits_for_fee(page.get("benefits") or [], fee)
+        if not bens:
+            continue
+        plans.append({
+            "plan_name": p.get("name", ""),
+            "base_gb": float(p.get("data_gb") or 0),
+            "total_won": sum(b["total_won"] for b in bens),
+            "benefits": bens,
+        })
+    return [{"title": page.get("title", ""), "url": page.get("url", EVENT_URL),
+             "date_start": "", "date_end": "", "plans": plans}]
+
+
 def compute_direct_dk_max(moyo_plans: list, benefits: list) -> dict:
     """모요의 KT스카이라이프 요금제별로 직영 정기혜택을 계산 → {data_key: max_won}"""
     from core.gift_comparator import _data_key
@@ -203,7 +249,7 @@ def compute_direct_dk_max(moyo_plans: list, benefits: list) -> dict:
         dk = _data_key(p)
         if dk == "unknown":
             continue
-        val = regular_value_for_fee(benefits, fee)
+        val = direct_value_for_fee(benefits, fee)
         if val > dk_max.get(dk, 0):
             dk_max[dk] = val
     return dk_max

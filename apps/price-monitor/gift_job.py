@@ -537,7 +537,7 @@ def run():
         except Exception as e:
             _log(f'❌ 엠모바일 비교 메시지 실패: {e}')
 
-    # 모요 vs 스카이직영 [추가 20261010] - 직영 값은 모요 요금제 월 요금별 정기혜택(조건부 추가혜택 제외)
+    # 모요 vs 스카이직영 [추가 20261010] - 직영 값 = 모요 요금제 월 요금별 정기혜택 + 바로유심/바로배송 혜택
     if skylife_page and skylife_page.get('benefits'):
         try:
             sky_dk_max = skylife.compute_direct_dk_max(moyo_plans, skylife_page['benefits'])
@@ -545,7 +545,7 @@ def run():
                 sky_vs_msg = format_moyo_vs_direct(
                     moyo_plans, sky_dk_max,
                     provider='KT스카이라이프', direct_label='스카이직영')
-                _send_telegram(sky_vs_msg + '\n※ 스카이직영 = 요금제 월 요금별 정기혜택 (바로유심·골드 등 조건부 혜택 제외)')
+                _send_telegram(sky_vs_msg + '\n※ 스카이직영 = 요금제 월 요금별 정기혜택 + 바로유심·바로배송 개통 혜택 (골드·아이폰 등 대상 제한 혜택 제외)')
                 _log('✅ 모요 vs 스카이직영 비교 발송 완료')
         except Exception as e:
             _log(f'❌ 스카이라이프 비교 메시지 실패: {e}')
@@ -565,6 +565,11 @@ def run():
                 moyo_plans, umobile_posts,
                 moyo_provider='U+유모바일', direct_label='U+유모바일 직영'),
         }
+        # [추가 20261010] KT스카이라이프 - 직영 값은 정기혜택 + 바로유심/바로배송 (가격대별 혜택이라 모요 요금제 기준 계산)
+        if skylife_page and skylife_page.get('benefits'):
+            records_by_provider['KT스카이라이프'] = build_kcup_records(
+                moyo_plans, skylife.build_kcup_direct_posts(moyo_plans, skylife_page),
+                moyo_provider='KT스카이라이프', direct_label='KT스카이라이프 직영')
         kcup_summary  = format_kcup_summary(records_by_provider, run_time=kcup_run_time)
         kcup_total    = sum(len(r) for r in records_by_provider.values())
         if kcup_total:
