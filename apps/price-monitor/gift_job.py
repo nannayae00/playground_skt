@@ -56,6 +56,7 @@ from scrapers.gift_ktm_event_scraper import (
     format_telegram_message as format_ktm_telegram_message,
 )
 from scrapers import gift_skylife_event_scraper as skylife  # [추가 20261010] 스카이라이프 직영
+from scrapers import gift_hello_event_scraper as hello  # [추가 20261010] 헬로모바일 직영
 from core.gift_comparator import (
     format_summary_report, format_moyo_report, build_group_index,
     compute_tier_max, compute_datakey_max, format_moyo_vs_direct,
@@ -406,6 +407,16 @@ def run():
     except Exception as e:
         _log(f'❌ 스카이라이프 직영 수집 실패: {e}')
 
+    # ── 1.8) LG헬로모바일 직영 이벤트 수집 [추가 20261010] ─────────
+    print('[1.8/3] LG헬로모바일 직영 이벤트 수집...')
+    hello_posts = []
+    try:
+        hello_posts = hello.scrape_with_cache(db)
+        cached = sum(1 for p in hello_posts if p.get('from_cache'))
+        _log(f'✅ 헬로모바일 수집 완료: {len(hello_posts)}건 (캐시 {cached} / Vision {len(hello_posts) - cached})')
+    except Exception as e:
+        _log(f'❌ 헬로모바일 직영 수집 실패: {e}')
+
     # ── 2) 모요 수집 ─────────────────────────────────────────────
     print('[2/3] 모요 자회사 사은품 수집...')
     try:
@@ -504,6 +515,15 @@ def run():
         except Exception as e:
             _log(f'❌ 스카이라이프 발송 실패: {e}')
 
+    # LG헬로모바일 직영 이벤트 메시지 [추가 20261010]
+    if hello_posts:
+        try:
+            hello_text, hello_buttons = hello.format_telegram_message(hello_posts, now_str=now_str)
+            _send_telegram(hello_text, reply_markup={'inline_keyboard': [[b] for b in hello_buttons]})
+            _log('✅ 헬로모바일 직영 메시지 발송 완료')
+        except Exception as e:
+            _log(f'❌ 헬로모바일 발송 실패: {e}')
+
     # 모요 vs 직영 비교 (사업자별로 메시지 분리, 각자 추이 버튼 2개)
     if direct_dk_max:
         try:
@@ -550,6 +570,19 @@ def run():
         except Exception as e:
             _log(f'❌ 스카이라이프 비교 메시지 실패: {e}')
 
+    # 모요 vs 헬로직영 [추가 20261010] - 직영 값 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등)
+    if hello_posts:
+        try:
+            hello_dk_max = hello.compute_direct_dk_max(hello_posts)
+            if hello_dk_max:
+                hello_vs_msg = format_moyo_vs_direct(
+                    moyo_plans, hello_dk_max,
+                    provider='LG헬로모바일', direct_label='헬로직영')
+                _send_telegram(hello_vs_msg + '\n※ 헬로직영 = 기본혜택 + 프로모션코드 + 요금제혜택(쿠폰팩·Npay 등) (친구추천·자급제 등 조건부 혜택 제외)')
+                _log('✅ 모요 vs 헬로직영 비교 발송 완료')
+        except Exception as e:
+            _log(f'❌ 헬로모바일 비교 메시지 실패: {e}')
+
     # K CUP 경품 편차 위반 특이사항
     # [수정 20260925] 건별로 전체 상세를 따로 발송하던 방식 → 요약 1건(단계별 건수 +
     # GB:금액 목록) + 상세는 "상세보기" 버튼으로 분리 (사장님 요청: "상세메시지는
@@ -570,6 +603,11 @@ def run():
             records_by_provider['KT스카이라이프'] = build_kcup_records(
                 moyo_plans, skylife.build_kcup_direct_posts(moyo_plans, skylife_page),
                 moyo_provider='KT스카이라이프', direct_label='KT스카이라이프 직영')
+        # [추가 20261010] LG헬로모바일 - 직영 값은 기본혜택 + 프로모션코드 + 요금제혜택
+        if hello_posts:
+            records_by_provider['LG헬로모바일'] = build_kcup_records(
+                moyo_plans, hello.build_kcup_direct_posts(hello_posts),
+                moyo_provider='LG헬로모바일', direct_label='LG헬로모바일 직영')
         kcup_summary  = format_kcup_summary(records_by_provider, run_time=kcup_run_time)
         kcup_total    = sum(len(r) for r in records_by_provider.values())
         if kcup_total:
