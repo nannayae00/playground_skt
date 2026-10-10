@@ -55,6 +55,7 @@ from scrapers.gift_ktm_event_scraper import (
     scrape_with_cache as scrape_ktm_with_cache,
     format_telegram_message as format_ktm_telegram_message,
 )
+from scrapers import gift_skylife_event_scraper as skylife  # [추가 20261010] 스카이라이프 직영
 from core.gift_comparator import (
     format_summary_report, format_moyo_report, build_group_index,
     compute_tier_max, compute_datakey_max, format_moyo_vs_direct,
@@ -395,6 +396,16 @@ def run():
     except Exception as e:
         _log(f'❌ KT엠모바일 직영 수집 실패: {e}')
 
+    # ── 1.7) KT스카이라이프 직영 가입혜택 수집 [추가 20261010] ─────
+    print('[1.7/3] KT스카이라이프 직영 가입혜택 수집...')
+    skylife_page = None
+    try:
+        skylife_page = skylife.scrape_with_cache(db)
+        _log(f"✅ 스카이라이프 수집 완료: 혜택 {len(skylife_page.get('benefits') or [])}건"
+             f" ({'캐시' if skylife_page.get('from_cache') else 'Gemini'})")
+    except Exception as e:
+        _log(f'❌ 스카이라이프 직영 수집 실패: {e}')
+
     # ── 2) 모요 수집 ─────────────────────────────────────────────
     print('[2/3] 모요 자회사 사은품 수집...')
     try:
@@ -484,6 +495,15 @@ def run():
     except Exception as e:
         _log(f'❌ KT엠모바일 발송 실패: {e}')
 
+    # KT스카이라이프 직영 가입혜택 메시지 [추가 20261010]
+    if skylife_page:
+        try:
+            sky_text, sky_buttons = skylife.format_telegram_message(skylife_page, now_str=now_str)
+            _send_telegram(sky_text, reply_markup={'inline_keyboard': [[b] for b in sky_buttons]})
+            _log('✅ 스카이라이프 직영 메시지 발송 완료')
+        except Exception as e:
+            _log(f'❌ 스카이라이프 발송 실패: {e}')
+
     # 모요 vs 직영 비교 (사업자별로 메시지 분리, 각자 추이 버튼 2개)
     if direct_dk_max:
         try:
@@ -517,6 +537,18 @@ def run():
         except Exception as e:
             _log(f'❌ 엠모바일 비교 메시지 실패: {e}')
 
+    # 모요 vs 스카이직영 [추가 20261010] - 직영 값은 모요 요금제 월 요금별 정기혜택(조건부 추가혜택 제외)
+    if skylife_page and skylife_page.get('benefits'):
+        try:
+            sky_dk_max = skylife.compute_direct_dk_max(moyo_plans, skylife_page['benefits'])
+            if sky_dk_max:
+                sky_vs_msg = format_moyo_vs_direct(
+                    moyo_plans, sky_dk_max,
+                    provider='KT스카이라이프', direct_label='스카이직영')
+                _send_telegram(sky_vs_msg + '\n※ 스카이직영 = 요금제 월 요금별 정기혜택 (바로유심·골드 등 조건부 혜택 제외)')
+                _log('✅ 모요 vs 스카이직영 비교 발송 완료')
+        except Exception as e:
+            _log(f'❌ 스카이라이프 비교 메시지 실패: {e}')
 
     # K CUP 경품 편차 위반 특이사항
     # [수정 20260925] 건별로 전체 상세를 따로 발송하던 방식 → 요약 1건(단계별 건수 +
