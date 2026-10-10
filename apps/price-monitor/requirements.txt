@@ -17,3 +17,4 @@ beautifulsoup4==4.12.3
 lxml==5.1.0
 google-genai
 openpyxl
+pillow  # 헬로모바일 긴 이벤트 이미지 분할 (gift_hello_event_scraper)
