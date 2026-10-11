@@ -900,6 +900,9 @@ def compare_kcup(moyo_plans: list, direct_posts: list,
         dk = g['data_key']
         if dk == 'unknown':
             continue
+        # [수정 20261011] 모요 금액 0원(사은품 없음/전부 비교 제외 항목)인 요금제는 비교하지 않음 (사용자 결정)
+        if (g['total_value'] or 0) <= 0:
+            continue
         if g['total_value'] > moyo_by_dk.get(dk, {}).get('total_value', -1):
             moyo_by_dk[dk] = g
 
@@ -972,6 +975,9 @@ def build_kcup_records(moyo_plans: list, direct_posts: list,
     for g in moyo_groups.values():
         dk = g['data_key']
         if dk == 'unknown':
+            continue
+        # [수정 20261011] 모요 금액 0원(사은품 없음/전부 비교 제외 항목)인 요금제는 비교하지 않음 (사용자 결정)
+        if (g['total_value'] or 0) <= 0:
             continue
         if g['total_value'] > moyo_by_dk.get(dk, {}).get('total_value', -1):
             moyo_by_dk[dk] = g
