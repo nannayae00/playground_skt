@@ -97,7 +97,8 @@ category 분류 (반드시 아래 중 하나):
 # 브라우저
 # ──────────────────────────────────────────
 def _launch(p):
-    kwargs = {"headless": True}
+    # --disable-dev-shm-usage: Cloud Run의 작은 /dev/shm 때문에 긴 이미지 페이지에서 'Page crashed' 나는 것 방지
+    kwargs = {"headless": True, "args": ["--disable-dev-shm-usage"]}
     if os.environ.get("PW_CHROMIUM_PATH"):          # 로컬 테스트용 (Cloud Run 이미지는 기본 경로)
         kwargs["executable_path"] = os.environ["PW_CHROMIUM_PATH"]
     if os.environ.get("PW_PROXY"):
@@ -366,7 +367,16 @@ def scrape_with_cache(db) -> list:
                 try:
                     urls = fetch_event_images(browser, ev["url"])
                 except Exception as e:
-                    print(f"[hello] 상세 수집 실패 [{ev['idx']}]: {e}")
+                    # [수정 20261011] 상세 페이지 실패(Page crashed 등) 시 이전 파싱 결과로 대체 (KT엠과 동일)
+                    snap = db.collection(CACHE_COLLECTION).document(ev["idx"]).get()
+                    cached = snap.to_dict() if snap.exists else {}
+                    if cached.get("parse_ok"):
+                        post = dict(ev, plans=cached.get("plans", []), common=cached.get("common", []), from_cache=True)
+                        _attach_values(post)
+                        posts.append(post)
+                        print(f"[hello] ⚠️ 상세 수집 실패 → 이전 결과 사용 [{ev['idx']}]: {str(e)[:60]}")
+                    else:
+                        print(f"[hello] 상세 수집 실패 [{ev['idx']}]: {e}")
                     continue
                 img_hash = hashlib.md5(("|".join(urls) + "|v" + PARSE_VERSION).encode("utf-8")).hexdigest()
                 ref = db.collection(CACHE_COLLECTION).document(ev["idx"])
