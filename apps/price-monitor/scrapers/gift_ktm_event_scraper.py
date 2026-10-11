@@ -279,8 +279,10 @@ def fetch_post_images(post_url: str) -> tuple:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        # [수정 20261011] 본문이 DOM에 붙기만 하면 진행(state=attached). 그래도 Cloud Run에서 끝내 안 열리는
+        # 페이지(예: 1387)는 scrape_with_cache()에서 저장된 이전 파싱 결과로 대체함
         page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_selector(SEL_DETAIL_CONTAINER, timeout=20000)
+        page.wait_for_selector(SEL_DETAIL_CONTAINER, state="attached", timeout=25000)
 
         image_urls = []
         seen = set()
@@ -460,7 +462,19 @@ def scrape_with_cache(db, max_posts: int = 16, gift_only: bool = True) -> list:
 
             results.append(post)
         except Exception as e:
-            print(f"[ktm] 실패: {post_id} | {e}")
+            # [수정 20261011] 상세 페이지 로딩 실패 시 이전 파싱 결과가 있으면 그걸로 대체 (이벤트 누락 방지)
+            try:
+                cached = cache_col.document(post_id).get()
+                cached_data = cached.to_dict() if cached.exists else {}
+            except Exception:
+                cached_data = {}
+            if cached_data.get("plans"):
+                post["plans"] = [_strip_device_linked_benefits(p) for p in cached_data["plans"]]
+                post["from_cache"] = True
+                results.append(post)
+                print(f"[ktm] ⚠️ 상세 로딩 실패 → 이전 결과 사용: [{post_id}] {post['title'][:25]} | {str(e)[:60]}")
+            else:
+                print(f"[ktm] 실패: {post_id} | {e}")
 
     cached_count = sum(1 for p in results if p.get("from_cache"))
     vision_count = len(results) - cached_count
