@@ -279,8 +279,18 @@ def fetch_post_images(post_url: str) -> tuple:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_selector(SEL_DETAIL_CONTAINER, timeout=20000)
+        # [수정 20261011] 이미지가 많은 이벤트(예: 1387)는 Cloud Run에서 20초 안에 본문이 '보이는' 상태가
+        # 안 돼 매번 Timeout으로 누락됨 → 본문이 DOM에 붙기만 하면 진행(state=attached), 40초 대기, 1회 재시도
+        for attempt in (1, 2):
+            try:
+                page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
+                page.wait_for_selector(SEL_DETAIL_CONTAINER, state="attached", timeout=40000)
+                break
+            except Exception:
+                if attempt == 2:
+                    browser.close()
+                    raise
+                print(f"[ktm] 상세 로딩 지연 → 재시도: {post_url}")
 
         image_urls = []
         seen = set()
