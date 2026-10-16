@@ -3,6 +3,9 @@ ktoa_prepaid_report.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.2 | 2026-10-16 | 메시지 구성 변경 (사용자 요청): 010은 일 실적 / 일 M/S / 월누적 실적 / 월누적 M/S
+                     4개, MNP는 실적과 M/S를 합쳐 일 / 월누적 2개 → 총 6개. 월누적 M/S는 전월 동기간 대비.
+                     M/S 기준 설명 문구 축약
 v1.1 | 2026-10-16 | 월누적 메시지 2종 추가 (사용자 요청) - 010/MNP 각각 M/S 메시지 뒤에 별도 발송.
                      표시 기준은 일평균 30건 이상(월누적 ≥ 30 × 경과일수)
 v1.0 | 2026-10-16 | 최초 작성 (사용자 확정 설계, 2026-10-16)
@@ -87,10 +90,10 @@ def sum_summaries(summaries: list[dict], target: date) -> dict:
     return {"date": target.isoformat(), "networks": nets, "brands": brands}
 
 
-def build_list_message(summary: dict, kind: str, floor: int = LIST_FLOOR, title: str | None = None) -> str:
+def build_list_lines(summary: dict, kind: str, floor: int = LIST_FLOOR) -> list[str]:
+    """망별 헤더(합계) + 해당 망에서 IN 또는 OUT이 floor 이상인 사업자 목록."""
     k = KINDS[kind]
-    title = title or f"📊 선불 {k['label']} 주요 사업자별 실적 ({summary['date']})"
-    lines = [title, f"[ {k['cols']} ]"]
+    lines = [f"[ {k['cols']} ]"]
     for net, net_key, label in NETS:
         total = summary["networks"].get(net_key, {})
         lines.append(f"\n◎ {label} ({_triple(total, k, '/')})")
@@ -101,65 +104,95 @@ def build_list_message(summary: dict, kind: str, floor: int = LIST_FLOOR, title:
             lines.append(f"  ({floor:,}건 이상 사업자 없음)")
         for i, (name, m) in enumerate(rows, 1):
             lines.append(f"{i}) {name} : {_triple(m, k, ' / ')}")
-    return "\n".join(lines)
+    return lines
 
 
-def build_ms_message(summaries: dict, target: date, kind: str) -> str:
-    k = KINDS[kind]
-    field = k["in"]
-    date_str = target.isoformat()
-    today = summaries[date_str]["brands"]
-    recent = [summaries[d]["brands"] for d in summaries if d != date_str]
-
-    lines = [f"📊 선불 {k['label']} 사업자/망별 M/S ({date_str})",
-             f"({'신규 등록' if kind == '010' else 'Port-In'} 기준, 비교 값은 M/S 기준 최근 7일 평균 대비 %p 차이)"]
+def build_ms_lines(today: dict, compare: list[dict], kind: str, min_s: int = MS_MIN_S) -> list[str]:
+    """
+    사업자/망별 M/S 본문. today = 대상 기간 brands, compare = 비교 기간 brands 목록(합산해서 M/S 계산).
+    대상: S망 min_s건 이상 + S망 포함 2개 망 이상(대상·비교 기간 중 값이 있었던 망).
+    """
+    field = KINDS[kind]["in"]
     rows = []
     for name, b in today.items():
-        s_today = b.get("S", {}).get(field, 0)
-        if s_today < MS_MIN_S:
+        if b.get("S", {}).get(field, 0) < min_s:
             continue
         nets = [n for n, _, _ in NETS
-                if b.get(n, {}).get(field, 0) or any(r.get(name, {}).get(n, {}).get(field, 0) for r in recent)]
+                if b.get(n, {}).get(field, 0) or any(c.get(name, {}).get(n, {}).get(field, 0) for c in compare)]
         if len(nets) < 2 or "S" not in nets:
             continue
         today_v = {n: b.get(n, {}).get(field, 0) for n in nets}
-        recent_v = {n: sum(r.get(name, {}).get(n, {}).get(field, 0) for r in recent) for n in nets}
-        rows.append((b["short"], today_v, recent_v))
+        comp_v = {n: sum(c.get(name, {}).get(n, {}).get(field, 0) for c in compare) for n in nets}
+        rows.append((b["short"], today_v, comp_v))
 
     rows.sort(key=lambda r: -sum(r[1].values()))
+    lines = []
     if not rows:
-        lines.append(f"\n(대상 사업자 없음 - S망 {MS_MIN_S}건 이상 + 2개 망 이상)")
-    for name, today_v, recent_v in rows:
-        t_sum, r_sum = sum(today_v.values()), sum(recent_v.values())
+        lines.append(f"\n(대상 사업자 없음 - S망 {min_s:,}건 이상 + 2개 망 이상)")
+    for name, today_v, comp_v in rows:
+        t_sum, c_sum = sum(today_v.values()), sum(comp_v.values())
         lines.append(f"\n◎ {name} : 총 {t_sum:,}건 (100%)")
         for n, v in today_v.items():
             pct = v / t_sum * 100 if t_sum else 0.0
-            diff = _signed(pct - recent_v[n] / r_sum * 100, ".1f", "%p") if r_sum else "비교불가"
+            diff = _signed(pct - comp_v[n] / c_sum * 100, ".1f", "%p") if c_sum else "비교불가"
             lines.append(f"  {n}: {v:,}건 ({pct:.0f}%) : {diff}")
-    return "\n".join(lines)
+    return lines
+
+
+def _prev_month_same_period(target: date) -> tuple[date, date]:
+    """전월 1일 ~ 전월의 target.day일 (전월이 짧으면 말일)."""
+    prev_last = target.replace(day=1) - timedelta(days=1)
+    return prev_last.replace(day=1), prev_last.replace(day=min(target.day, prev_last.day))
+
+
+def load_range(db, start: date, end: date) -> list[dict]:
+    q = (db.collection(SUMMARY_COLLECTION)
+         .where("date", ">=", start.isoformat()).where("date", "<=", end.isoformat()))
+    return [d.to_dict() for d in q.stream()]
 
 
 def build_prepaid_reports(target: date, db=None) -> list[str]:
-    """메시지 6종(일 실적·M/S·월누적 × 010/MNP). 해당일 summary가 없으면 빈 리스트."""
+    """
+    메시지 6종 (v1.2, 사용자 확정 구성):
+      ① 010 사업자별 실적  ② 010 사업자/망별 M/S  ③ 010 월누적 실적  ④ 010 월누적 망별 M/S
+      ⑤ MNP 사업자별 실적 & M/S  ⑥ MNP 월누적 실적 & M/S
+    일 M/S는 최근 7일, 월누적 M/S는 전월 같은 기간 대비 %p. 해당일 summary가 없으면 빈 리스트.
+    """
     db = db or _get_db()
     summaries = load_summaries(db, target)
-    if target.isoformat() not in summaries:
+    d = target.isoformat()
+    if d not in summaries:
         log.warning(f"[{target}] {SUMMARY_COLLECTION} 문서 없음 - 선불 리포트 생략")
         return []
-    s = summaries[target.isoformat()]
+    day = summaries[d]
+    recent = [summaries[x]["brands"] for x in summaries if x != d]
+
     month = load_month(db, target)
     mtd = sum_summaries(month, target)
-    mtd_floor = LIST_FLOOR * len(month)
-    period = f"{target.replace(day=1):%m/%d}~{target:%m/%d}, {len(month)}일"
-    msgs = []
-    for kind in ("010", "MNP"):
-        msgs += [
-            build_list_message(s, kind),
-            build_ms_message(summaries, target, kind),
-            build_list_message(mtd, kind, floor=mtd_floor,
-                               title=f"📊 선불 {kind} 월누적 사업자별 실적 ({period})\n(일평균 {LIST_FLOOR}건 이상 사업자)"),
-        ]
-    return msgs
+    n_days = len(month)
+    ps, pe = _prev_month_same_period(target)
+    prev = sum_summaries(load_range(db, ps, pe), pe)
+    period = f"{target.replace(day=1):%m/%d}~{target:%m/%d}, {n_days}일"
+    note_day = "(M/S 기준 최근 7일 평균 대비 %p 차이)"
+    note_mtd = f"(M/S 기준 전월 동기간 {ps:%m/%d}~{pe:%m/%d} 대비 %p 차이)"
+    mtd_floor, mtd_min_s = LIST_FLOOR * n_days, MS_MIN_S * n_days
+
+    def msg(*parts):
+        return "\n".join(x for p in parts for x in ([p] if isinstance(p, str) else p))
+
+    return [
+        msg(f"📊 선불 010 주요 사업자별 실적 ({d})", build_list_lines(day, "010")),
+        msg(f"📊 선불 010 사업자/망별 M/S ({d})", note_day, build_ms_lines(day["brands"], recent, "010")),
+        msg(f"📊 선불 010 월누적 사업자별 실적 ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
+            build_list_lines(mtd, "010", mtd_floor)),
+        msg(f"📊 선불 010 월누적 망별 M/S ({period})", note_mtd,
+            build_ms_lines(mtd["brands"], [prev["brands"]], "010", mtd_min_s)),
+        msg(f"📊 선불 MNP 사업자별 실적 & M/S ({d})", build_list_lines(day, "MNP"),
+            "\n[ 사업자/망별 M/S ]", note_day, build_ms_lines(day["brands"], recent, "MNP")),
+        msg(f"📊 선불 MNP 월누적 사업자별 실적 & M/S ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
+            build_list_lines(mtd, "MNP", mtd_floor),
+            "\n[ 사업자/망별 M/S ]", note_mtd, build_ms_lines(mtd["brands"], [prev["brands"]], "MNP", mtd_min_s)),
+    ]
 
 
 def save_context(db, target: date, messages: list[str]) -> None:
