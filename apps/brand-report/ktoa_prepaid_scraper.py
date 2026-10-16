@@ -57,6 +57,34 @@ SEARCH_XPATHS = [
 # ─────────────────────────────────────────────────────────────
 # 화면 조작
 # ─────────────────────────────────────────────────────────────
+def _debug_dump(driver, tag: str) -> None:
+    """DEBUG=1일 때 화면 구성(메뉴·라디오·입력칸·버튼)을 로그로 남김 (Cloud Run에선 /tmp 파일을 못 봄)."""
+    _debug_screenshot(driver, tag)
+    if os.environ.get("DEBUG") != "1":
+        return
+    try:
+        info = driver.execute_script(
+            "const t = e => (e.innerText || e.value || e.alt || '').trim().slice(0, 40);"
+            "return {"
+            " menus: [...document.querySelectorAll('[onclick]')]"
+            "   .map(e => t(e) + ' => ' + e.getAttribute('onclick')).filter(x => /선불|일별|월별|조회|excel/i.test(x)),"
+            " radios: [...document.querySelectorAll('.radioText, input[type=radio]')]"
+            "   .map(e => (e.id || e.name || '') + ':' + t(e)),"
+            " inputs: [...document.querySelectorAll('input, select')]"
+            "   .filter(e => e.type !== 'hidden' || /dt|date/i.test(e.id + e.name))"
+            "   .map(e => `${e.tagName}#${e.id}[${e.name}] type=${e.type} val=${e.value}`),"
+            " buttons: [...document.querySelectorAll('a, button, img, input[type=image], input[type=button]')]"
+            "   .filter(e => /조회|검색|엑셀|excel|search/i.test(t(e) + e.id + (e.getAttribute('src') || '')))"
+            "   .map(e => `${e.tagName}#${e.id} ${t(e)} onclick=${e.getAttribute('onclick')}`),"
+            " title: (document.querySelector('h2, h3, .title, .tit') || {}).innerText"
+            "};"
+        )
+        for k, v in info.items():
+            log.info(f"[DEBUG:{tag}] {k}: {json.dumps(v, ensure_ascii=False)[:3000]}")
+    except Exception as e:
+        log.warning(f"[DEBUG:{tag}] 화면 덤프 실패: {e}")
+
+
 def navigate_to_prepaid_view(driver) -> str | None:
     """번호현황 조회 > 선불 등록현황 > 일별 화면으로 이동. 메뉴의 type 값을 반환."""
     wait = WebDriverWait(driver, 15)
@@ -69,12 +97,12 @@ def navigate_to_prepaid_view(driver) -> str | None:
         MENU_LABEL,
     )
     if not onclick:
-        _debug_screenshot(driver, "prepaid_menu_not_found")
+        _debug_dump(driver, "prepaid_menu_not_found")
         raise RuntimeError(f"'{MENU_LABEL}' 메뉴를 찾지 못함 - DEBUG=1로 HTML 확인 후 PREPAID_MENU_JS 지정")
     log.info(f"메뉴 이동: {onclick}")
     driver.execute_script(onclick)
     time.sleep(1.5)
-    _debug_screenshot(driver, "prepaid_10_after_menu")
+    _debug_dump(driver, "prepaid_10_after_menu")
 
     m = re.search(r"type=(\w+)", onclick)
     menu_type = m.group(1) if m else None
@@ -84,7 +112,7 @@ def navigate_to_prepaid_view(driver) -> str | None:
     wait.until(EC.presence_of_element_located(daily))
     driver.find_element(*daily).click()
     time.sleep(1)
-    _debug_screenshot(driver, "prepaid_11_after_daily_radio")
+    _debug_dump(driver, "prepaid_11_after_daily_radio")
 
     wait.until(EC.presence_of_element_located((By.ID, "excelBt")))
     log.info(f"{MENU_LABEL}(일별) 화면 진입 완료 (type={menu_type})")
@@ -103,7 +131,7 @@ def set_query_range(driver, start: str, end: str) -> None:
             driver.execute_script("arguments[0].click();", els[0])
             log.info(f"조회일자 {start} ~ {end} 조회 ({xp})")
             time.sleep(2)
-            _debug_screenshot(driver, f"prepaid_20_after_search_{start}")
+            _debug_dump(driver, f"prepaid_20_after_search_{start}")
             return
     log.warning(f"조회 버튼을 찾지 못함 - 입력값만 바꾸고 엑셀 다운로드 ({start} ~ {end})")
 
