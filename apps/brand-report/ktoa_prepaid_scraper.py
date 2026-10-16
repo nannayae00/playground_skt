@@ -3,6 +3,8 @@ ktoa_prepaid_scraper.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.1 | 2026-10-16 | Cloud Run 실행으로 화면 확인 - 메뉴 fbNumReg.do?type=9, 조회 버튼 없음
+                     (엑셀이 #startDtVal/#endDtVal 값으로 바로 받아짐), DEBUG 화면 덤프 로그 추가
 v1.0 | 2026-10-16 | 최초 작성
   - KTOA 번호현황 조회 > 선불 등록현황 > 일별 표를 엑셀로 내려받아
     ktoa_prepaid_daily/{YYYY-MM-DD}에 적재 (사업자 블록 137개 × 지표 13개)
@@ -10,12 +12,11 @@ v1.0 | 2026-10-16 | 최초 작성
   - 데일리: 최근 LOOKBACK_DAYS(기본 7)일을 다시 받아 덮어씀 → KTOA의 과거일 정정도 반영
   - 백필: BACKFILL_FROM / BACKFILL_TO (YYYY-MM) 월 단위로 받아 월마다 즉시 저장
 
-⚠️ 사이트 화면을 직접 확인하지 못하고 작성함. MNP 등록현황 화면과 같은 구성이라고
-   가정한 부분(아래)은 첫 실행을 DEBUG=1로 돌려 로그·HTML을 보고 확정할 것.
-   - 메뉴: onclick에 '선불 등록현황'이 들어간 요소를 찾아 그 onclick을 그대로 실행
-   - 일별 라디오: div.radioText 중 텍스트가 '일별'인 것
-   - 조회일자 입력칸: #startDtVal / #endDtVal (YYYY-MM-DD)
-   - 조회 버튼: 아래 SEARCH_XPATHS 후보 중 처음 찾은 것, 엑셀: #excelBt
+사이트 화면 (2026-10-16 DEBUG=1 실행으로 확인):
+   - 메뉴: pageBeforeDay('fbNumReg.do?type=9','선불 등록현황')
+   - 일별 라디오: div.radioText '일 별' (#sheet value=1)
+   - 조회일자 입력칸: #startDtVal / #endDtVal (YYYY-MM-DD) - 별도 조회 버튼 없음,
+     엑셀(#excelBt → excelDownLoad('9'))이 입력칸 값 범위로 바로 받아짐
    받은 엑셀의 날짜 범위가 요청 범위와 다르면 저장하지 않고 실패 처리함
    (조회일자가 반영되지 않은 채 엑셀이 받아지는 경우를 막기 위함).
 
@@ -133,7 +134,8 @@ def set_query_range(driver, start: str, end: str) -> None:
             time.sleep(2)
             _debug_dump(driver, f"prepaid_20_after_search_{start}")
             return
-    log.warning(f"조회 버튼을 찾지 못함 - 입력값만 바꾸고 엑셀 다운로드 ({start} ~ {end})")
+    # 이 화면은 조회 버튼이 없고 엑셀이 입력칸 값을 그대로 씀 (범위는 _check_range로 검증)
+    log.info(f"조회일자 {start} ~ {end} 입력")
 
 
 def download_excel(driver, menu_type: str | None, tag: str) -> str:
