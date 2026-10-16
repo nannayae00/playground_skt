@@ -70,7 +70,7 @@ d = db.collection("ktoa_daily").document("2026-10-07").get().to_dict()
 - `brands[대표명]` = `{short, S|K|L: {code, 지표...}, total}`. 망은 코드 앞글자, 이름은 망 접미사를 떼서 묶음(프리티LG = 프리텔레콤). 값이 0인 망·사업자는 없음.
 - `check[SM|KM|LM]` = 사업자 합이 망 합계와 같은지
 - 만드는 곳: `apps/brand-report/ktoa_prepaid_summary.py` (수집할 때 자동, 수동 재생성은 `python3 ktoa_prepaid_summary.py 시작일 종료일`)
-- 텔레그램 선불 리포트 4종(010/MNP 실적, 망별 M/S) 원문: `ktoa_prepaid_context_daily/{date}.text`
+- 텔레그램 선불 리포트 6종(010 전일 실적·M/S·월누적 실적·월누적 M/S, MNP 전일·월누적) 원문: `ktoa_prepaid_context_daily/{date}.text`
 
 ### 시장·경쟁 동향
 | 컬렉션 | 내용 |

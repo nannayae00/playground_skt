@@ -155,7 +155,7 @@ def build_prepaid_reports(target: date, db=None) -> list[str]:
     """
     메시지 6종 (v1.2, 사용자 확정 구성):
       ① 010 사업자별 실적  ② 010 사업자/망별 M/S  ③ 010 월누적 실적  ④ 010 월누적 망별 M/S
-      ⑤ MNP 사업자별 실적 & M/S  ⑥ MNP 월누적 실적 & M/S
+      ⑤ MNP 전일(실적+M/S)  ⑥ MNP 월누적(실적+M/S)
     일 M/S는 최근 7일, 월누적 M/S는 전월 같은 기간 대비 %p. 해당일 summary가 없으면 빈 리스트.
     """
     db = db or _get_db()
@@ -187,9 +187,9 @@ def build_prepaid_reports(target: date, db=None) -> list[str]:
             build_list_lines(mtd, "010", mtd_floor)),
         msg(f"📊 선불 010 월누적 망별 M/S ({period})", note_mtd,
             build_ms_lines(mtd["brands"], [prev["brands"]], "010", mtd_min_s)),
-        msg(f"📊 선불 MNP 사업자별 실적 & M/S ({d})", build_list_lines(day, "MNP"),
+        msg(f"📊 선불 MNP 전일 ({d})", build_list_lines(day, "MNP"),
             "\n[ 사업자/망별 M/S ]", note_day, build_ms_lines(day["brands"], recent, "MNP")),
-        msg(f"📊 선불 MNP 월누적 사업자별 실적 & M/S ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
+        msg(f"📊 선불 MNP 월누적 ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
             build_list_lines(mtd, "MNP", mtd_floor),
             "\n[ 사업자/망별 M/S ]", note_mtd, build_ms_lines(mtd["brands"], [prev["brands"]], "MNP", mtd_min_s)),
     ]
