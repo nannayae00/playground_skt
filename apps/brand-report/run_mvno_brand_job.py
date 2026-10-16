@@ -269,7 +269,7 @@ def _run_insights_pipeline() -> None:
 def run_prepaid(target_date_obj: date) -> bool:
     """
     KTOA 선불 등록현황 최근 7일 재수집(ktoa_prepaid_daily + summary) 후
-    선불 리포트 4종을 같은 방으로 발송 (v1.6). 대상일 데이터가 아직 없으면
+    선불 리포트 6종(일 실적·M/S·월누적 × 010/MNP)을 같은 방으로 발송 (v1.6). 대상일 데이터가 아직 없으면
     발송하지 않음. 예외는 로그만 남기고 삼킴 - 부가 리포트라 MNP 리포트 흐름을 막지 않음.
     """
     print("[선불] 수집 시작: ktoa_prepaid_scraper.run_daily(7)", flush=True)
