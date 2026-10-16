@@ -1,5 +1,7 @@
 """
 [수정 이력]
+- v1.7 (2026-10-16): 매월 2일 아침(대상일=1일) 선불 전월 한 달 재수집 추가
+  (_recollect_prev_month) - 7일보다 오래된 KTOA 정정값 반영.
 - v1.6 (2026-10-16): 일일/주간 분기 뒤에 선불 리포트(run_prepaid) 추가 -
   KTOA 선불 등록현황 최근 7일 재수집 → ktoa_prepaid_summary → 선불 010/MNP
   사업자별 실적·망별 M/S 4종을 같은 방으로 발송. 실패해도 job 결과에 영향 없음.
@@ -266,6 +268,24 @@ def _run_insights_pipeline() -> None:
     print("=== 인사이트 파이프라인 전체 종료 ===", flush=True)
 
 
+def _recollect_prev_month(target_date_obj: date) -> None:
+    """
+    매월 초(대상일이 1일인 실행 = 매월 2일 아침) 전월 한 달을 다시 받아 덮어씀 (v1.7).
+    일일 수집은 최근 7일만 다시 받으므로, KTOA가 그보다 오래된 날짜를 나중에 고친 값
+    (팀 엑셀 대조에서 확인: 와이드모바일KT 등 1~24건)을 월 단위로 반영하기 위함.
+    실패해도 일일 리포트는 계속 진행.
+    """
+    if target_date_obj.day != 1:
+        return
+    prev_ym = (target_date_obj - timedelta(days=1)).strftime("%Y-%m")
+    try:
+        from ktoa_prepaid_scraper import run_backfill
+        ok, ng = run_backfill(prev_ym, prev_ym, dry_run=False, notify=False)
+        print(f"[선불] 전월({prev_ym}) 재수집 {'완료' if ok else '실패'}", flush=True)
+    except Exception as e:
+        print(f"[선불] 전월({prev_ym}) 재수집 실패 (무시하고 계속): {e}", flush=True)
+
+
 def run_prepaid(target_date_obj: date) -> bool:
     """
     KTOA 선불 등록현황 최근 7일 재수집(ktoa_prepaid_daily + summary) 후
@@ -280,6 +300,7 @@ def run_prepaid(target_date_obj: date) -> bool:
         from ktoa_mvno_firestore import _get_db
 
         latest = run_daily(7, dry_run=False, notify=False)
+        _recollect_prev_month(target_date_obj)
         if latest < target_date_obj.isoformat():
             print(f"[선불] 대상일({target_date_obj}) 데이터 미반영 (최신 {latest}) - 리포트 생략", flush=True)
             return False
