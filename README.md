@@ -19,7 +19,7 @@ Cloud Shell에서 직접 수정하지 말고, 이 저장소를 고친 뒤 여기
 |---|---|---|---|
 | `apps/mvno-bot` | `mvno-bot` | `ktoa-collector` (`ktoa_scraper.py`), `cafe-collector` (`cafe_collector_runner.py`), `backfill-pattern` (`backfill_hourly_pattern.py`), `bw-week-updater` | `gcr.io/mvno-484509/mvno-bot` |
 | `apps/price-monitor` | `price-monitor` (서울), `price-monitor` (도쿄 `asia-northeast1`) | `moyo-scrape-job` (`scrape_job.py`), `gift-sensing-job` (`gift_job.py`), `dcinside-monitor-job` (`dcinside_job.py`), `ppomppu-monitor-job` (`ppomppu_job.py`), `community-excel-job` (`community_excel_job.py`) | `gcr.io/mvno-484509/price-monitor`, 작업은 `cloud-run-source-deploy/<작업명>` |
-| `apps/brand-report` | - | `mvno-brand-report-job` (`run_mvno_brand_job.py`), `mvno-new-data-check-job` (`check_new_data.py`) | `cloud-run-source-deploy/<작업명>` |
+| `apps/brand-report` | - | `mvno-brand-report-job` (`run_mvno_brand_job.py`), `mvno-new-data-check-job` (`check_new_data.py`), `ktoa-prepaid-job` (`ktoa_prepaid_scraper.py`, 신규·미배포) | `cloud-run-source-deploy/<작업명>` |
 | `apps/youtube-analyzer-bot` | `youtube-analyzer-bot` | `youtube-monitor` (`youtube_monitor.py`) | `cloud-run-source-deploy/youtube-analyzer-bot` |
 | `apps/calendar-bot` | `calendar-bot` | `test-cal` | `gcr.io/mvno-484509/calendar-bot` |
 | `apps/mvno-issue-collector` | `mvno-issue-collector` | - | `cloud-run-source-deploy/mvno-issue-collector` |
@@ -57,5 +57,6 @@ gcloud run jobs update <작업명> --region asia-northeast3 --image <이미지>@
 
 - `mvno-bot` 서비스: 10/05 03:26 빌드로 실행 중. 저장소에는 그 뒤 `ktoa_scraper.py` 수정(페이지 로드 60초 제한, 장애·복구 알림)이 들어 있고, 이 수정은 `ktoa-collector` 작업에만 배포됨.
 - `brand-report`: 운영 작업은 `ktoa_mvno_scraper.py` v1.9. 저장소는 v1.10(자정 무렵 `pageBeforeDay is not defined` 오류 수정)이며 아직 배포 안 됨.
+- `brand-report`: `ktoa_prepaid_scraper.py`(KTOA 선불 등록현황 → `ktoa_prepaid_daily`)는 2026-10-16 추가, 아직 배포·스케줄 등록 전. 첫 실행은 `DEBUG=1 DRY_RUN=1`로 화면 선택자를 확인한 뒤 진행.
 - `price-monitor` 도쿄 서비스는 2026-02 빌드, `ppomppu-monitor-job`은 09/28 빌드로 실행 중 (저장소는 10/01 빌드 기준).
 - `youtube-analyzer-bot` 서비스는 2026-05 빌드로 실행 중 (저장소와 `youtube-monitor` 작업은 09/24 빌드 기준).

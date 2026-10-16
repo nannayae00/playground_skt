@@ -57,6 +57,13 @@ d = db.collection("ktoa_daily").document("2026-10-07").get().to_dict()
 **사업자별 T Out** = 브랜드별 `inflows['SKT']` 합계(MNO 브랜드 `SKT`/`KT`/`LGU+` 제외). 일별 합이 `mno_out.S`와 정확히 일치합니다.
 사업자 이탈은 `ktoa_mvno_brand_out`, 사업자 목록·망은 `ktoa_mvno_operator_registry`.
 
+### `ktoa_prepaid_daily/{YYYY-MM-DD}` — KTOA 선불 등록현황 (번호현황 조회 > 선불 등록현황, 일별)
+`blocks[키]` = 사이트 표의 블록 하나(키: `TOTAL`, `SKT`/`KT`/`LGU+`, 사업자코드 `S01`~/`K01`~/`L01`~, 코드 없는 블록은 이름).
+각 블록 필드: `subtotal`(순수 4개 합), `new_reg/new_term/new_net`(신규가입), `port_in/port_out/port_net`(번호이동),
+`post_to_pre/pre_to_post/conv_net`(선후불전환), `spare_reg/spare_term/spare_net`(예비번호), `name`, `code`. `block_order`는 사이트 열 순서.
+`전체_MVNO합계` 등 합계 블록이 사이트 표에 있으면 그대로 저장되니 사업자 합산 시 이름에 '합계'가 든 블록은 빼야 이중 집계가 안 됩니다.
+팀 엑셀(선불정보 DB구축 통계 .xlsm)과의 대조: `apps/brand-report/verify_prepaid_vs_excel.py`.
+
 ### 시장·경쟁 동향
 | 컬렉션 | 내용 |
 |---|---|
