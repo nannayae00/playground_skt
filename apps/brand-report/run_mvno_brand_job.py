@@ -1,5 +1,8 @@
 """
 [수정 이력]
+- v1.6 (2026-10-16): 일일/주간 분기 뒤에 선불 리포트(run_prepaid) 추가 -
+  KTOA 선불 등록현황 최근 7일 재수집 → ktoa_prepaid_summary → 선불 010/MNP
+  사업자별 실적·망별 M/S 4종을 같은 방으로 발송. 실패해도 job 결과에 영향 없음.
 - v1.5 (2026-08-07): RUN_INSIGHTS_PIPELINE 환경변수 지원 추가 - 있으면
   월간/주간 요약 재집계(2016~2026 전체) → build_brand_insights.py →
   import_brand_profiles.py → build_brand_insights_v2.py를 순서대로 실행하고
@@ -263,6 +266,36 @@ def _run_insights_pipeline() -> None:
     print("=== 인사이트 파이프라인 전체 종료 ===", flush=True)
 
 
+def run_prepaid(target_date_obj: date) -> bool:
+    """
+    KTOA 선불 등록현황 최근 7일 재수집(ktoa_prepaid_daily + summary) 후
+    선불 리포트 6종(일 실적·M/S·월누적 × 010/MNP)을 같은 방으로 발송 (v1.6). 대상일 데이터가 아직 없으면
+    발송하지 않음. 예외는 로그만 남기고 삼킴 - 부가 리포트라 MNP 리포트 흐름을 막지 않음.
+    """
+    print("[선불] 수집 시작: ktoa_prepaid_scraper.run_daily(7)", flush=True)
+    try:
+        from ktoa_prepaid_scraper import run_daily
+        from ktoa_prepaid_report import build_prepaid_reports, save_context
+        from ktoa_mvno_report import send_telegram
+        from ktoa_mvno_firestore import _get_db
+
+        latest = run_daily(7, dry_run=False, notify=False)
+        if latest < target_date_obj.isoformat():
+            print(f"[선불] 대상일({target_date_obj}) 데이터 미반영 (최신 {latest}) - 리포트 생략", flush=True)
+            return False
+        db = _get_db()
+        msgs = build_prepaid_reports(target_date_obj, db)
+        if not msgs:
+            return False
+        send_telegram(msgs)
+        save_context(db, target_date_obj, msgs)
+        print(f"[선불] 리포트 {len(msgs)}건 발송 완료", flush=True)
+        return True
+    except Exception as e:
+        print(f"[선불] 실패 (무시하고 계속): {e}", flush=True)
+        return False
+
+
 def main():
     # ── 인사이트 파이프라인 모드: RUN_INSIGHTS_PIPELINE=1 이면 이것만 실행하고 종료 ──
     # 실행 시간이 김(원본 10년치 훑는 단계 포함) - task-timeout 넉넉히:
@@ -309,6 +342,9 @@ def main():
     else:
         if not run_report(target_date):
             sys.exit(1)
+
+    # ── 선불 리포트: MNP 리포트 뒤에 이어서 발송. 실패해도 job은 성공 처리 ──
+    run_prepaid(target_date_obj)
 
     # ── 월마감 판단: 위 분기와 별개로 항상 체크. 매월 1일엔 의도적으로 겹쳐서 발송 ──
     try:

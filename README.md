@@ -57,6 +57,6 @@ gcloud run jobs update <작업명> --region asia-northeast3 --image <이미지>@
 
 - `mvno-bot` 서비스: 10/05 03:26 빌드로 실행 중. 저장소에는 그 뒤 `ktoa_scraper.py` 수정(페이지 로드 60초 제한, 장애·복구 알림)이 들어 있고, 이 수정은 `ktoa-collector` 작업에만 배포됨.
 - `brand-report`: 운영 작업은 `ktoa_mvno_scraper.py` v1.9. 저장소는 v1.10(자정 무렵 `pageBeforeDay is not defined` 오류 수정)이며 아직 배포 안 됨.
-- `brand-report`: `ktoa_prepaid_scraper.py`(KTOA 선불 등록현황 → `ktoa_prepaid_daily`)는 2026-10-16 추가. Cloud Run 작업 `ktoa-prepaid-job`(이미지 `cloud-run-source-deploy/ktoa-prepaid-job`, 환경변수는 `mvno-brand-report-job`과 동일). 화면 확인이 필요하면 `DEBUG=1 DRY_RUN=1`로 실행하면 화면 구성이 Cloud Logging에 남음.
+- `brand-report`: `ktoa_prepaid_scraper.py`(KTOA 선불 등록현황 → `ktoa_prepaid_daily`)는 2026-10-16 추가. Cloud Run 작업 `ktoa-prepaid-job`(이미지 `cloud-run-source-deploy/ktoa-prepaid-job`, 환경변수는 `mvno-brand-report-job`과 동일). 화면 확인이 필요하면 `DEBUG=1 DRY_RUN=1`로 실행하면 화면 구성이 Cloud Logging에 남음. 일일 수집과 선불 리포트(`ktoa_prepaid_report.py`)는 `mvno-brand-report-job`이 MNP 리포트 뒤에 이어서 하고, `ktoa-prepaid-job`은 백필·수동 재수집용.
 - `price-monitor` 도쿄 서비스는 2026-02 빌드, `ppomppu-monitor-job`은 09/28 빌드로 실행 중 (저장소는 10/01 빌드 기준).
 - `youtube-analyzer-bot` 서비스는 2026-05 빌드로 실행 중 (저장소와 `youtube-monitor` 작업은 09/24 빌드 기준).
