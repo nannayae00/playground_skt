@@ -3,6 +3,7 @@ ktoa_prepaid_scraper.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.3 | 2026-10-16 | run_backfill(notify=False)면 완료 알림 생략 - 매월 초 전월 재수집(run_mvno_brand_job)용
 v1.2 | 2026-10-16 | 저장할 때 ktoa_prepaid_summary도 같이 만듦. run_daily(notify=False)면 성공 알림 생략
                      (mvno-brand-report-job이 수집 후 선불 리포트를 바로 보내므로)
 v1.1 | 2026-10-16 | Cloud Run 실행으로 화면 확인 - 메뉴 fbNumReg.do?type=9, 조회 버튼 없음
@@ -277,7 +278,8 @@ def run_daily(lookback_days: int, dry_run: bool, notify: bool = True) -> str:
     return latest
 
 
-def run_backfill(from_ym: str, to_ym: str, dry_run: bool) -> None:
+def run_backfill(from_ym: str, to_ym: str, dry_run: bool, notify: bool = True) -> tuple[int, int]:
+    """월 단위 수집. (성공 월 수, 실패 월 수)를 반환."""
     now = datetime.now(KST)
     ranges = _month_ranges(from_ym, to_ym, cap=now.date() - timedelta(days=1))
     log.info(f"=== 선불 등록현황 백필 {from_ym} ~ {to_ym} ({len(ranges)}개월) ===")
@@ -297,8 +299,9 @@ def run_backfill(from_ym: str, to_ym: str, dry_run: bool) -> None:
     msg = (f"📱 KTOA 선불 등록현황 백필 {from_ym}~{to_ym} 완료: 성공 {ok} / 실패 {ng}\n"
            + "\n".join(lines))
     log.info(msg)
-    if not dry_run:
+    if notify and not dry_run:
         tg_send_personal(msg[:3900])
+    return ok, ng
 
 
 if __name__ == "__main__":
