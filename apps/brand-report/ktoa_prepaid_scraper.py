@@ -3,6 +3,8 @@ ktoa_prepaid_scraper.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.2 | 2026-10-16 | 저장할 때 ktoa_prepaid_summary도 같이 만듦. run_daily(notify=False)면 성공 알림 생략
+                     (mvno-brand-report-job이 수집 후 선불 리포트를 바로 보내므로)
 v1.1 | 2026-10-16 | Cloud Run 실행으로 화면 확인 - 메뉴 fbNumReg.do?type=9, 조회 버튼 없음
                      (엑셀이 #startDtVal/#endDtVal 값으로 바로 받아짐), DEBUG 화면 덤프 로그 추가
 v1.0 | 2026-10-16 | 최초 작성
@@ -223,7 +225,10 @@ def _store(parsed: dict, dry_run: bool) -> int:
         log.info(f"[DRY_RUN] {path} 저장 ({len(days)}일)")
         return len(days)
     from ktoa_prepaid_firestore import save_prepaid_days
-    return save_prepaid_days(parsed)
+    from ktoa_prepaid_summary import save_summaries
+    n = save_prepaid_days(parsed)
+    save_summaries(sorted(parsed["days"]))
+    return n
 
 
 def _month_ranges(from_ym: str, to_ym: str, cap: date) -> list[tuple[str, str]]:
@@ -243,7 +248,8 @@ def _month_ranges(from_ym: str, to_ym: str, cap: date) -> list[tuple[str, str]]:
 # ─────────────────────────────────────────────────────────────
 # 실행
 # ─────────────────────────────────────────────────────────────
-def run_daily(lookback_days: int, dry_run: bool) -> None:
+def run_daily(lookback_days: int, dry_run: bool, notify: bool = True) -> str:
+    """최근 lookback_days일(어제까지) 수집. 받은 최신 날짜를 반환."""
     now = datetime.now(KST)
     end = (now.date() - timedelta(days=1))
     start = end - timedelta(days=lookback_days - 1)
@@ -266,8 +272,9 @@ def run_daily(lookback_days: int, dry_run: bool) -> None:
            f"(신규 {t.get('new_net', 0):,} / 이동 {t.get('port_net', 0):,} / "
            f"전환 {t.get('conv_net', 0):,} / 예비 {t.get('spare_net', 0):,})")
     log.info(msg)
-    if not dry_run:
+    if notify and not dry_run:
         tg_send_personal(msg)
+    return latest
 
 
 def run_backfill(from_ym: str, to_ym: str, dry_run: bool) -> None:

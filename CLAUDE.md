@@ -64,6 +64,14 @@ d = db.collection("ktoa_daily").document("2026-10-07").get().to_dict()
 `전체_MVNO합계` 등 합계 블록이 사이트 표에 있으면 그대로 저장되니 사업자 합산 시 이름에 '합계'가 든 블록은 빼야 이중 집계가 안 됩니다.
 팀 엑셀(선불정보 DB구축 통계 .xlsm)과의 대조: `apps/brand-report/verify_prepaid_vs_excel.py`.
 
+### `ktoa_prepaid_summary/{YYYY-MM-DD}` — 선불 분석용 요약 (원본에서 생성, 선불 분석은 이걸 먼저 씀)
+지표 키: `reg/term/net`(신규 등록/해지/순증), `pin/pout/pnet`(MNP IN/OUT/순증). 선후불전환·예비번호는 없음.
+- `networks[SM|KM|LM|MVNO]` = 사이트 망 합계 블록 값
+- `brands[대표명]` = `{short, S|K|L: {code, 지표...}, total}`. 망은 코드 앞글자, 이름은 망 접미사를 떼서 묶음(프리티LG = 프리텔레콤). 값이 0인 망·사업자는 없음.
+- `check[SM|KM|LM]` = 사업자 합이 망 합계와 같은지
+- 만드는 곳: `apps/brand-report/ktoa_prepaid_summary.py` (수집할 때 자동, 수동 재생성은 `python3 ktoa_prepaid_summary.py 시작일 종료일`)
+- 텔레그램 선불 리포트 4종(010/MNP 실적, 망별 M/S) 원문: `ktoa_prepaid_context_daily/{date}.text`
+
 ### 시장·경쟁 동향
 | 컬렉션 | 내용 |
 |---|---|
