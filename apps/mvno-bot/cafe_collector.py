@@ -538,13 +538,23 @@ def format_message(source: dict, round_no: str, write_date: datetime, prices_by_
     label_width = max(_disp_width(l) for l in row_order) + 1
 
     if two_col:
-        price_width = 7  # "18.5만" 기준 여유폭
+        # [수정 20261017] 이전 게시글 대비 바뀐 값은 칸 안에 괄호로 변동폭 표시 (예: "15.3만(+1.1)")
+        prev_all = prev_prices_by_label or {}
+
+        def _cell(label, key):
+            new = prices_by_label.get(label, {}).get(key)
+            old = prev_all.get(label, {}).get(key)
+            txt = _fmt_man(new)
+            if isinstance(old, (int, float)) and isinstance(new, (int, float)) and old != new:
+                txt += f"({'+' if new > old else '-'}{abs(new - old) / 10000:g})"  # 칸 폭을 줄이려고 '만' 생략
+            return txt
+
+        cells = {label: (_cell(label, 'seven'), _cell(label, 'eleven')) for label in row_order}
+        price_width = max([7] + [_disp_width(c[0]) + 1 for c in cells.values()])  # 기본 "18.5만" 기준 여유폭
         header = f"{_pad('', label_width + HEADER_EXTRA_INDENT)}  {_pad('7G', price_width)}| 11G"
         lines += ['', header, '-' * _disp_width(header)]
         for label in row_order:
-            p = prices_by_label.get(label, {})
-            seven = _fmt_man(p.get('seven'))
-            eleven = _fmt_man(p.get('eleven'))
+            seven, eleven = cells[label]
             w = label_width + LABEL_WIDTH_ADJUST.get(label, 0)
             lines.append(f'{_pad(label, w)}: {_pad(seven, price_width)}| {eleven}')
     else:
