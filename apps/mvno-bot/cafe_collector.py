@@ -327,13 +327,12 @@ def extract_prices_from_image(image_bytes: bytes) -> dict:
 
     # [수정 20260923] 내국인 MNP가 없는(=외국인전용, "내국인 개통불가") 요금제만 있는
     # 구간은 예전엔 그냥 공백으로 나왔는데, 외국인 MNP라도 있으면 그걸로 채우라는 지시
+    # [수정 20261017] 내국인/외국인 MNP 중 높은 값 (사용자 지시 "그냥 높은값으로") - 예전엔 내국인 우선,
+    # 내국인 값이 없을 때만 외국인 값이었음
     def max_price(gb):
         rows = [p for p in plans if isinstance(p.get('data_gb'), (int, float)) and p['data_gb'] == gb]
-        dom = [p['domestic_mnp'] for p in rows if isinstance(p.get('domestic_mnp'), (int, float))]
-        if dom:
-            return max(dom)
-        for_ = [p['foreign_mnp'] for p in rows if isinstance(p.get('foreign_mnp'), (int, float))]
-        return max(for_) if for_ else None
+        vals = [p[k] for p in rows for k in ('domestic_mnp', 'foreign_mnp') if isinstance(p.get(k), (int, float))]
+        return max(vals) if vals else None
 
     return {'seven': max_price(7), 'eleven': max_price(11), 'raw_plan_count': len(plans), 'plans': plans}
 
@@ -396,13 +395,11 @@ def extract_prices_from_summary_image(source: dict, image_bytes: bytes) -> dict:
     # 구간은 예전엔 그냥 공백으로 나왔는데, 외국인 MNP라도 있으면 그걸로 채우라는 지시
     result = {}
     for label, rows in by_carrier.items():
+        # [수정 20261017] 내국인/외국인 MNP 중 높은 값 (사용자 지시)
         def max_price(gb, rows=rows):
             gb_rows = [r for r in rows if isinstance(r.get('data_gb'), (int, float)) and r['data_gb'] == gb]
-            dom = [r['domestic_mnp'] for r in gb_rows if isinstance(r.get('domestic_mnp'), (int, float))]
-            if dom:
-                return max(dom)
-            for_ = [r['foreign_mnp'] for r in gb_rows if isinstance(r.get('foreign_mnp'), (int, float))]
-            return max(for_) if for_ else None
+            vals = [r[k] for r in gb_rows for k in ('domestic_mnp', 'foreign_mnp') if isinstance(r.get(k), (int, float))]
+            return max(vals) if vals else None
         result[label] = {'seven': max_price(7), 'eleven': max_price(11),
                           'raw_plan_count': len(rows), 'plans': rows}
     return result
