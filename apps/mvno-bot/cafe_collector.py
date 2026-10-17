@@ -54,6 +54,8 @@ SOURCES = {
         'filename_to_label': {
             'KTM': 'KTM', '세븐': '텔링크', '스카이': '스카이',
             '유모비': '유모비', '헬로': '헬로', '이야기후불': '이야기후불',
+            # [추가 20261017] 실제로 올라온 파일명 변형 ("스카이라이프.png", "세븐_수정.png")
+            '스카이라이프': '스카이', '텔링크': '텔링크',
         },
         # 본문 "N. 통신사명 (...)" 섹션 헤더 -> 메시지 양식 라벨
         'body_label_to_msg_label': {
@@ -196,6 +198,24 @@ def _get_chrome_driver():
     return webdriver.Chrome(options=options)
 
 
+def _label_from_filename(stem: str, filename_to_label: dict) -> str:
+    """첨부파일명 → 메시지 표 라벨.
+    [추가 20261017] 정확히 일치하는 파일명만 매핑하던 탓에 "세븐_수정", "스카이라이프"처럼
+    파일명이 조금만 달라져도 표의 텔링크/스카이 칸이 공란으로 나가던 문제(값은 제대로 추출됨).
+    1) 정확히 일치 2) "_수정", "(2)", "1_" 같은 접두·접미 제거 후 일치
+    3) 매핑 키가 파일명에 포함되면 그 라벨(긴 키 우선 - '이야기후불'이 '이야기'보다 먼저)"""
+    if stem in filename_to_label:
+        return filename_to_label[stem]
+    core = re.sub(r'^\d+[_\-\s]*', '', stem)
+    core = re.sub(r'[_\-\s]*(수정\d*|최종|\(\d+\)|v\d+)$', '', core, flags=re.I).strip()
+    if core in filename_to_label:
+        return filename_to_label[core]
+    for key in sorted(filename_to_label, key=len, reverse=True):
+        if key and key in stem:
+            return filename_to_label[key]
+    return stem
+
+
 def fetch_article_detail(source: dict, article_id: int, nid_aut: str, nid_ses: str) -> dict:
     """ca-fe(구버전) 경로를 열어 본문 텍스트 + 첨부이미지 URL 추출.
     [검증 20260922] /f-e/... 로 열면 내용이 비어서(원인: 클라이언트 하이드레이션 실패로 추정,
@@ -237,7 +257,7 @@ def fetch_article_detail(source: dict, article_id: int, nid_aut: str, nid_ses: s
         path = urllib.parse.urlparse(u).path
         fname = urllib.parse.unquote(os.path.basename(path))
         stem = os.path.splitext(fname)[0]
-        label = filename_to_label.get(stem, stem)
+        label = _label_from_filename(stem, filename_to_label)
         images.append({'carrier': label, 'filename': fname, 'url': u})
 
     return {'body_text': body_text, 'images': images}
@@ -556,7 +576,12 @@ def get_previous_prices_by_label(source: dict, before_article_id: int) -> dict:
     docs = list(q.stream())
     if not docs:
         return {}
-    return (docs[0].to_dict() or {}).get('prices_by_label', {})
+    prev = (docs[0].to_dict() or {}).get('prices_by_label', {})
+    # [추가 20261017] 예전 글이 "세븐_수정" 같은 파일명 라벨로 저장돼 있어도 현재 라벨과 비교되게 정규화
+    mapping = source.get('filename_to_label') or {}
+    if not mapping:
+        return prev
+    return {_label_from_filename(k, mapping): v for k, v in prev.items()}
 
 
 def process_new_article(source: dict, article: dict) -> dict:
