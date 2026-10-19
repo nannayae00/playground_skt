@@ -175,24 +175,11 @@ def get_billing_weights(year: int, month: int) -> dict:
 
 
 def get_tout_goal(year: int, month: int) -> int:
-    """
-    월별 SKT T Out 목표값 조회
-    Firestore ktoa_config/tout_goal/monthly/{YYYY-MM} 우선 조회
-    없으면 환경변수 KTOA_TARGET_GOAL 폴백
-    """
-    ym_str = f'{year:04d}-{month:02d}'
-    try:
-        _db = _get_telegram_db()
-        doc = _db.collection('ktoa_config').document('target_goal')                  .collection('monthly').document(ym_str).get()
-        if doc.exists:
-            goal = doc.to_dict().get('goal', 0)
-            if goal > 0:
-                log.info(f"T Out 목표 조회: {ym_str} → {goal:,}")
-                return int(goal)
-    except Exception as e:
-        log.warning(f"T Out 목표 Firestore 조회 실패 (환경변수 폴백): {e}")
-    # 폴백: 환경변수
-    return int(os.environ.get('KTOA_TARGET_GOAL', '42000'))
+    """월별 SKT T Out 목표값 조회. [수정 20261015] bw_engine 단일 소스로
+    위임 (forecast_engine/ktoa_telegram/predict_gemini 3곳 중복 구현
+    제거 - bw_engine.get_tout_goal() 참고)"""
+    from bw_engine import get_tout_goal as _gtg
+    return _gtg(year, month)
 
 
 def calc_remaining_days(year: int, month: int, from_day: int) -> float:
@@ -215,11 +202,14 @@ def calc_recent3_avg(cum_tout: int, date_str: str) -> int:
     try:
         _db = _get_telegram_db()
         from datetime import datetime, timedelta
+        # [수정 20261015] billing_weights(월별 요일가중치 테이블, prev_dt.day로 조회
+        # 하다 보니 월 경계에서 틀린 달 가중치를 참조하는 부작용도 있었음) → bw_engine
+        # (bw_manual 우선, 날짜별 정확 조회)로 교체 - 다른 영업일수 계산과 소스 통일.
+        from bw_engine import get_bw_final as _gbf
         base = datetime.strptime(date_str, '%Y-%m-%d')
 
         tout_values  = []
         weight_values = []
-        _weights = get_billing_weights(base.year, base.month)
 
         for i in range(1, 15):
             prev_dt  = base - timedelta(days=i)
@@ -229,7 +219,7 @@ def calc_recent3_avg(cum_tout: int, date_str: str) -> int:
                 data = doc.to_dict()
                 tout = data.get('mno_out', {}).get('S', 0)
                 if tout > 0:
-                    w = _weights.get(prev_dt.day, 1.0)
+                    w = _gbf(prev_str, data)
                     tout_values.append(tout)
                     weight_values.append(w)
                 if len(tout_values) >= 3:
@@ -512,10 +502,12 @@ def build_message(stats: dict, prev_stats: dict = None,
             _est_mo['계'] = sum(_est_mo[k] for k in ('SM', 'KM', 'LM'))
             _est_net = {k: _est_mi[k] - _est_mo[k] for k in ('SM', 'KM', 'LM')}
             _est_net['계'] = sum(_est_net[k] for k in ('SM', 'KM', 'LM'))
+            from bw_engine import get_bw_source as _gbs
+            _bw_label = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
             skt_lines = [
                 '◎ SKT OUT',
                 f'잔여 일평균 목표: {_mfc["remaining_avg"]:,}(월목표 {_fmt_man(tout_goal)})',
-                f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, AI영업일수)',
+                f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%) → 예상 {_daily_est:,}',
                 f'월마감 예측 : {_mfc["fc_low"]:,} ~ {_mfc["fc_high"]:,}  {icon}',
             ]
@@ -582,10 +574,12 @@ def build_message(stats: dict, prev_stats: dict = None,
                     pass
                 _daily_est = _prev_hour_fc_s
 
+            from bw_engine import get_bw_source as _gbs
+            _bw_label = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
             skt_lines = [
                 '◎ SKT OUT',
                 f'잔여 일평균 목표: {_mfc["remaining_avg"]:,}(월목표 {_fmt_man(tout_goal)})',
-                f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, AI영업일수)',
+                f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%)'
                 + (f' → 예상 {_daily_est:,}' if _daily_est > 0 else ''),
             ]
@@ -596,17 +590,33 @@ def build_message(stats: dict, prev_stats: dict = None,
         import traceback
         print(f"SKT OUT 섹션 실패, 폴백: {e}", flush=True)
         print(traceback.format_exc(), flush=True)
+        # [수정 20261015] billing_weights(별도 요일가중치 테이블) → bw_engine
+        # (bw_manual 우선, ktoa_daily 단일 소스)로 교체 - 정상 경로(predict_monthly)와
+        # 폴백 경로가 서로 다른 영업일수 체계를 쓰면서 숫자가 어긋나던 문제 해결.
+        # [수정 20261015-2] remaining_avg/today_goal도 bw_engine 공용 함수로
+        # 통일 (calc_remaining_avg_today_goal 참고) - 겸사겸사 이 폴백에서
+        # cum_tout(이번 달 이미 달성한 누적)을 전혀 빼지 않고 "월 전체 목표"를
+        # 그대로 잔여영업일수로 나누던 버그도 같이 바로잡힘(이 try/except가
+        # 발동하는 드문 경우에만 영향 있었음 - predict_monthly 정상 동작 시엔
+        # 안 탐).
+        from bw_engine import get_bw_final as _gbf, get_bw_source as _gbs, \
+            calc_remaining_avg_today_goal as _crag
+        import ktoa_firestore as _kf
         tout_goal  = get_tout_goal(dt.year, dt.month)
-        remaining_days = calc_remaining_days(dt.year, dt.month, today_day - 1)
-        remaining_avg  = int(max(0, tout_goal) / remaining_days) if remaining_days > 0 else 0
-        today_weight   = get_billing_weights(dt.year, dt.month).get(today_day, 1.0)
-        today_goal     = int(remaining_avg * today_weight)
-        pct_of_goal    = round(today_tout / today_goal * 100) if today_goal > 0 else 0
+        _prev_daily  = _kf.get_previous_daily(site_date)  # 오늘 이전까지 확정 누적
+        _cum_before_today = _prev_daily.get('cum_mno_out', {}).get('S', 0)
+        today_weight = _gbf(site_date)
+        _rag = _crag(dt.year, dt.month, today_day, _cum_before_today,
+                     tout_goal, False, bw_today=today_weight, today_actual=today_tout)
+        remaining_avg  = _rag['remaining_avg']
+        today_goal     = _rag['today_goal']
+        pct_of_goal    = _rag['pct_of_goal']
         _daily_est     = _db_fc_s if _db_fc_s > 0 else today_tout
+        _bw_label      = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
         skt_out_lines  = ['\n'.join([
             '◎ SKT OUT',
             f'잔여 일평균 목표: {remaining_avg:,}(월목표 {_fmt_man(tout_goal)})',
-            f'오늘 목표 : {today_goal:,} (x{round(today_weight,2)}, AI영업일수)',
+            f'오늘 목표 : {today_goal:,} (x{round(today_weight,2)}, {_bw_label})',
             f'당일 소진률 : {today_tout:,} ({pct_of_goal}%) → 예상 {_daily_est:,}',
         ]), '']
 
@@ -762,9 +772,15 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         tout_goal    = get_tout_goal(dt.year, dt.month)
         cum_tout     = cmno.get('S', 0)
         today_day    = dt.day
-        remaining_days = calc_remaining_days(dt.year, dt.month, today_day)
+        # [수정 20261015] billing_weights → bw_engine.calc_remaining_bw (bw_manual
+        # 우선) - 일마감 메시지도 정시/10분단위와 같은 영업일수 체계를 쓰도록 통일.
+        # [수정 20261015-2] remaining_avg도 bw_engine 공용 함수로 통일
+        # (calc_remaining_avg_today_goal 참고 - forecast_engine/predict_gemini/
+        # ktoa_telegram 폴백 2곳, 총 4곳 중복 구현 제거)
+        from bw_engine import calc_remaining_avg_today_goal as _crag
+        _rag = _crag(dt.year, dt.month, today_day, cum_tout, tout_goal, True)
+        remaining_avg = _rag['remaining_avg']
         remaining_cum = tout_goal - cum_tout
-        remaining_avg = int(remaining_cum / remaining_days) if remaining_days > 0 else 0
         recent3_avg   = calc_recent3_avg(cum_tout, date_str)
         goal_achieved = cum_tout >= tout_goal
         skt_section = '\n'.join([
@@ -773,6 +789,12 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
             f'현누적 : {cum_tout:,} (최근3일 일평균 {recent3_avg:,})',
             *([] if goal_achieved else [f'잔여누적 : {remaining_cum:,} (잔여 일평균 {remaining_avg:,})']),
         ])
+
+    # [추가 20261015] 영업일수(누적/잔여) 표시 - predict_gemini 성공/폴백 경로
+    # 둘 다 동일하게 bw_engine 단일 소스로 계산해서 덧붙임 (경로 간 숫자 불일치 방지)
+    from bw_engine import calc_elapsed_remaining_bw as _cerbw
+    _elapsed_bw_disp, _remaining_bw_disp = _cerbw(dt.year, dt.month, dt.day)
+    skt_section = skt_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
 
     lines = [
         f'■ 실적 현황 보고_{mmdd}({weekday})',
@@ -926,6 +948,12 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f' K망 : {_fmt(mig_cum.get("KM"))}(+{_fmt(mig_daily.get("KM"))})',
         f' L망 : {_fmt(mig_cum.get("LM"))}(+{_fmt(mig_daily.get("LM"))})',
     ])
+
+    # [추가 20261015] 영업일수(누적/잔여) - build_closing_message()와 동일하게
+    # bw_engine 단일 소스로 계산
+    from bw_engine import calc_elapsed_remaining_bw as _cerbw
+    _elapsed_bw_disp, _remaining_bw_disp = _cerbw(dt.year, dt.month, dt.day)
+    migration_section = migration_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
 
     lines = [
         f'📋 수정 일마감 메시지 ({date_str} {weekday})',

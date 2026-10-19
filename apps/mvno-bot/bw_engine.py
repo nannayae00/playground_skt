@@ -582,10 +582,18 @@ def get_month_avg_mvno_in(year: int, month: int, up_to_day: int) -> float:
         return 0.0
 
 
+_BW_FIELD_PRIORITY = ['bw_manual', 'bw_ai_prev', 'bw_ai_w3', 'bw_ai_w2', 'bw_ai_w1']
+
+
 def get_bw_final(date_str: str, firestore_data: Optional[dict] = None) -> float:
     """
-    [v3.0] 우선순위 기반 최종 영업일수 반환
-    bw_ai_prev(최신예측) > bw_manual > bw_ai_w3 > bw_ai_w2 > bw_ai_w1 > calc_bw_ai()
+    [v3.1 / 2026-10-15] 우선순위 기반 최종 영업일수 반환
+    bw_manual > bw_ai_prev > bw_ai_w3 > bw_ai_w2 > bw_ai_w1 > calc_bw_ai()
+    [수정 20261015] bw_ai_prev를 bw_manual보다 우선했던 걸 뒤집음 - 실무자가
+    직접 넣은 bw_manual이 있는 날에도 AI 예측치를 쓰고 있어서(그리고 텔레그램
+    메시지엔 그걸 "AI영업일수"로 표기) 실무자 입장에서 "내가 넣은 값이 왜 안
+    쓰이지"로 보였음. bw_manual이 있는 날은 그 값을 그대로 신뢰(= get_bw_source()
+    가 'bw_manual'을 반환하는 날), 없는 날만 AI 예측으로 보완.
     """
     if is_zero_day(date_str):
         return 0.0
@@ -599,13 +607,35 @@ def get_bw_final(date_str: str, firestore_data: Optional[dict] = None) -> float:
             log.warning(f"get_bw_final 조회 실패: {e}")
             firestore_data = {}
 
-    # [v3.0] bw_ai_prev 최우선 (가장 최신 예측값)
-    for field in ['bw_ai_prev', 'bw_manual', 'bw_ai_w3', 'bw_ai_w2', 'bw_ai_w1']:
+    for field in _BW_FIELD_PRIORITY:
         val = firestore_data.get(field)
         if val is not None and float(val) > 0:
             return float(val)
 
     return calc_bw_ai(date_str)
+
+
+def get_bw_source(date_str: str, firestore_data: Optional[dict] = None) -> str:
+    """[신규 20261015] get_bw_final()과 동일 우선순위로 실제 쓰인 필드명 반환
+    (메시지 라벨 표시용 - 'bw_manual'이면 "영업일수", 그 외면 "AI영업일수")"""
+    if is_zero_day(date_str):
+        return 'zero'
+
+    if firestore_data is None:
+        try:
+            db = _get_db()
+            doc = db.collection('ktoa_daily').document(date_str).get()
+            firestore_data = doc.to_dict() if doc.exists else {}
+        except Exception as e:
+            log.warning(f"get_bw_source 조회 실패: {e}")
+            firestore_data = {}
+
+    for field in _BW_FIELD_PRIORITY:
+        val = firestore_data.get(field)
+        if val is not None and float(val) > 0:
+            return field
+
+    return 'calc'
 
 
 def get_month_bw_map(year: int, month: int) -> dict:
@@ -643,6 +673,117 @@ def calc_remaining_bw(year: int, month: int, today_day: int) -> float:
         for day in range(today_day + 1, last_day + 1)
     )
     return round(total, 3)
+
+
+def calc_elapsed_bw(year: int, month: int, today_day: int) -> float:
+    """[신규 20261015] 월초~today_day까지(오늘 포함) 누적 영업일수 합산.
+    calc_remaining_bw()와 같은 bw_map(get_bw_final 우선순위) 기준이라
+    두 값을 더하면 항상 그 달 전체 영업일수와 일치함 - 일마감/수정일마감
+    메시지의 "영업일: N일(누적), M일(잔여)" 표시용 단일 소스."""
+    bw_map = get_month_bw_map(year, month)
+    total = sum(
+        bw_map.get(f"{year:04d}-{month:02d}-{day:02d}", 0.0)
+        for day in range(1, today_day + 1)
+    )
+    return round(total, 3)
+
+
+def calc_elapsed_remaining_bw(year: int, month: int, today_day: int) -> tuple:
+    """[신규 20261015] calc_elapsed_bw()+calc_remaining_bw()를 bw_map 조회
+    1회로 합쳐 반환 (elapsed, remaining). 두 함수를 따로 호출하면 월 전체
+    Firestore 문서를 두 번 순회하게 돼서, 둘 다 필요한 곳(일마감/수정일마감
+    메시지)에서는 이걸 쓸 것."""
+    from calendar import monthrange
+    bw_map = get_month_bw_map(year, month)
+    last_day = monthrange(year, month)[1]
+    elapsed = sum(
+        bw_map.get(f"{year:04d}-{month:02d}-{day:02d}", 0.0)
+        for day in range(1, today_day + 1)
+    )
+    remaining = sum(
+        bw_map.get(f"{year:04d}-{month:02d}-{day:02d}", 0.0)
+        for day in range(today_day + 1, last_day + 1)
+    )
+    return round(elapsed, 3), round(remaining, 3)
+
+
+def get_tout_goal(year: int, month: int) -> int:
+    """[신규 20261015] 월별 SKT T Out 목표 조회 - 단일 소스.
+
+    forecast_engine.py/ktoa_telegram.py/predict_gemini.py에 이 함수가 각각
+    따로 구현돼 있었는데, predict_gemini.py 버전만 Firestore 컬렉션명이
+    'tout_goal'로 틀려 있었음(다른 두 곳은 'target_goal') - 그래서 그쪽은
+    문서를 못 찾고 항상 환경변수 폴백(심지어 그 폴백값도 42000으로 방치돼
+    있던 옛 목표치)으로 떨어져서, predict_gemini 엔진을 타는 일마감 메시지만
+    조용히 틀린 월목표로 계산되고 있었음. bw_engine 하나로 합쳐서 재발 방지.
+    """
+    ym = f'{year:04d}-{month:02d}'
+    try:
+        db = _get_db()
+        doc = (db.collection('ktoa_config').document('target_goal')
+               .collection('monthly').document(ym).get())
+        if doc.exists:
+            goal = doc.to_dict().get('goal', 0)
+            if goal > 0:
+                return int(goal)
+    except Exception as e:
+        log.warning(f"T Out 목표 조회 실패: {e}")
+    return int(os.environ.get('KTOA_TARGET_GOAL', '37000'))
+
+
+def calc_remaining_avg_today_goal(year: int, month: int, today_day: int,
+                                   cum_so_far: int, monthly_goal: int,
+                                   today_confirmed: bool,
+                                   bw_today: Optional[float] = None,
+                                   today_actual: int = 0) -> dict:
+    """[v3.3 / 2026-10-15] "잔여 일평균 목표"/"오늘 목표" 단일 계산 함수.
+
+    이전엔 forecast_engine.predict_monthly(), predict_gemini.get_forecast(),
+    ktoa_telegram.py 정시/10분단위 폴백, ktoa_telegram.py 일마감 폴백 — 이렇게
+    4곳에 이 "나누기" 공식이 각각 따로 구현돼 있었음(날짜별 영업일수 자체는
+    get_bw_final() 우선순위로 통일했었지만, 그 값을 가지고 remaining_avg/
+    today_goal을 뽑아내는 공식 자체가 중복). 한쪽만 고치면 다른 쪽과 어긋날
+    위험이 있어서 이 함수 하나로 합침.
+    (겸사겸사: ktoa_telegram.py 정시/10분단위 폴백엔 remaining_avg를 "잔여
+    목표"가 아니라 "월 전체 목표"로 나누던 버그가 있었음 - cum_so_far를 전혀
+    빼지 않음 - 여기서 같이 바로잡힘.)
+
+    today_confirmed:
+      True  = 오늘 실적이 이미 마감/저장됨(일마감류 메시지). cum_so_far에
+              오늘이 포함돼 있다고 보고, 잔여 영업일수 = 내일~월말만(오늘 제외).
+              today_goal/pct_of_goal은 의미가 없어 0 반환.
+      False = 오늘 아직 진행 중(정시/10분단위 메시지). cum_so_far는 오늘
+              "이전"까지의 확정 실적만 넣고, 잔여 영업일수에 오늘을 포함시켜
+              "오늘 목표"를 산출.
+
+    Returns: {'remaining_avg', 'today_goal', 'pct_of_goal', 'remaining_bw', 'bw_today'}
+    """
+    date_str = f"{year:04d}-{month:02d}-{today_day:02d}"
+    if bw_today is None:
+        bw_today = get_bw_final(date_str)
+
+    remaining_cum = max(0, monthly_goal - cum_so_far)
+    remaining_bw_excl_today = calc_remaining_bw(year, month, today_day)
+
+    if today_confirmed:
+        remaining_avg = (int(remaining_cum / remaining_bw_excl_today)
+                          if remaining_bw_excl_today > 0 else 0)
+        today_goal = 0
+        pct_of_goal = 0
+    else:
+        remaining_bw_incl_today = remaining_bw_excl_today + bw_today
+        remaining_avg = (int(remaining_cum / remaining_bw_incl_today)
+                          if remaining_bw_incl_today > 0 else 0)
+        today_goal = int(remaining_avg * bw_today) if bw_today > 0 else 0
+        pct_of_goal = round(today_actual / today_goal * 100) if today_goal > 0 else 0
+
+    return {
+        'remaining_avg': remaining_avg,
+        'today_goal':    today_goal,
+        'pct_of_goal':   pct_of_goal,
+        'remaining_bw':  remaining_bw_excl_today,
+        'bw_today':      bw_today,
+    }
 
 
 def save_bw_to_daily(date_str: str, bw_field: str, bw_value: float) -> bool:

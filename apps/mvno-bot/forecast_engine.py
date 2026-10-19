@@ -249,19 +249,12 @@ def _get_db():
 # ══════════════════════════════════════════════════════════════════
 
 def get_tout_goal(year: int, month: int) -> int:
-    """월별 T-Out 목표 조회 (Firestore → 환경변수 폴백)"""
-    ym = f'{year:04d}-{month:02d}'
-    try:
-        db = _get_db()
-        doc = (db.collection('ktoa_config').document('target_goal')
-               .collection('monthly').document(ym).get())
-        if doc.exists:
-            goal = doc.to_dict().get('goal', 0)
-            if goal > 0:
-                return int(goal)
-    except Exception as e:
-        log.warning(f"T-Out 목표 조회 실패: {e}")
-    return int(os.environ.get('KTOA_TARGET_GOAL', '42000'))
+    """월별 T-Out 목표 조회. [수정 20261015] bw_engine 단일 소스로 위임
+    (forecast_engine/ktoa_telegram/predict_gemini 3곳 중복 구현 제거 -
+    predict_gemini.py 쪽만 Firestore 컬렉션명이 틀려있어서 조용히 다른
+    월목표를 쓰고 있던 버그가 있었음, bw_engine.get_tout_goal() 참고)"""
+    from bw_engine import get_tout_goal as _gtg
+    return _gtg(year, month)
 
 
 def _calc_weighted_avg(history: list, max_w: float = 5.0) -> float:
@@ -1602,6 +1595,8 @@ def predict_monthly(date_str: str, today_skt: int,
     history    = []  # (skt, bw) 확정 실적 이력
     _today_confirmed = False  # 오늘(day)이 이미 일마감돼 위 루프에 포함됐는지
 
+    elapsed_bw_man = 0.0  # [추가 20261015] bw_manual 우선 경과bw (remaining_avg용, 아래 참고)
+
     try:
         _db2 = _get_db()
         for _d in range(1, day + 1):
@@ -1610,7 +1605,8 @@ def predict_monthly(date_str: str, today_skt: int,
             if not _doc.exists:
                 continue
             _dd = _doc.to_dict()
-            # 경과bw: bw_ai_prev 고정 (엑셀과 동일, w1~w3 미사용)
+            # 경과bw: bw_ai_prev 고정 (엑셀과 동일, w1~w3 미사용) - fc_low/mid/high
+            # 밴드(rbw_ai 등) 계산용이라 건드리지 않음.
             _bw = float(_dd.get('bw_ai_prev') or _dd.get('bw_manual') or 0)
             if not _bw or _bw <= 0:
                 continue
@@ -1619,6 +1615,12 @@ def predict_monthly(date_str: str, today_skt: int,
                 continue  # 실적 미집계 → elapsed_bw 제외
             _mvno = _dd.get('mvno_in', {}).get('계', 0) or 0
             elapsed_bw += _bw
+            # [수정 20261015] remaining_avg/today_goal(rbw_man 기반)은 bw_manual
+            # 우선 경과bw로 따로 빼야 함 - _total_man(월 전체 합, bw_manual 우선)에서
+            # elapsed_bw(AI 우선)를 빼면 과거 영업일들의 "manual값-AI값" 차이가
+            # 고스란히 잔여치에 섞여 들어가는 버그가 있었음(실측: 1.8일 과소산출).
+            from bw_engine import get_bw_final as _gbf_elapsed
+            elapsed_bw_man += _gbf_elapsed(_ds, _dd)
             cum_skt_db += int(_skt)
             cum_mvno   += int(_mvno)
             history.append((int(_skt), _bw))
@@ -1678,6 +1680,7 @@ def predict_monthly(date_str: str, today_skt: int,
 
     try:
         db = _get_db()
+        from bw_engine import get_bw_final as _gbf_total
         # 잔여bw = total - elapsed (B방식, last_biz 제거 → 월말 수렴)
         _total_ai = _total_w2 = _total_man = 0.0
         for d2 in range(1, last_day + 1):
@@ -1685,11 +1688,18 @@ def predict_monthly(date_str: str, today_skt: int,
             data = (db.collection('ktoa_daily').document(ds2).get().to_dict() or {})
             _total_ai  += float(data.get('bw_ai_prev') or 0)
             _total_w2  += float(data.get('bw_ai_w2') or data.get('bw_ai_prev') or 0)
-            _total_man += float(data.get('bw_manual') or data.get('bw_ai_prev') or 0)
+            # [수정 20261015] bw_manual/bw_ai_prev 둘 다 없는 먼 미래일(아직 AI
+            # 사전계산 안 된 날)에 0으로 비는 걸 막으려고 get_bw_final()의 전체
+            # 폴백 체인(w3>w2>w1>calc_bw_ai)까지 사용 - bw_manual 우선은 그대로.
+            _total_man += _gbf_total(ds2, data)
         # B방식: last_biz 제거 → 월말 수렴 개선. elapsed_bw가 오늘 미마감 시 오늘을
         # 제외하므로(위 루프 참고), 이 rbw_*는 그 경우 "오늘 포함 잔여"가 됨.
         rbw_ai  = round(_total_ai  - elapsed_bw, 3)  # Low (보수적, bw_ai_prev)
-        rbw_man = round(_total_man - elapsed_bw, 3)  # High (낙관적, bw_manual)
+        # [수정 20261015] rbw_man은 elapsed_bw(AI 우선 경과분)가 아니라
+        # elapsed_bw_man(bw_manual 우선 경과분)을 빼야 _total_man과 같은 기준으로
+        # 과거 영업일이 정확히 상쇄됨 (안 그러면 "manual값-AI값" 차이가 잔여치에
+        # 섞여 들어감 - 실측으로 1.8일 정도 과소산출되던 원인).
+        rbw_man = round(_total_man - elapsed_bw_man, 3)  # High (낙관적, bw_manual)
         rbw_w2  = round((rbw_ai + rbw_man) / 2, 3)  # Mid (중간값)
         _rbw_includes_today = not _today_confirmed
     except Exception as e:
@@ -1700,7 +1710,12 @@ def predict_monthly(date_str: str, today_skt: int,
             bw_map.get(f"{year:04d}-{month:02d}-{d2:02d}", 0.0)
             for d2 in range(day + 1, last_day + 1)), 3)  # 폴백은 항상 오늘 제외
 
-    rbw = rbw_w2  # 기준값 (remaining_avg 계산용, mid 기준)
+    # [수정 20261015] remaining_avg/today_goal/need_avg(= "잔여 일평균 목표" 표시용)는
+    # fc_low/mid/high 3시나리오 밴드와 별개로, bw_manual 우선 값(rbw_man)을 기준으로
+    # 삼음. rbw_w2(ai+manual 평균)를 쓰면 bw_manual이 있는 날에도 AI 예측과 섞여서
+    # "실무자가 넣은 영업일수와 다른 숫자"가 표시되는 문제가 있었음 (fc_low/mid/high
+    # 밴드 자체는 그대로 rbw_ai/rbw_w2/rbw_man 3종을 따로 씀 - 안 건드림).
+    rbw = rbw_man  # 기준값 (remaining_avg 계산용, bw_manual 우선)
 
     # ── cum_skt: 오늘 실시간 반영 (사장님 요청 - "정시에 일마감 예측수치가 계산에
     # 반영돼야 함. 늘어날수도 있고 소폭 줄어들수도 있지")
@@ -1725,7 +1740,7 @@ def predict_monthly(date_str: str, today_skt: int,
             rbw_ai  = round(max(0.0, rbw_ai  - bw), 3)
             rbw_man = round(max(0.0, rbw_man - bw), 3)
             rbw_w2  = round((rbw_ai + rbw_man) / 2, 3)
-            rbw     = rbw_w2
+            rbw     = rbw_man
 
     # ── 수식 기반 일평균 보정 (avg가 여전히 0인 극단적 케이스만)
     # rolling avg가 정상이면 여기 안 탐
@@ -1875,11 +1890,15 @@ def predict_monthly(date_str: str, today_skt: int,
     need_avg = int(remaining_cum / rbw) if rbw > 0 else 0
     ach_rate = round(cum_skt / goal * 100, 1) if goal > 0 else 0
 
-    # remaining_avg/today_goal: Gemini 블록과 무관하게 먼저 계산
-    _remaining_bw_incl = rbw + bw
-    remaining_avg = int(remaining_cum / _remaining_bw_incl) if _remaining_bw_incl > 0 else 0
-    today_goal    = int(remaining_avg * bw) if bw > 0 else 0
-    pct_of_goal   = round(today_skt / today_goal * 100) if today_goal > 0 else 0
+    # [수정 20261015] remaining_avg/today_goal: bw_engine 공용 함수로 통일
+    # (forecast_engine/predict_gemini/ktoa_telegram 폴백 2곳 - 총 4곳 중복
+    # 구현 제거, bw_engine.calc_remaining_avg_today_goal() 참고)
+    from bw_engine import calc_remaining_avg_today_goal as _crag
+    _rag = _crag(year, month, day, cum_skt_db, goal, _today_confirmed,
+                 bw_today=bw, today_actual=today_skt)
+    remaining_avg = _rag['remaining_avg']
+    today_goal    = _rag['today_goal']
+    pct_of_goal   = _rag['pct_of_goal']
 
     # ── Gemini: comment + on_track 판단에만 사용 (fc_low/high는 수식 고정)
     comment = ''

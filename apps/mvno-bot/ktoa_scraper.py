@@ -1290,9 +1290,14 @@ def _run_recheck(now_kst, today_str: str) -> None:
         # 재발송 후에도 ④ DB 비교 계속 진행
 
     # ── ④ DB 비교 + 알림 ─────────────────────────────────────────────────────
+    # [수정 20261015] 20:25 RECHECK는 바로 뒤 ⑤ 블록에서 자기 자신의 "수정
+    # 일마감" 메시지를 또 보내므로(다른 방), check_and_notify()의 자체
+    # 재전송은 20:25에는 건너뛰어 중복 발송 방지. 08:00 RECHECK는 ⑤가
+    # 스킵되므로 그대로 재전송.
     try:
         from ktoa_morning_check import check_and_notify
-        check_and_notify(stats, daily_data, site_date)
+        check_and_notify(stats, daily_data, site_date,
+                         skip_closing_resend=(now_kst.hour == 20))
     except Exception as _mc:
         log.warning(f"RECHECK: check_and_notify 실패 (무시): {_mc}")
 
