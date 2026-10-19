@@ -820,6 +820,166 @@ def build_source_highlights(aldot_plans, mvnohub_plans, moyo_plans):
     return "\n".join(lines).strip()
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# [추가 20261019] 메시지5 "요금제 특이사항" (기존 단독/저렴 요금제 메시지 대체)
+#   - 요금제 수: 사업자별 요금제 수 일괄 이탈/입점 감지 + 고정 안내(STANDING_PLAN_NOTES)
+#   - RS/RM 특이사항: 일반사업자 구간·망별 최저가의 직전 대비 변동
+#   - 단독/모요 대비 저렴: 기존 내용 축약 (구간·망당 최저 1건, 데이터 표기 압축)
+# ══════════════════════════════════════════════════════════════════════════
+
+# 모요 등 채널의 알려진 구성 변화 - 매 메시지 '요금제 수'에 고정 표시 (필요 없어지면 비우면 됨)
+STANDING_PLAN_NOTES = [
+    "프리티·토스·통신3사 다이렉트 모요 미노출 (10/6~)",
+]
+
+# 사업자 일괄 이탈/입점 판정 기준
+BULK_MIN_PLANS = 10      # 직전 요금제 수가 이 이상인 사업자만 이탈 판정
+BULK_DROP_RATIO = 0.5    # 직전 대비 이 비율 이하로 줄면 '일괄 이탈'
+
+NET_SHORT = {'SKT': 'S', 'KT': 'K', 'LGU+': 'L'}
+
+
+def detect_provider_changes(source_label, prev_counts, curr_plans):
+    """직전 수집 대비 사업자별 요금제 수 급변 감지 → [{'source','provider','prev','curr','kind'}]"""
+    if not prev_counts:
+        return []
+    curr = {}
+    for p in curr_plans or []:
+        prov = (p.get('provider') or '').strip() or '(미상)'
+        curr[prov] = curr.get(prov, 0) + 1
+    out = []
+    for prov in sorted(set(prev_counts) | set(curr)):
+        a, b = int(prev_counts.get(prov, 0) or 0), curr.get(prov, 0)
+        if a >= BULK_MIN_PLANS and b <= a * BULK_DROP_RATIO:
+            out.append({'source': source_label, 'provider': prov, 'prev': a, 'curr': b, 'kind': '이탈'})
+        elif b >= BULK_MIN_PLANS and b >= max(a, 1) * 2:
+            out.append({'source': source_label, 'provider': prov, 'prev': a, 'curr': b, 'kind': '입점'})
+    return out
+
+
+def build_provider_alert(changes, checked_at):
+    """사업자 일괄 이탈/입점 즉시 알림 메시지 (변동 있을 때만)"""
+    if not changes:
+        return ""
+    lines = [f"🚨 사업자 요금제 일괄 변동 감지 ({checked_at})", "```"]
+    for c in changes:
+        mark = "▼" if c['kind'] == '이탈' else "▲"
+        lines.append(f"{mark} {c['source']} {_clean_provider_display(shorten(c['provider']))}: {c['prev']}→{c['curr']}개 ({c['kind']})")
+    lines.append("```")
+    lines.append(f"기준: 직전 {BULK_MIN_PLANS}개 이상 사업자가 {int(BULK_DROP_RATIO*100)}% 이하로 감소(이탈) / 2배 이상 증가(입점)")
+    return "\n".join(lines)
+
+
+def _price_change_lines(curr, prev_snapshot, base_label):
+    """구간·망별 최저가 변동 → {'S': '...', 'K': '...', 'L': '...'}"""
+    prev = (prev_snapshot or {}).get('rs_min') or {}
+    out = {}
+    for net, short in NET_SHORT.items():
+        if not prev:
+            out[short] = "비교 기준 없음(다음 회차부터 비교)"
+            continue
+        items = []
+        for seg in curr:
+            a = (prev.get(seg) or {}).get(net, 0) or 0
+            b = (curr.get(seg) or {}).get(net, 0) or 0
+            if a == b:
+                continue
+            if a and b:
+                d = b - a
+                items.append(f"{seg} {abs(d):,}원 {'인하' if d < 0 else '인상'}({a:,}→{b:,})")
+            elif b:
+                items.append(f"{seg} 신규 {b:,}원")
+            else:
+                items.append(f"{seg} 요금제 없음(직전 {a:,}원)")
+        out[short] = ", ".join(items) if items else f"{base_label} 동일"
+    return out
+
+
+def _compact_data(data):
+    t = (data or '').replace('월 ', '').replace(' + ', '+').replace('GB', 'G').replace('Mbps', 'M')
+    return re.sub(r'\s+', ' ', t).strip()
+
+
+def _plan_short(prefix, p):
+    nm   = _clean_provider_display(shorten(p.get('provider', '')))
+    net  = NET_SHORT.get(p.get('network', ''), p.get('network', ''))
+    disc = f"→{p['discount_months']}개월후 {p['base_price']:,}" if p.get('discount_months') and p.get('base_price') else ""
+    return f"· {prefix} {nm}({net}) {_compact_data(p.get('data',''))} {p.get('final_price',0):,}{disc}"
+
+
+def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
+                     aldot_plans, mvnohub_plans, moyo_plans, run_slot, checked_at):
+    base = '전일' if run_slot == 'morning' else '직전'
+    lines = [f"📌 요금제 특이사항 ({checked_at})", ""]
+
+    # 📦 요금제 수
+    lines.append("📦 요금제 수")
+    if provider_changes:
+        for c in provider_changes:
+            lines.append(f" {c['source']} {_clean_provider_display(shorten(c['provider']))} {c['prev']}→{c['curr']}개 ({c['kind']})")
+    else:
+        lines.append(f" {base} 대비 사업자 변동 없음")
+    for note in STANDING_PLAN_NOTES:
+        lines.append(f" ※ {note}")
+    lines.append("")
+
+    # 💰 RS / 📈 RM 특이사항 (일반사업자, 모요+알닷+허브 통합 구간 최저가)
+    for title, curr, prev in (("💰 RS 특이사항", curr_rs, prev_general), ("📈 RM 특이사항", curr_rm, prev_rm)):
+        lines.append(title)
+        ch = _price_change_lines(curr or {}, prev, base)
+        for short in ('S', 'K', 'L'):
+            lines.append(f" {short}망 : {ch[short]}")
+        lines.append("")
+
+    # 🆕 단독 / 📋 모요보다 저렴 (축약)
+    only_aldot = _only_source_plans(aldot_plans, moyo_plans)
+    only_hub   = _only_source_plans(mvnohub_plans, moyo_plans)
+    if only_aldot or only_hub:
+        lines.append(f"🆕 단독(모요 미등록) 알닷 {len(only_aldot)}·허브 {len(only_hub)}")
+        shown = [('알닷', p) for p in only_aldot[:3]] + [('허브', p) for p in only_hub[:3]]
+        lines.extend(_plan_short(src, p) for src, p in shown)
+        rest = max(len(only_aldot) - 3, 0) + max(len(only_hub) - 3, 0)
+        if rest:
+            lines.append(f"  외 {rest}개")
+        lines.append("")
+
+    cheaper = _cheaper_best_vs_moyo(aldot_plans, moyo_plans, '알닷', network_filter='LGU+') \
+            + _cheaper_best_vs_moyo(mvnohub_plans, moyo_plans, '허브')
+    if cheaper:
+        lines.append("📋 모요보다 저렴 (구간·망별 최저)")
+        lines.extend(cheaper)
+
+    return "\n".join(lines).strip()
+
+
+def _cheaper_best_vs_moyo(source_plans, moyo_plans, src_label, network_filter=None):
+    """구간·망별로 모요 RS 최저가보다 싼 요금제 중 가장 싼 1건만 한 줄로."""
+    segments = FirebaseHandler.GUIDE_SEGMENTS
+    nets = [network_filter] if network_filter else ['SKT', 'KT', 'LGU+']
+
+    def _min_by_key(plans):
+        m = {}
+        for p in plans:
+            fp = p.get('final_price', 0)
+            if not p.get('is_rs') or fp <= 0:
+                continue
+            key = (p.get('segment', ''), p.get('network', ''))
+            if key not in m or fp < m[key].get('final_price', 0):
+                m[key] = p
+        return m
+
+    moyo_min, src_min = _min_by_key(moyo_plans), _min_by_key(source_plans)
+    out = []
+    for seg in segments:
+        for net in nets:
+            mv, sp = moyo_min.get((seg, net)), src_min.get((seg, net))
+            if mv and sp and sp['final_price'] < mv['final_price']:
+                nm = _clean_provider_display(shorten(sp.get('provider', '')))
+                out.append(f"· {src_label} {seg}({NET_SHORT.get(net, net)}) {nm} {sp['final_price']:,} "
+                           f"(모요 {mv['final_price']:,}, ↓{mv['final_price'] - sp['final_price']:,})")
+    return out
+
+
 def build_summary_table(curr_plans, prev_plans):
     comp       = Comparator()
     prev_rs    = comp.get_segment_min_prices(filter_for_rs(prev_plans), rs_only=True) if prev_plans else {}
@@ -2212,10 +2372,12 @@ def main():
 
         # ── 알닷 수집 ────────────────────────────────────────────────────────
         aldot_plans = []
+        prev_aldot_counts = None
         try:
             aldot_scraper = AldotScraper(progress_callback=progress)
             aldot_plans, _ = aldot_scraper.scrape()
             aldot_plans = comparator.tag_plans_with_lowest(aldot_plans)
+            prev_aldot_counts = db.get_latest_provider_counts('aldot')  # [추가 20261019] 저장 전 = 직전 수집
             db.save_check_result('aldot', aldot_plans, None, source_type=source_type)
             print(f"✅ 알닷 {len(aldot_plans)}개 수집 완료")
         except Exception as e:
@@ -2228,10 +2390,12 @@ def main():
 
         # ── 알뜰폰허브 수집 ──────────────────────────────────────────────────
         mvnohub_plans = []
+        prev_hub_counts = None
         try:
             hub_scraper = MvnohubScraper(progress_callback=progress)
             mvnohub_plans, _ = hub_scraper.scrape()
             mvnohub_plans = comparator.tag_plans_with_lowest(mvnohub_plans)
+            prev_hub_counts = db.get_latest_provider_counts('mvnohub')  # [추가 20261019]
             db.save_check_result('mvnohub', mvnohub_plans, None, source_type=source_type)
             print(f"✅ 알뜰폰허브 {len(mvnohub_plans)}개 수집 완료")
         except Exception as e:
@@ -2254,6 +2418,7 @@ def main():
         curr_rs  = comparator.get_segment_min_prices(filter_for_rs(merged_general_all), rs_only=True)
         curr_sub = comparator.get_segment_min_prices(filter_for_rs(merged_sub_all), rs_only=True)
         curr_mno = get_mno_segment_min_prices(merged_mno_all)  # RS+RM 통합, 필터 없음(기존과 동일)
+        curr_rm  = comparator.get_segment_min_prices(filter_for_rs(merged_general_all), rs_only=False)  # [추가 20261019] 일반 RM
 
         # ── 직전 스냅샷 조회 (일반/자회사/MNO 각각, 병합값 기준) ────────────
         # 하루 3회(08/13/17시) 롤링 비교: 08시→전일 08시 / 13시→당일 08시 / 17시→당일 13시
@@ -2273,12 +2438,14 @@ def main():
         prev_general = _load_prev_snapshot('general')
         prev_sub     = _load_prev_snapshot('sub')
         prev_mno     = _load_prev_snapshot('mno')
+        prev_rm      = _load_prev_snapshot('general_rm')
 
         # 스냅샷 저장: auto 수집일 때만 (3종 모두 병합값 기준, run_slot 태깅하여 저장)
         if source_type == 'auto':
             db.save_rs_snapshot(curr_rs,  source_type=source_type, snap_type='general', run_slot=run_slot)
             db.save_rs_snapshot(curr_sub, source_type=source_type, snap_type='sub',     run_slot=run_slot)
             db.save_rs_snapshot(curr_mno, source_type=source_type, snap_type='mno',     run_slot=run_slot)
+            db.save_rs_snapshot(curr_rm,  source_type=source_type, snap_type='general_rm', run_slot=run_slot)
         else:
             print("ℹ️ 수동 수집 - RS 스냅샷 저장 생략")
 
@@ -2315,17 +2482,29 @@ def main():
             + build_rs_comparison(curr_mno, prev_mno, title="📶 MNO 최저가 비교", segments=MNO_SEGMENTS)
         ) if merged_mno_all else ""
 
-        # ── 메시지5: 단독 요금제 + 모요 대비 저렴한 요금제 (알닷+허브) ──────
-        # 전일 대비 변동(가격↑↓/신규/삭제) 섹션은 제거 결정 (3사 통합 구조 변경)
-        msg5 = build_source_highlights(aldot_plans, mvnohub_plans, plans)
+        # ── 사업자 일괄 이탈/입점 감지 [추가 20261019] ─────────────────────────
+        prev_moyo_counts = {}
+        for _p in prev_plans:
+            _k = (_p.get('provider') or '').strip() or '(미상)'
+            prev_moyo_counts[_k] = prev_moyo_counts.get(_k, 0) + 1
+        provider_changes = (detect_provider_changes('모요', prev_moyo_counts, plans)
+                            + (detect_provider_changes('알닷', prev_aldot_counts, aldot_plans) if aldot_plans else [])
+                            + (detect_provider_changes('허브', prev_hub_counts, mvnohub_plans) if mvnohub_plans else []))
+        alert_msg = build_provider_alert(provider_changes, moyo_checked_at)
+
+        # ── 메시지5: 요금제 특이사항 [수정 20261019] (기존 단독/저렴 요금제 메시지 대체·축약) ──
+        msg5 = build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
+                                aldot_plans, mvnohub_plans, plans, run_slot,
+                                datetime.now(KOREA_TZ).strftime('%m/%d %H:%M'))
 
         # ── 발송: 3사 모두 수집 완료 후 일괄 (메시지1~5 순서) ───────────────
+        # [수정 20261019] 메시지4(MNO 최저가)는 발송 제외 (사용자 요청) - 스냅샷 저장은 유지
+        if alert_msg:
+            send_merged(alert_msg, source_type=source_type)
         send_merged(msg1, source_type=source_type)
         send_merged(msg2, source_type=source_type)
         if msg3:
             send_merged(msg3, source_type=source_type)
-        if msg4:
-            send_merged(msg4, source_type=source_type)
         send_merged(msg5, source_type=source_type)
 
         # ── 엑셀 전송 ────────────────────────────────────────────────────────

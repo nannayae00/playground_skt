@@ -126,6 +126,8 @@ class FirebaseHandler:
                 'source_type':     source_type,
                 'screenshot_path': screenshot_path,
                 'plan_count':      len(plans),
+                # [추가 20261019] 사업자별 요금제 수 - 다음 수집 때 사업자 일괄 이탈 감지용 (문서 1건만 읽으면 됨)
+                'provider_counts': self._provider_counts(plans),
             })
             batch = self.db.batch()
             count = 0
@@ -153,6 +155,37 @@ class FirebaseHandler:
             'plan_count':  data.get('plan_count'),
             'plans':       plans,
         }
+
+    @staticmethod
+    def _provider_counts(plans) -> dict:
+        counts = {}
+        for p in plans or []:
+            prov = (p.get('provider') or '').strip() or '(미상)'
+            counts[prov] = counts.get(prov, 0) + 1
+        return counts
+
+    def get_latest_provider_counts(self, site_name):
+        """[추가 20261019] 가장 최근 수집의 사업자별 요금제 수 {provider: n}.
+        예전 문서라 provider_counts가 없으면 그 문서의 요금제를 읽어 계산(최초 1회만 발생)."""
+        if not self.db:
+            return None
+        try:
+            docs = list(
+                self.db.collection('price_monitoring')
+                .document(site_name).collection('history')
+                .order_by('checked_at', direction=firestore.Query.DESCENDING)
+                .limit(1).stream()
+            )
+            if not docs:
+                return None
+            d = docs[0].to_dict() or {}
+            if d.get('provider_counts'):
+                return d['provider_counts']
+            data = self._read_doc(docs[0])
+            return self._provider_counts((data or {}).get('plans', []))
+        except Exception as e:
+            print(f"❌ 사업자별 요금제 수 조회 실패 [{site_name}]: {e}")
+            return None
 
     def get_latest_data(self, site_name):
         """가장 최근 수집 데이터 (타입 무관)"""
@@ -299,6 +332,7 @@ class FirebaseHandler:
         'general': 'moyo_rs_snapshot',
         'sub':     'sub_rs_snapshot',
         'mno':     'mno_rs_snapshot',
+        'general_rm': 'general_rm_snapshot',   # [추가 20261019] 일반사업자 RM 최저가 (요금제 특이사항 RM 비교용)
     }
 
     # ═══════════════════════════════════════════════════════════════════════
