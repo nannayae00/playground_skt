@@ -432,7 +432,7 @@ def _call_gemini_bw(date_str: str, knn_result: float,
         prompt = f"""당신은 MVNO 알뜰폰 시장 영업일수(bw) 예측 전문가입니다.
 bw = 당일 MVNO IN ÷ 월 일평균 MVNO IN (시장 활동성 지수)
 bw > 1.0: 평균보다 활발, bw < 1.0: 평균보다 저조
-영업일 범위: 평일 0.8~1.8 (월초 1~2일·월말 마지막 영업일은 1.3~1.7도 흔함), 토요일 0.4~1.0
+영업일 범위: 평일 0.8~1.4, 토요일 0.4~0.8
 
 예측 대상: {date_str} ({wd_name}요일, {week}주차)
 공휴일 구조: {hol_desc}
@@ -545,12 +545,10 @@ def calc_bw_ai(date_str: str) -> float:
         gemini_result = _call_gemini_bw(date_str, knn_result,
                                          candidates, prev_week_mvno)
         if gemini_result:
-            # [수정 20261020] Gemini 값과 K-NN 값을 반반 섞음. Gemini는 K-NN을 평시(1.0)
-            # 쪽으로 끌어내리는 경향(월초 1~2일 편향 -0.22, 월말 3일 -0.11)이 있고,
-            # 연휴 전후·공휴일은 K-NN 단독보다 부정확했음(오차 0.085 vs 0.127).
-            # 2026-05~09 129개 영업일 백테스트(같은 달 데이터 미사용) 평균오차:
-            #   저장값(Gemini) 0.128 / K-NN만 0.119 / 반반 0.116
-            return round((gemini_result + knn_result) / 2, 3)
+            # [검토 20261020] Gemini 값과 K-NN 값을 섞는 방안(월말만 / 전체)을 백테스트함 -
+            # 일별 bw 오차는 줄지만(0.128 → 0.116) T Out 월마감 예측은 오히려 약간 나빠져
+            # (2026-06~09 평균오차 2.0% → 2.2%) Gemini 최종값을 그대로 씀.
+            return gemini_result
         # Gemini 실패 → K-NN 단독 사용
         log.info(f"K-NN 단독 사용: {date_str} → {knn_result}")
         return knn_result
