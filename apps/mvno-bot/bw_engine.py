@@ -302,6 +302,13 @@ def _get_knn_similar_days(date_str: str, top_n: int = 10) -> list:
                 # D-n 거리의 과거 샘플끼리 매칭 (_bizdays_until_month_end 백테스트 근거)
                 if _bizdays_until_month_end(doc.id) != (1 if hol_struct == 'before_month_end1' else 2):
                     continue
+                # [수정 20261020] month_end와 같이 요일타입(평일/토요일) 일치 샘플만 사용.
+                # 평일 D-1(실적 평균 1.18)과 토요일 D-1(0.62)이 섞여서 토요일은 과대,
+                # 평일은 과소예측됐음. 백테스트(2025-06~2026-09 월말 D-1/D-2) 토요일 편향
+                # +0.64/+0.57 → 해소, 평일 D-2 -0.09 → +0.06 (오차 0.22 → 0.20).
+                # 표본 3개 미만이면 calc_bw_ai()가 테이블 폴백(요일별 + 월말 가중)으로 감.
+                if (dd.weekday() == 5) != (wd == 5):
+                    continue
             elif hol_struct in ('before_single', 'before_multi', 'after'):
                 # [수정 20261001] 연휴 전/후: 같은 요일 + 주차(±1) 제한을 쓰면
                 # 과거 "같은 요일 + 공휴일 연휴 구조" 샘플이 특정 월의 특정
@@ -538,6 +545,13 @@ def calc_bw_ai(date_str: str) -> float:
         gemini_result = _call_gemini_bw(date_str, knn_result,
                                          candidates, prev_week_mvno)
         if gemini_result:
+            # [수정 20261020] 월말 몰림일(마지막 영업일·D-1·D-2)은 Gemini가 K-NN 값을
+            # 평시(1.0) 쪽으로 끌어내리는 경향 - 2026-06~09 월말 마지막 평일 4번 모두
+            # 저장값이 실적보다 낮았음(편향 -0.15, 예: 8/31 K-NN 1.49·저장 1.31·실적 1.47).
+            # 월말 몰림은 실측 패턴이라 K-NN과 Gemini를 반반 섞어 Gemini 쪽 축소를 줄임.
+            if _holiday_structure(date_str) in ('month_end', 'before_month_end1',
+                                                'before_month_end2'):
+                return round((gemini_result + knn_result) / 2, 3)
             return gemini_result
         # Gemini 실패 → K-NN 단독 사용
         log.info(f"K-NN 단독 사용: {date_str} → {knn_result}")
