@@ -895,6 +895,50 @@ def _price_change_lines(curr, prev_snapshot, base_label):
     return out
 
 
+# RM은 첫 몇 달 10원 같은 프로모션가가 많아 최저가 비교가 무의미 → 기존 RM 분석(build_rm_analysis)처럼
+# 금액대별 최대 데이터 제공량(GB)으로 비교
+RM_BUCKETS = [('100원↓', 0, 100), ('1천원↓', 100, 1000), ('3천원↓', 1000, 3000),
+              ('1만원↓', 3000, 10000), ('1만원↑', 10000, 99999999)]
+
+
+def rm_max_data_summary(plans):
+    out = {'_metric': 'max_gb'}
+    rm = [p for p in plans if not p.get('is_rs') and (p.get('final_price') or 0) > 0]
+    for label, lo, hi in RM_BUCKETS:
+        out[label] = {}
+        for net in NET_SHORT:
+            gbs = [p.get('data_gb') or 0 for p in rm if p.get('network') == net and lo < p.get('final_price', 0) <= hi]
+            out[label][net] = max(gbs) if gbs else 0
+    return out
+
+
+def _gb_label(v):
+    if not v:
+        return '-'
+    if v >= 9999:
+        return '무제한'
+    return f"{v:g}G"
+
+
+def _rm_change_lines(curr, prev_snapshot, base_label):
+    prev = (prev_snapshot or {}).get('rs_min') or {}
+    if prev.get('_metric') != 'max_gb':
+        prev = {}
+    out = {}
+    for net, short in NET_SHORT.items():
+        if not prev:
+            out[short] = "비교 기준 없음(다음 회차부터 비교)"
+            continue
+        items = []
+        for label, _, _ in RM_BUCKETS:
+            a = (prev.get(label) or {}).get(net, 0) or 0
+            b = (curr.get(label) or {}).get(net, 0) or 0
+            if a != b:
+                items.append(f"{label} {_gb_label(a)}→{_gb_label(b)} ({'확대' if b > a else '축소'})")
+        out[short] = ", ".join(items) if items else f"{base_label} 동일"
+    return out
+
+
 def _compact_data(data):
     t = (data or '').replace('월 ', '').replace(' + ', '+').replace('GB', 'G').replace('Mbps', 'M')
     return re.sub(r'\s+', ' ', t).strip()
@@ -923,10 +967,10 @@ def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
         lines.append(f" ※ {note}")
     lines.append("")
 
-    # 💰 RS / 📈 RM 특이사항 (일반사업자, 모요+알닷+허브 통합 구간 최저가)
-    for title, curr, prev in (("💰 RS 특이사항", curr_rs, prev_general), ("📈 RM 특이사항", curr_rm, prev_rm)):
+    # 💰 RS 특이사항 (일반사업자 3사 통합 구간 최저가) / 📈 RM 특이사항 (금액대별 최대 데이터)
+    for title, ch in (("💰 RS 특이사항", _price_change_lines(curr_rs or {}, prev_general, base)),
+                      ("📈 RM 특이사항 (금액대별 최대 데이터)", _rm_change_lines(curr_rm or {}, prev_rm, base))):
         lines.append(title)
-        ch = _price_change_lines(curr or {}, prev, base)
         for short in ('S', 'K', 'L'):
             lines.append(f" {short}망 : {ch[short]}")
         lines.append("")
@@ -2418,7 +2462,7 @@ def main():
         curr_rs  = comparator.get_segment_min_prices(filter_for_rs(merged_general_all), rs_only=True)
         curr_sub = comparator.get_segment_min_prices(filter_for_rs(merged_sub_all), rs_only=True)
         curr_mno = get_mno_segment_min_prices(merged_mno_all)  # RS+RM 통합, 필터 없음(기존과 동일)
-        curr_rm  = comparator.get_segment_min_prices(filter_for_rs(merged_general_all), rs_only=False)  # [추가 20261019] 일반 RM
+        curr_rm  = rm_max_data_summary(merged_general_all)  # [추가 20261019] 일반 RM: 금액대별 최대 데이터
 
         # ── 직전 스냅샷 조회 (일반/자회사/MNO 각각, 병합값 기준) ────────────
         # 하루 3회(08/13/17시) 롤링 비교: 08시→전일 08시 / 13시→당일 08시 / 17시→당일 13시
