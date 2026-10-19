@@ -1269,7 +1269,7 @@ def _calendar_weight(date_str: str, bw: float) -> float:
 
 def _get_prev_month_analog_pred(date_str: str, cum_this: float,
                                 include_today: bool, group: str = 'mno_out',
-                                key: str = 'S') -> Optional[dict]:
+                                key: str = 'S', scaled_w: Optional[float] = None) -> Optional[dict]:
     """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
     cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
     include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)
@@ -1316,7 +1316,8 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
     ws = [0.5 ** i for i in range(len(refs))]
     pure = sum(w * r[1] for w, r in zip(ws, refs)) / sum(ws)
     scaled = sum(w * r[1] * this_rate / r[0] for w, r in zip(ws, refs)) / sum(ws)
-    rate = (1 - ANALOG_SCALED_W) * pure + ANALOG_SCALED_W * scaled
+    w = ANALOG_SCALED_W if scaled_w is None else scaled_w
+    rate = (1 - w) * pure + w * scaled
     return {
         'pred': cum_this + rate * remaining_bw,
         'pred_pure': cum_this + pure * remaining_bw,
@@ -1510,6 +1511,29 @@ def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
 TOUT_END_ALIGNED_W = 0.3  # 혼합 비중 (0.3/0.5/0.7 비교 → 0.3이 전 구간 고르게 개선)
 TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 비교 → 0.5)
 
+# [v3.4, 추가 20261020] 월초 수준 배율 축소: 월 진행률(달력가중 기준)이 TOUT_EARLY_RAMP에
+# 이를 때까지 "이번달 수준" 반영 비중(잔여속도법 scaled 50%, 월말정렬 수준 50%)을
+# 진행률에 비례해 0부터 키움 - 월초 1~3영업일은 표본이 적고 월초 몰림 크기가 달마다
+# 달라 수준 배율이 과하게 튐(최근 4개월 1~10일 편향 +2.6%). 백테스트 1~10일 평균오차
+# (현행 → 10% 축소): 2025-10~2026-09 5.94 → 5.55%, 2026-06~09 3.81 → 3.34%.
+# 12개월 중 9개월 개선, 월초부터 수준이 실제로 바뀐 달(2026-01)은 5.2 → 8.9%로 나빠짐.
+# 범위 10/15/20/25% 비교 → 두 기간 모두 개선되는 10%.
+TOUT_EARLY_RAMP = 0.10
+
+
+def _tout_level_factor(date_str: str, include_today: bool) -> float:
+    """월초 수준 배율 축소 계수(0~1). 진행률 = 경과 달력가중 ÷ 월 전체 달력가중."""
+    if TOUT_EARLY_RAMP <= 0:
+        return 1.0
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    days = _get_month_days(d.year, d.month)
+    total = sum(_calendar_weight(ds, bw) for ds, bw, _ in days)
+    if total <= 0:
+        return 1.0
+    el = sum(_calendar_weight(ds, bw) for ds, bw, _ in days if int(ds[8:]) <= ref_day)
+    return min(1.0, (el / total) / TOUT_EARLY_RAMP)
+
 
 def get_end_aligned_tout_pred(date_str: str, cum_this: float,
                               include_today: bool) -> Optional[float]:
@@ -1521,7 +1545,8 @@ def get_end_aligned_tout_pred(date_str: str, cum_this: float,
     scale = 1.0
     if r['this_cw'] > 0 and r['ref_rate'][sp] > 0:
         scale = (cum_this / r['this_cw']) / r['ref_rate'][sp]
-    return cum_this + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+    lw = TOUT_LEVEL_W * _tout_level_factor(date_str, include_today)
+    return cum_this + r['rem'][sp] * ((1 - lw) + lw * scale)
 
 
 def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
@@ -1533,7 +1558,9 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
     반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
     sp = ('mno_out', 'S')
     if not intraday:
-        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed)
+        f = _tout_level_factor(date_str, today_confirmed)
+        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed,
+                                        scaled_w=ANALOG_SCALED_W * f)
         if not a:
             return None
         e = get_end_aligned_tout_pred(date_str, cum_now, include_today=today_confirmed)
@@ -1541,7 +1568,9 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
                 'remaining_bw': a['remaining_bw']}
 
     # 장중: 어제까지 확정 실적으로 속도(수준 배율 포함)를 구하고, 잔여는 오늘 제외
-    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False)
+    f0 = _tout_level_factor(date_str, False)
+    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False,
+                                     scaled_w=ANALOG_SCALED_W * f0)
     if not a0:
         return None
     bw_today = next((bw for ds, bw, _ in _get_month_days(
@@ -1556,7 +1585,8 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
         scale = 1.0
         if r0['this_cw'] > 0 and r0['ref_rate'][sp] > 0:
             scale = (cum_db / r0['this_cw']) / r0['ref_rate'][sp]
-        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+        lw = TOUT_LEVEL_W * f0
+        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - lw) + lw * scale)
     return out
 
 
