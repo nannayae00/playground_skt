@@ -845,7 +845,14 @@ def generate_month_bw_ai_prev(year: int, month: int) -> int:
         factor = max(0.8, min(1.3, factor))  # 과도한 보정 방지
     else:
         factor = 1.0
-    log.info(f"{year}-{month:02d} bw 성장계수: {factor} (bw_manual 표본 {len(paired)}일)")
+    log.info(f"{year}-{month:02d} bw 성장계수(참고, 미적용): {factor} (bw_manual 표본 {len(paired)}일)")
+    # [수정 20261020] 성장계수 적용 중단 - bw_ai_prev는 원래 패턴값(= bw_ai_prev_old) 그대로 저장.
+    # 성장계수의 목적(메시지에 엑셀과 같은 영업일수 표시)은 10/15부터 get_bw_final()이
+    # bw_manual을 직접 쓰면서 해결됨. 남은 효과는 월마감 예측의 기준 불일치뿐 - 참조월(전월·
+    # 전전월)은 스케일 안 된 AI값인데 이번달만 엑셀 합계로 키워져 남은 영업일이 부풀려짐
+    # (10월: 29.0 vs 원래 26.7, 10/19 fc_mid 40,084 → 원복 후 39,173). 2026-04~09
+    # 백테스트도 AI값 2.4% vs 엑셀값 2.8%로 AI값이 더 정확.
+    factor = 1.0
 
     saved = 0
     for day in range(1, last_day + 1):
