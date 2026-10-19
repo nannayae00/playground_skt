@@ -3,6 +3,11 @@
 MVNO팀 업무 자동화 앱(GCP `mvno-484509`, Cloud Run)과 그 데이터(Firestore)를 다루는 저장소입니다.
 앱별 구조·배포는 `README.md`를 보고, 이 파일은 **데이터 분석**에 필요한 것을 정리합니다.
 
+> **배포 주의:** mvno-bot(`ktoa-collector`·`mvno-bot`)은 이 저장소의 최신 main을 포함한 커밋에서
+> `apps/mvno-bot/deploy.sh`로만 배포합니다. 다른 폴더(Cloud Shell, 빌드 버킷에서 받은 옛 소스 등)에서
+> `gcloud builds submit`으로 `:latest`를 덮어쓰면 예측 로직이 옛 버전으로 돌아갑니다(10/08, 10/15 사례).
+> 저장소에 없는 수정은 먼저 PR로 main에 넣은 뒤 배포하세요.
+
 ## 접속과 권한
 
 - 세션 시작 시 `.claude/settings.json` 훅이 환경변수 `GCP_SA_KEY_B64`로 gcloud에 로그인합니다.
