@@ -1659,6 +1659,12 @@ def predict_monthly(date_str: str, today_skt: int,
     # 기존 "10시대는 미표시" 폴백이 정상적으로 발동하게 함.
     _ratio = _get_hour_completion_ratio(date_str, current_hour) if (today_skt > 0 and current_hour >= 11) else 0.0
     fc_daily = int(today_skt / _ratio) if _ratio > 0 else (fc_daily_raw if current_hour >= 11 else 0)
+    # [수정 20261020] 일마감(20:01)·RECHECK(20:25)는 current_hour 기본값 19로 호출되는데
+    # today_skt는 이미 하루 전체 실적 - 19시 완료율(약 93.5%)로 또 나눠서 fc_daily가
+    # 매일 실적보다 7~9% 크게 저장됐음(10/19 실적 1,405 → fc_daily 1,502, 19:50 메시지
+    # 예상은 1,419). 오늘이 마감 확정이면 실적 그대로 씀.
+    if _today_confirmed and today_skt > 0:
+        fc_daily = int(today_skt)
 
     avg_skt = avg_recent  # 메시지/잔여 일평균 계산용 기준
 
