@@ -829,7 +829,7 @@ def build_source_highlights(aldot_plans, mvnohub_plans, moyo_plans):
 
 # 모요 등 채널의 알려진 구성 변화 - 매 메시지 '요금제 수'에 고정 표시 (필요 없어지면 비우면 됨)
 STANDING_PLAN_NOTES = [
-    "프리티·토스·통신3사 다이렉트 모요 미노출 (10/6~)",
+    "프리티·토스 모요 미노출 (10/6~)",
 ]
 
 # 사업자 일괄 이탈/입점 판정 기준
@@ -837,6 +837,20 @@ BULK_MIN_PLANS = 10      # 직전 요금제 수가 이 이상인 사업자만 �
 BULK_DROP_RATIO = 0.5    # 직전 대비 이 비율 이하로 줄면 '일괄 이탈'
 
 NET_SHORT = {'SKT': 'S', 'KT': 'K', 'LGU+': 'L'}
+
+# 사이트마다 다른 사업자 표기를 하나로 (괄호 부가설명 제거 후 별칭 → provider_map.shorten)
+_PROVIDER_ALIAS = {
+    'A모바일': '에이모바일', 'KCT': '티플러스', '케이티엠모바일': 'KT엠모바일',
+    '케이티스카이라이프': 'KT스카이라이프', '헬로모바일': 'LG헬로모바일', '고고팩토리': '고고모바일',
+}
+
+
+def _canon_provider(name):
+    import urllib.parse
+    n = urllib.parse.unquote(name or '').strip()
+    n = re.sub(r'_국문_bi$', '', n)
+    n = re.sub(r'\s*\(.*?\)\s*', '', n).strip()
+    return shorten(_PROVIDER_ALIAS.get(n, n))
 
 
 def detect_provider_changes(source_label, prev_counts, curr_plans):
@@ -965,6 +979,16 @@ def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
         lines.append(f" {base} 대비 사업자 변동 없음")
     for note in STANDING_PLAN_NOTES:
         lines.append(f" ※ {note}")
+    # [추가 20261020] 망별 알뜰폰 사업자 수 (MNO 제외, 모요+알닷+허브 통합 / 괄호는 모요)
+    def _mvno_providers(plist):
+        gen, sub, _mno = split_by_provider_type(plist)
+        out = {}
+        for p in gen + sub:
+            out.setdefault(p.get('network', ''), set()).add(_canon_provider(p.get('provider')))
+        return out
+    all_prov, moyo_prov = _mvno_providers((moyo_plans or []) + (aldot_plans or []) + (mvnohub_plans or [])), _mvno_providers(moyo_plans or [])
+    for net, label in (('SKT', 'SM'), ('KT', 'KM'), ('LGU+', 'LM')):
+        lines.append(f" {label}: {len(all_prov.get(net, ()))}개 사업자 (모요 {len(moyo_prov.get(net, ()))})")
     lines.append("")
 
     # 💰 RS 특이사항 (일반사업자 3사 통합 구간 최저가) / 📈 RM 특이사항 (금액대별 최대 데이터)
@@ -2483,6 +2507,12 @@ def main():
         prev_sub     = _load_prev_snapshot('sub')
         prev_mno     = _load_prev_snapshot('mno')
         prev_rm      = _load_prev_snapshot('general_rm')
+        # [수정 20261020] 같은 회차(예: 전일 08시) RM 기록이 없거나 옛 형식(최저가 기준)이면
+        # 가장 최근의 '최대 데이터' 형식 기록으로 대체 (이번 회차는 아직 저장 전이라 최신 1건 = 직전)
+        if ((prev_rm or {}).get('rs_min') or {}).get('_metric') != 'max_gb':
+            _latest_rm = db.get_latest_rs_snapshot(snap_type='general_rm')
+            if ((_latest_rm or {}).get('rs_min') or {}).get('_metric') == 'max_gb':
+                prev_rm = _latest_rm
 
         # 스냅샷 저장: auto 수집일 때만 (3종 모두 병합값 기준, run_slot 태깅하여 저장)
         if source_type == 'auto':
