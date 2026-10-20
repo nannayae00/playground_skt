@@ -1020,6 +1020,9 @@ def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
     return "\n".join(lines).strip()
 
 
+CHEAPER_MIN_DIFF = 1000
+
+
 def _cheaper_best_vs_moyo(source_plans, moyo_plans, src_label, network_filter=None):
     """구간·망별로 모요 RS 최저가보다 싼 요금제 중 가장 싼 1건만 한 줄로."""
     segments = FirebaseHandler.GUIDE_SEGMENTS
@@ -1041,7 +1044,8 @@ def _cheaper_best_vs_moyo(source_plans, moyo_plans, src_label, network_filter=No
     for seg in segments:
         for net in nets:
             mv, sp = moyo_min.get((seg, net)), src_min.get((seg, net))
-            if mv and sp and sp['final_price'] < mv['final_price']:
+            # [수정 20261020] 차이가 CHEAPER_MIN_DIFF(1,000원) 미만이면 사실상 같은 가격이라 표시 안 함
+            if mv and sp and mv['final_price'] - sp['final_price'] >= CHEAPER_MIN_DIFF:
                 nm = _clean_provider_display(shorten(sp.get('provider', '')))
                 out.append(f"· {src_label} {seg}({NET_SHORT.get(net, net)}) {nm} {sp['final_price']:,} "
                            f"(모요 {mv['final_price']:,}, ↓{mv['final_price'] - sp['final_price']:,})")
