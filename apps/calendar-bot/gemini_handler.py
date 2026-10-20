@@ -23,6 +23,10 @@ v2.4 | 2026-09-20 | "다음주 점심일정들 알려줘"처럼 날짜+키워드
      | list action에 keyword 필드 추가
 v2.5 | 2026-09-20 | cleanup_duplicates action 추가 - "다음주 중복된 일정
      | 확인해서 삭제해줘"처럼 특정 기간 중복 일정 찾아서 정리하는 요청 지원
+v2.6 | 2026-10-20 | 이미지 캡션을 무시하던 문제 - "11/12 고양시 대회"처럼 캡션에
+     | 날짜를 적어도 오늘 날짜로 등록되던 버그. parse_schedule_from_image에
+     | caption 인자 추가(날짜·장소·필터 지시로 사용). 경기 대진표(시간 행 +
+     | HOME/AWAY 칸) 규칙 추가, "파란 네모만"처럼 표시된 칸만 추출하는 지시 지원
 """
 
 import os
@@ -100,6 +104,38 @@ def _build_parse_prompt() -> str:
 
 반드시 JSON 배열만 반환, 다른 텍스트 없음
 """
+
+def _build_image_prompt(caption: str) -> str:
+    """[v2.6] 이미지 전용 추가 지시. 캡션(사용자가 사진과 함께 쓴 글)이 있으면
+    최우선 지시로 넘김 - 예전엔 캡션을 아예 안 넘겨서 이미지에 날짜가 없으면
+    오늘 날짜로 등록됐음."""
+    today = _get_today()
+    year = _get_current_year()
+    rules = f"""=== 이미지 규칙 ===
+- 이미지가 표의 일부만 잘라낸 것일 수 있음. 보이는 칸에 날짜가 없으면 사용자 메시지의 날짜를 쓰고,
+  둘 다 없을 때만 오늘({today})로 설정
+- 숫자·한글은 이미지에 보이는 그대로 읽고, 흐려서 확실하지 않은 글자는 추측으로 바꾸지 말 것
+- 이미지에 없는 일정을 만들어내지 말 것 (잘려서 일부만 보이는 칸은 제외)
+
+=== 경기 대진표/시간표 규칙 (input_type: schedule) ===
+- 표 형태(날짜/요일 행 + 시간 행 + 그 아래 칸에 HOME/AWAY 팀)이면 칸 하나 = 일정 하나
+- 각 칸의 시간은 바로 위 시간 행(예: 12:40-13:35)에서, 날짜는 그 칸이 속한 행의 왼쪽 날짜 칸
+  (예: "11월 12일 목")에서 가져옴. 날짜에 연도가 없으면 {year}년
+- title: "HOME팀 vs AWAY팀" (예: HOME 어셈블연세 / AWAY 안암래빗츠 → "어셈블연세 vs 안암래빗츠")
+- 칸이 비어 있으면 일정이 아님
+
+=== 사용자 메시지(캡션) 규칙 ===
+- 사용자 메시지는 이미지보다 우선하는 지시임
+- 날짜(예: "11/12", "11월 13일")가 있으면 이미지에 날짜가 없는 일정의 date/date_end로 사용
+- 장소·대회명(예: "고양시 대회")은 location 또는 description에 반영 (제목은 위 규칙 유지)
+- "파란 네모만", "빨간 동그라미 친 것만", "형광펜 칠한 것만"처럼 표시된 것만 추가하라는 지시가 있으면
+  그 색/모양으로 테두리·표시된 칸만 추출하고 나머지 칸은 모두 제외
+  (칸의 배경색과 테두리 표시를 혼동하지 말 것 - "네모"는 칸을 둘러싼 테두리 표시)
+- 특정 팀/이름만 추가하라는 지시가 있으면 그 이름이 들어간 칸만 추출"""
+    if caption:
+        return f"{rules}\n\n사용자 메시지: {caption}\n\n위 이미지에서 사용자 메시지에 맞게 일정을 추출해주세요."
+    return f"{rules}\n\n위 이미지에서 일정을 모두 추출해주세요."
+
 
 def _build_intent_prompt() -> str:
     today = _get_today()
@@ -211,10 +247,11 @@ class GeminiHandler:
         logger.info(f"Parse response: {raw[:300]}")
         return self._parse_json_response(raw)
 
-    def parse_schedule_from_image(self, image_bytes: bytes, mime_type: str = "image/jpeg") -> list:
-        logger.info(f"Parsing image, size: {len(image_bytes)}")
+    def parse_schedule_from_image(self, image_bytes: bytes, mime_type: str = "image/jpeg",
+                                  caption: str = "") -> list:
+        logger.info(f"Parsing image, size: {len(image_bytes)}, caption: {caption[:100]}")
         image_part = {"mime_type": mime_type, "data": image_bytes}
-        prompt = f"{_build_parse_prompt()}\n\n위 이미지에서 일정을 모두 추출해주세요."
+        prompt = f"{_build_parse_prompt()}\n\n{_build_image_prompt(caption)}"
         response = self.model.generate_content([prompt, image_part])
         raw = response.text.strip()
         logger.info(f"Image parse response: {raw[:300]}")
