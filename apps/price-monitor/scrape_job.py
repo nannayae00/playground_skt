@@ -692,6 +692,9 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     s_cnt = sum(1 for p in plans if p.get('network') == 'SKT')
     k_cnt = sum(1 for p in plans if p.get('network') == 'KT')
     l_cnt = sum(1 for p in plans if p.get('network') == 'LGU+')
+    # [추가 20261021] 망별 사업자 수 (MNO 포함 전체, 사이트별 표기 차이는 _canon_provider로 통일)
+    def _nprov(net):
+        return len({_canon_provider(p.get('provider')) for p in plans if p.get('network') == net})
 
     lines = [f"{title_emoji_label} ({checked_at})", "```"]
     lines.append(f"{_wpad('구분', 8)}{_wpad('총계', 7, 'right')}{_wpad('RS', 6, 'right')}{_wpad('RM', 6, 'right')}")
@@ -699,7 +702,7 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     for label, tot, rs, rm in rows:
         lines.append(f"{_wpad(label, 8)}{tot:>7,}{rs:>6,}{rm:>6,}")
     lines.append("─" * 27)
-    lines.append(f"S망 {s_cnt} · K망 {k_cnt} · L망 {l_cnt}")
+    lines.append(f"S망 {s_cnt}({_nprov('SKT')}개사) · K망 {k_cnt}({_nprov('KT')}개사) · L망 {l_cnt}({_nprov('LGU+')}개사)")
     lines.append("```")
     return "\n".join(lines)
 
