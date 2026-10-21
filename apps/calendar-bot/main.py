@@ -45,6 +45,8 @@ v3.2 | 2026-10-20 | 사진 캡션을 버리던 문제 - "11/12 고양시 대회"
      | 보내도 오늘 날짜로 등록됨. 캡션을 Gemini에 함께 넘기도록 수정
      | ("파란 네모만 추가" 같은 필터 지시도 동작). 앨범(여러 장 묶음)은 캡션이
      | 첫 장에만 붙어서 오므로 media_group_id로 공유
+v3.3 | 2026-10-21 | 여러 날에 걸친 시간 일정 표시를 "11-03 (화) 15:30 ~ 11-05 (목) 07:25"로
+     | 변경 (예전 표시는 매일 15:30~07:25처럼 보였음, 캘린더 등록은 원래 정상)
 """
 
 import os
@@ -177,15 +179,18 @@ def format_event_line(ev: dict, idx: int = None) -> str:
     title = esc(ev.get("title", "제목 없음"))
     location = esc(ev.get("location", ""))
     date_fmt = format_date(date)
-    if date_end and date_end != date:
-        date_range = f"{date_fmt}~{format_date(date_end)}"
-    else:
-        date_range = date_fmt
+    multi_day = bool(date_end) and date_end != date
     time_str = ""
-    if time_start and time_end:
-        time_str = f" {time_start}~{time_end}"
-    elif time_start:
-        time_str = f" {time_start}"
+    if multi_day and time_start and time_end:
+        # [v3.3] 여러 날 + 시간 일정(항공 왕복 등)은 시작일시~종료일시로 표시.
+        # "11-03~11-05 15:30~07:25"는 매일 15:30~07:25처럼 읽혀서 헷갈림
+        date_range = f"{date_fmt} {time_start} ~ {format_date(date_end)} {time_end}"
+    else:
+        date_range = f"{date_fmt}~{format_date(date_end)}" if multi_day else date_fmt
+        if time_start and time_end:
+            time_str = f" {time_start}~{time_end}"
+        elif time_start:
+            time_str = f" {time_start}"
     loc_str = f" 📍{location}" if location else ""
     prefix = f"<b>{idx})</b> " if idx else ""
     return f"  {prefix}{title} | {date_range}{time_str}{loc_str}"
