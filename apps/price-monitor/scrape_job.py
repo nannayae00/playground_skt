@@ -674,7 +674,7 @@ def _clean_provider_display(name):
 # [추가 20261022] S망 기준 알뜰폰 사업자 14개 (KTOA 등록 S01~S19 중 최근 실적 있는 15개 - 에스원 제외, 사용자 확정)
 # (표기 약자, 사이트 표기(_canon_provider 결과) 목록) - 순서는 S망 유입 규모순
 S_NET_OPERATORS = [
-    ('프리텔', ['프리티', '프리텔레콤']),
+    ('프리',   ['프리티', '프리텔레콤']),
     ('텔링크', ['텔링크', '세븐', 'SK7모바일', 'SK세븐모바일', '세븐모바일', 'SK텔링크']),
     ('아이즈', ['아이즈', '아이즈비전']),
     ('조이텔', ['조이텔']),
@@ -741,10 +741,10 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     l_part = f"L망 {l_cnt}({_nprov('LGU+')}개사)" if l_cnt else "L망 0"
     lines.append(f"{s_part} · {k_part} · {l_part}")
     if s_cnt:
-        lines.append(f" ㅇ 유: {'·'.join(s_has) or '-'}")
-        lines.append(f" ㅇ 무: {'·'.join(s_not) or '-'}")
+        lines.append(f"有: {'·'.join(s_has) or '-'}")
+        lines.append(f"無: {'·'.join(s_not) or '-'}")
         if s_etc:
-            lines.append(f" ㅇ 기타: {'·'.join(s_etc)}")
+            lines.append(f"기타: {'·'.join(s_etc)}")
     lines.append("```")
     return "\n".join(lines)
 
