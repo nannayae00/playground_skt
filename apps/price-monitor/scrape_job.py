@@ -671,6 +671,31 @@ def _clean_provider_display(name):
     return re.sub(r'\s*\([^)]*\)', '', str(name)).strip()
 
 
+# [추가 20261022] S망 기준 알뜰폰 사업자 14개 (KTOA 등록 S01~S19 중 최근 실적 있는 15개 - 에스원 제외, 사용자 확정)
+# (표기 약자, 사이트 표기(_canon_provider 결과) 목록) - 순서는 S망 유입 규모순
+S_NET_OPERATORS = [
+    ('프리텔', ['프리티', '프리텔레콤']),
+    ('텔링크', ['텔링크', '세븐', 'SK7모바일', 'SK세븐모바일', '세븐모바일', 'SK텔링크']),
+    ('아이즈', ['아이즈', '아이즈비전']),
+    ('조이텔', ['조이텔']),
+    ('유니',   ['유니', '모빙', '유니컴즈']),
+    ('KCT',    ['tplus', 'KCT', '티플러스']),
+    ('스테이지', ['핀다', '핀다이렉트', '스테이지파이브']),
+    ('에넥스', ['에이', '에이모바일', '에넥스텔레콤']),
+    ('큰사람', ['큰사람', '이야기', '이야기모바일']),
+    ('스마텔', ['스마텔']),
+    ('고고',   ['고고', '고고모바일', '고고팩토리']),
+    ('토스',   ['토스', '토스모바일']),
+    ('KB',     ['리브엠', '리브모바일', 'KB']),
+    ('네이블', ['네이블', '알비레오']),
+]
+_S_OP_BY_NAME = {n: op for op, names in S_NET_OPERATORS for n in names}
+
+
+def _s_operator(canon_name):
+    return _S_OP_BY_NAME.get(canon_name, canon_name)
+
+
 def build_source_status_block(title_emoji_label, plans, checked_at):
     """
     메시지1(통합 수집현황)의 소스 1개 블록.
@@ -692,9 +717,18 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     s_cnt = sum(1 for p in plans if p.get('network') == 'SKT')
     k_cnt = sum(1 for p in plans if p.get('network') == 'KT')
     l_cnt = sum(1 for p in plans if p.get('network') == 'LGU+')
-    # [추가 20261021] 망별 사업자 수 (MNO 포함 전체, 사이트별 표기 차이는 _canon_provider로 통일)
+    # [추가 20261021] 망별 사업자 수 / [수정 20261022] MNO(통신3사) 제외
+    _gen, _sub, _mno = split_by_provider_type(plans)
+    _mvno = _gen + _sub
+
     def _nprov(net):
-        return len({_canon_provider(p.get('provider')) for p in plans if p.get('network') == net})
+        return len({_canon_provider(p.get('provider')) for p in _mvno if p.get('network') == net})
+
+    # [추가 20261022] S망은 기준 사업자 14개 대비 이 사이트 등록 유/무 표시
+    s_ops = {_s_operator(_canon_provider(p.get('provider'))) for p in _mvno if p.get('network') == 'SKT'}
+    s_has = [op for op, _ in S_NET_OPERATORS if op in s_ops]
+    s_not = [op for op, _ in S_NET_OPERATORS if op not in s_ops]
+    s_etc = sorted(s_ops - {op for op, _ in S_NET_OPERATORS})
 
     lines = [f"{title_emoji_label} ({checked_at})", "```"]
     lines.append(f"{_wpad('구분', 8)}{_wpad('총계', 7, 'right')}{_wpad('RS', 6, 'right')}{_wpad('RM', 6, 'right')}")
@@ -702,7 +736,15 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     for label, tot, rs, rm in rows:
         lines.append(f"{_wpad(label, 8)}{tot:>7,}{rs:>6,}{rm:>6,}")
     lines.append("─" * 27)
-    lines.append(f"S망 {s_cnt}({_nprov('SKT')}개사) · K망 {k_cnt}({_nprov('KT')}개사) · L망 {l_cnt}({_nprov('LGU+')}개사)")
+    s_part = f"S망 {s_cnt}({len(s_has)}/{len(S_NET_OPERATORS)}개사)" if s_cnt else "S망 0"
+    k_part = f"K망 {k_cnt}({_nprov('KT')}개사)" if k_cnt else "K망 0"
+    l_part = f"L망 {l_cnt}({_nprov('LGU+')}개사)" if l_cnt else "L망 0"
+    lines.append(f"{s_part} · {k_part} · {l_part}")
+    if s_cnt:
+        lines.append(f" ㅇ 유: {'·'.join(s_has) or '-'}")
+        lines.append(f" ㅇ 무: {'·'.join(s_not) or '-'}")
+        if s_etc:
+            lines.append(f" ㅇ 기타: {'·'.join(s_etc)}")
     lines.append("```")
     return "\n".join(lines)
 
