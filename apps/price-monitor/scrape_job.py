@@ -957,7 +957,6 @@ def _price_change_lines(curr, prev_snapshot, base_label):
 # [추가 20261022] RM 특이사항 = 요금제 단위 변동(직전 수집 대비)을 사업자별로 묶어서 표시
 # (백테스트 10/14~10/22 22회: 요금제 나열 시 최대 15줄 → 사업자 묶음 시 4~9줄)
 RM_MIN_DIFF = 100           # 이 금액 미만 가격 변동은 무시
-RM_MAX_ITEMS = 4            # 망별로 보여줄 요금제 수 (나머지는 '외 N건')
 _PROVIDER_DISPLAY = {'tplus': '티플러스', 'skylife': '스카이라이프'}
 
 
@@ -1039,7 +1038,7 @@ def _rm_item_line(it):
 
 
 def _rm_group_lines(groups):
-    """→ {'S': [요약, 줄...], ...}  가격 인하·인상(변동액 큰 순) → 프로모션 기간 변경 → 신규 → 삭제 순으로 망당 RM_MAX_ITEMS건"""
+    """→ {'S': [요약, 줄...], ...}  가격 인하·인상(변동액 큰 순) → 프로모션 기간 변경 → 신규 (삭제는 요약 건수만)"""
     out = {}
     for net, short in NET_SHORT.items():
         items = sorted(groups.get(net, []), key=lambda it: (_RM_KIND_ORDER[it['kind']], -it['diff']))
@@ -1051,12 +1050,8 @@ def _rm_group_lines(groups):
             cnt[it['kind']] = cnt.get(it['kind'], 0) + 1
         label = {'down': '인하', 'up': '인상', 'promo': '프로모션변경', 'new': '신규', 'gone': '삭제'}
         rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
-        rows += [_rm_item_line(it) for it in items[:RM_MAX_ITEMS]]
-        if len(items) > RM_MAX_ITEMS:
-            rest = {}
-            for it in items[RM_MAX_ITEMS:]:
-                rest[it['kind']] = rest.get(it['kind'], 0) + 1
-            rows.append(f"  외 {len(items) - RM_MAX_ITEMS}건 ({'·'.join(f'{label[k]} {rest[k]}' for k in _RM_KIND_ORDER if k in rest)})")
+        # [수정 20261024] 삭제는 건수만, 나머지(인하·인상·프로모션변경·신규)는 개수 제한 없이 전부 (사용자 결정)
+        rows += [_rm_item_line(it) for it in items if it['kind'] != 'gone']
         out[short] = rows
     return out
 
