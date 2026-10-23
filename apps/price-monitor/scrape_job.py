@@ -957,7 +957,7 @@ def _price_change_lines(curr, prev_snapshot, base_label):
 # [추가 20261022] RM 특이사항 = 요금제 단위 변동(직전 수집 대비)을 사업자별로 묶어서 표시
 # (백테스트 10/14~10/22 22회: 요금제 나열 시 최대 15줄 → 사업자 묶음 시 4~9줄)
 RM_MIN_DIFF = 100           # 이 금액 미만 가격 변동은 무시
-RM_MAX_PROVIDERS = 3        # 망별로 보여줄 사업자 수
+RM_MAX_ITEMS = 4            # 망별로 보여줄 요금제 수 (나머지는 '외 N건')
 _PROVIDER_DISPLAY = {'tplus': '티플러스', 'skylife': '스카이라이프'}
 
 
@@ -979,56 +979,71 @@ def _sale_price_txt(p):
 
 
 def compute_rm_groups(pairs):
-    """pairs: {site: (prev_plans, curr_plans)} → {(network, 사업자표기): [(종류, 변동액, '데이터 현재가'), ...]}
+    """pairs: {site: (prev_plans, curr_plans)} → {network: [변동 dict...]}
+    변동 dict: {'kind': 'up'|'down'|'promo'|'new'|'gone', 'prov', 'data', 'before', 'after', 'diff'}
     직전 수집이 없는 사이트는 건너뜀. 같은 변동이 여러 사이트에 잡히면 1건으로."""
-    groups, seen = {}, set()
+    out, seen = {}, set()
+
+    def _add(net, item):
+        sig = (item['kind'], item['prov'], item['data'], item['before'], item['after'], net)
+        if sig not in seen:
+            seen.add(sig)
+            out.setdefault(net, []).append(item)
+
     for site, (prev, curr) in pairs.items():
         if not prev or not curr:
             continue
         a, b = _rm_index(site, prev), _rm_index(site, curr)
         for k, p in b.items():
             q = a.get(k)
-            if q is None:
-                kind, diff = '신규', 0
-            else:
-                dfp = (p.get('final_price') or 0) - (q.get('final_price') or 0)
-                if (abs(dfp) < RM_MIN_DIFF and (p.get('discount_months') or 0) == (q.get('discount_months') or 0)
-                        and abs((p.get('base_price') or 0) - (q.get('base_price') or 0)) < RM_MIN_DIFF):
-                    continue
-                kind, diff = ('인하' if dfp < 0 else '인상'), abs(dfp)
             prov, data = _disp_provider(_canon_provider(p.get('provider'))), _compact_data(p.get('data', ''))
-            sig = (kind, prov, data, p.get('final_price'), k[3])
-            if sig not in seen:
-                seen.add(sig)
-                groups.setdefault((k[3], prov), []).append((kind, diff, f"{data} {_sale_price_txt(p)}"))
+            if q is None:
+                _add(k[3], {'kind': 'new', 'prov': prov, 'data': data, 'before': '', 'after': _sale_price_txt(p), 'diff': 0})
+                continue
+            dfp = (p.get('final_price') or 0) - (q.get('final_price') or 0)
+            same_months = (p.get('discount_months') or 0) == (q.get('discount_months') or 0)
+            if abs(dfp) < RM_MIN_DIFF and same_months:
+                continue
+            kind = 'down' if dfp <= -RM_MIN_DIFF else 'up' if dfp >= RM_MIN_DIFF else 'promo'
+            _add(k[3], {'kind': kind, 'prov': prov, 'data': data, 'before': _sale_price_txt(q),
+                        'after': _sale_price_txt(p), 'diff': abs(dfp)})
         for k, q in a.items():
             if k in b:
                 continue
             prov, data = _disp_provider(_canon_provider(q.get('provider'))), _compact_data(q.get('data', ''))
-            sig = ('삭제', prov, data, q.get('final_price'), k[3])
-            if sig not in seen:
-                seen.add(sig)
-                groups.setdefault((k[3], prov), []).append(('삭제', 0, f"{data} {_sale_price_txt(q)}"))
-    return groups
+            _add(k[3], {'kind': 'gone', 'prov': prov, 'data': data, 'before': _sale_price_txt(q), 'after': '', 'diff': 0})
+    return out
+
+
+_RM_KIND_ORDER = {'down': 0, 'up': 1, 'promo': 2, 'new': 3, 'gone': 4}
+
+
+def _rm_item_line(it):
+    head = f"{it['prov']} {it['data']}"
+    if it['kind'] == 'new':
+        return f"  + {head} {it['after']} 신규"
+    if it['kind'] == 'gone':
+        return f"  - {head} {it['before']} 삭제"
+    mark = {'down': '▼', 'up': '▲', 'promo': '◇'}[it['kind']]
+    return f"  {mark} {head} {it['before']}→{it['after']}"
 
 
 def _rm_group_lines(groups):
-    """→ {'S': [줄...], 'K': [...], 'L': [...]}  (첫 줄은 요약, 이후 사업자별 줄)"""
+    """→ {'S': [요약, 줄...], ...}  가격 인하·인상(변동액 큰 순) → 프로모션 기간 변경 → 신규 → 삭제 순으로 망당 RM_MAX_ITEMS건"""
     out = {}
     for net, short in NET_SHORT.items():
-        provs = sorted([(pv, ev) for (nt, pv), ev in groups.items() if nt == net], key=lambda x: -len(x[1]))
-        if not provs:
+        items = sorted(groups.get(net, []), key=lambda it: (_RM_KIND_ORDER[it['kind']], -it['diff']))
+        if not items:
             out[short] = ["동일"]
             continue
-        rows = [f"{len(provs)}개사 {sum(len(e) for _, e in provs)}건"]
-        for pv, ev in provs[:RM_MAX_PROVIDERS]:
-            kinds = {}
-            for k, _, _ in ev:
-                kinds[k] = kinds.get(k, 0) + 1
-            rep = max(ev, key=lambda e: e[1])   # 변동액이 가장 큰 요금제를 대표로 (신규/삭제만이면 첫 건)
-            rows.append(f"  - {pv} {'·'.join(f'{k}{c}' for k, c in kinds.items())} (예: {rep[2]})")
-        if len(provs) > RM_MAX_PROVIDERS:
-            rows.append(f"  외 {len(provs) - RM_MAX_PROVIDERS}개사")
+        cnt = {}
+        for it in items:
+            cnt[it['kind']] = cnt.get(it['kind'], 0) + 1
+        label = {'down': '인하', 'up': '인상', 'promo': '프로모션변경', 'new': '신규', 'gone': '삭제'}
+        rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
+        rows += [_rm_item_line(it) for it in items[:RM_MAX_ITEMS]]
+        if len(items) > RM_MAX_ITEMS:
+            rows.append(f"  외 {len(items) - RM_MAX_ITEMS}건")
         out[short] = rows
     return out
 
@@ -1041,8 +1056,7 @@ def _compact_data(data):
 def _plan_short(prefix, p):
     nm   = _clean_provider_display(shorten(p.get('provider', '')))
     net  = NET_SHORT.get(p.get('network', ''), p.get('network', ''))
-    disc = f"→{p['discount_months']}개월후 {p['base_price']:,}" if p.get('discount_months') and p.get('base_price') else ""
-    return f"· {prefix} {nm}({net}) {_compact_data(p.get('data',''))} {p.get('final_price',0):,}{disc}"
+    return f"· {prefix} {nm}({net}) {_compact_data(p.get('data',''))} {_sale_price_txt(p)}"  # [수정 20261023] 정상가 생략, 개월수만
 
 
 def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
