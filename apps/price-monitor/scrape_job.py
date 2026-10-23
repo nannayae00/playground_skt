@@ -994,6 +994,16 @@ def compute_rm_groups(pairs):
         if not prev or not curr:
             continue
         a, b = _rm_index(site, prev), _rm_index(site, curr)
+        # [추가 20261023] 요금제명만 바뀐 경우(같은 사업자·망·데이터가 한쪽에서 사라지고 다른 쪽에 생김)는
+        # 신규+삭제가 아니라 가격 변동 1건으로 짝지음
+        new_keys  = [k for k in b if k not in a]
+        gone_keys = [k for k in a if k not in b]
+        for nk in list(new_keys):
+            sig = (nk[1], nk[3], b[nk].get('data'), b[nk].get('voice'))
+            match = next((gk for gk in gone_keys if (gk[1], gk[3], a[gk].get('data'), a[gk].get('voice')) == sig), None)
+            if match:
+                a[nk] = a.pop(match)
+                gone_keys.remove(match)
         for k, p in b.items():
             q = a.get(k)
             prov, data = _disp_provider(_canon_provider(p.get('provider'))), _compact_data(p.get('data', ''))
@@ -1043,7 +1053,10 @@ def _rm_group_lines(groups):
         rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
         rows += [_rm_item_line(it) for it in items[:RM_MAX_ITEMS]]
         if len(items) > RM_MAX_ITEMS:
-            rows.append(f"  외 {len(items) - RM_MAX_ITEMS}건")
+            rest = {}
+            for it in items[RM_MAX_ITEMS:]:
+                rest[it['kind']] = rest.get(it['kind'], 0) + 1
+            rows.append(f"  외 {len(items) - RM_MAX_ITEMS}건 ({'·'.join(f'{label[k]} {rest[k]}' for k in _RM_KIND_ORDER if k in rest)})")
         out[short] = rows
     return out
 
@@ -1093,7 +1106,8 @@ def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
     lines.append("")
 
     # 📈 RM 특이사항 [수정 20261022] 요금제 단위 변동, 사업자별 묶음 (직전 수집 대비, 3사이트 통합, 알뜰폰만)
-    lines.append("📈 RM 특이사항 (직전 대비)")
+    rm_base = {'morning': '전일 08시 대비', 'afternoon': '오늘 08시 대비', 'evening': '오늘 13시 대비'}.get(run_slot, '직전 대비')
+    lines.append(f"📈 RM 특이사항 ({rm_base})")
     if rm_groups is None:
         for short in ('S', 'K', 'L'):
             lines.append(f" {short}망 : 비교 기준 없음")
@@ -2673,11 +2687,17 @@ def main():
         alert_msg = build_provider_alert(provider_changes, moyo_checked_at)
 
         # ── 메시지5: 요금제 특이사항 [수정 20261019] (기존 단독/저렴 요금제 메시지 대체·축약) ──
-        rm_groups = compute_rm_groups({
-            'moyo':    ((prev_moyo_latest or {}).get('plans'), plans),
-            'aldot':   ((prev_aldot_latest or {}).get('plans'), aldot_plans),
-            'mvnohub': ((prev_hub_latest or {}).get('plans'), mvnohub_plans),
-        }) if (prev_moyo_latest or prev_aldot_latest or prev_hub_latest) else None
+        # [수정 20261023] RM 비교 기준 = RS와 같은 회차 규칙 (08시→전일 08시, 13시→당일 08시, 17시→당일 13시)
+        #  해당 회차 기록이 없으면 저장 전에 받아둔 직전 수집으로 대체
+        def _rm_prev(site, fallback):
+            d = db.get_data_by_slot(site, prev_slot, days_ago=prev_days_ago) if source_type == 'auto' else None
+            return (d or fallback or {}).get('plans')
+        rm_pairs = {
+            'moyo':    (_rm_prev('moyo', prev_moyo_latest), plans),
+            'aldot':   (_rm_prev('aldot', prev_aldot_latest), aldot_plans),
+            'mvnohub': (_rm_prev('mvnohub', prev_hub_latest), mvnohub_plans),
+        }
+        rm_groups = compute_rm_groups(rm_pairs) if any(v[0] for v in rm_pairs.values()) else None
         msg5 = build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
                                 aldot_plans, mvnohub_plans, plans, run_slot,
                                 datetime.now(KOREA_TZ).strftime('%m/%d %H:%M'))
