@@ -1027,6 +1027,34 @@ def compute_rm_groups(pairs):
 _RM_KIND_ORDER = {'down': 0, 'up': 1, 'promo': 2, 'new': 3, 'gone': 4}
 
 
+def _data_rank(data):
+    """데이터 용량 정렬 키 (월 환산 GB, 소진 후 속도 Mbps). 매일 N GB는 ×30, 무제한은 최상위.
+    원문("월 11GB + 3Mbps")과 축약("11G+3M") 모두 처리."""
+    t = data or ''
+    if '무제한' in t:
+        return (1e6, 0)
+    gb = 0.0
+    for m in re.finditer(r'(매일\s*)?([\d.]+)\s*(GB?|MB)(?!ps)', t):
+        v = float(m.group(2)) / (1024 if m.group(3) == 'MB' else 1)
+        gb += v * (30 if m.group(1) else 1)
+    sp = 0.0
+    for m in re.finditer(r'([\d.]+)\s*(M|Mbps|Kbps)(?!B)', t):
+        sp = max(sp, float(m.group(1)) / (1000 if m.group(2) == 'Kbps' else 1))
+    return (gb, sp)
+
+
+def _price_num(txt):
+    m = re.match(r'[\d,]+', txt or '')
+    return int(m.group().replace(',', '')) if m else 0
+
+
+def _rm_sort_key(it):
+    """[수정 20261024] 시장 파급력 순 (사용자 결정): 유형(인하→인상→프로모션변경→신규) 안에서
+    변동액 큰 순 → 데이터 용량 큰 순 → 현재 판매가 낮은 순"""
+    gb, sp = _data_rank(it['data'])
+    return (_RM_KIND_ORDER[it['kind']], -it['diff'], -gb, -sp, _price_num(it['after']))
+
+
 def _rm_item_line(it):
     head = f"{it['prov']} {it['data']}"
     if it['kind'] == 'new':
@@ -1041,7 +1069,7 @@ def _rm_group_lines(groups):
     """→ {'S': [요약, 줄...], ...}  가격 인하·인상(변동액 큰 순) → 프로모션 기간 변경 → 신규 (삭제는 요약 건수만)"""
     out = {}
     for net, short in NET_SHORT.items():
-        items = sorted(groups.get(net, []), key=lambda it: (_RM_KIND_ORDER[it['kind']], -it['diff']))
+        items = sorted(groups.get(net, []), key=_rm_sort_key)
         if not items:
             out[short] = ["동일"]
             continue
@@ -1118,11 +1146,11 @@ def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
     only_hub   = _only_source_plans(mvnohub_plans, moyo_plans)
     if only_aldot or only_hub:
         lines.append(f"🆕 단독(모요 미등록) 알닷 {len(only_aldot)}·허브 {len(only_hub)}")
-        shown = [('알닷', p) for p in only_aldot[:3]] + [('허브', p) for p in only_hub[:3]]
+        # [수정 20261024] 개수 제한 없이 전부, 데이터 용량 큰 순 → 판매가 낮은 순 (사용자 결정)
+        shown = [('알닷', p) for p in only_aldot] + [('허브', p) for p in only_hub]
+        shown.sort(key=lambda sp: (-_data_rank(sp[1].get('data', ''))[0], -_data_rank(sp[1].get('data', ''))[1],
+                                   sp[1].get('final_price', 0)))
         lines.extend(_plan_short(src, p) for src, p in shown)
-        rest = max(len(only_aldot) - 3, 0) + max(len(only_hub) - 3, 0)
-        if rest:
-            lines.append(f"  외 {rest}개")
         lines.append("")
 
     cheaper = _cheaper_best_vs_moyo(aldot_plans, moyo_plans, '알닷', network_filter='LGU+') \
