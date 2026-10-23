@@ -223,6 +223,32 @@ class FirebaseHandler:
             print(f"❌ 이전 데이터 조회 실패: {e}")
             return None
 
+    # [추가 20261023] 수집 회차(run_slot) 시간대 - 07:45 모요 / 08:0x 허브처럼 사이트마다 시각이 달라 넓게 잡음
+    _SLOT_HOURS = {'morning': (6, 11), 'afternoon': (12, 15), 'evening': (16, 20)}
+
+    def get_data_by_slot(self, site_name, run_slot, days_ago=0):
+        """특정 날짜 run_slot(morning/afternoon/evening) 시간대의 마지막 auto 수집 (plans 포함) 또는 None"""
+        if not self.db or run_slot not in self._SLOT_HOURS:
+            return None
+        try:
+            h0, h1 = self._SLOT_HOURS[run_slot]
+            d = (datetime.now(KOREA_TZ) - timedelta(days=days_ago)).date()
+            start = KOREA_TZ.localize(datetime(d.year, d.month, d.day, h0, 0, 0))
+            end   = KOREA_TZ.localize(datetime(d.year, d.month, d.day, h1, 59, 59))
+            docs = list(
+                self.db.collection('price_monitoring')
+                .document(site_name).collection('history')
+                .where('source_type', '==', 'auto')
+                .where('checked_at', '>=', start)
+                .where('checked_at', '<=', end)
+                .order_by('checked_at', direction=firestore.Query.DESCENDING)
+                .limit(1).stream()
+            )
+            return self._read_doc(docs[0]) if docs else None
+        except Exception as e:
+            print(f"❌ 회차 데이터 조회 실패 [{site_name}/{run_slot}]: {e}")
+            return None
+
     def get_data_by_hour(self, site_name, target_hour=8, days_ago=0):
         """
         특정 날짜의 target_hour 시간대에 수집된 auto 데이터 반환.
