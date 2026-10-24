@@ -56,7 +56,7 @@ CARRIER_KTOA = {
     '텔링크': 'SK텔링크(재판매)', '유모비': '미디어로그', '조이텔': '조이텔', '프리티': '프리텔레콤',
 }
 # 분석 대상이 아닌 시트 (원본 파일은 GCS에 그대로 있음)
-SKIP_SHEET = re.compile(r'요약|단말|선불|유선|인터넷|와이파이|상조|TV', re.I)
+SKIP_SHEET = re.compile(r'요약|단말|선불|유선|인터넷|와이파이|상조|TV|정규', re.I)   # 정규 = MNO 정책 시트
 
 
 def _carrier_of(text):
