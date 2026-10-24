@@ -223,6 +223,20 @@ class FirebaseHandler:
             print(f"❌ 이전 데이터 조회 실패: {e}")
             return None
 
+    def get_recent_data(self, site_name, n=3, before=None):
+        """[추가 20261024] before(이번 실행 시작 시각) 이전 최근 n회 수집 (plans 포함, 최신순) - RM 신규 판정용"""
+        if not self.db:
+            return []
+        try:
+            q = self.db.collection('price_monitoring').document(site_name).collection('history')
+            if before is not None:
+                q = q.where('checked_at', '<', before)
+            docs = list(q.order_by('checked_at', direction=firestore.Query.DESCENDING).limit(n).stream())
+            return [self._read_doc(d) for d in docs]
+        except Exception as e:
+            print(f"❌ 최근 수집 조회 실패 [{site_name}]: {e}")
+            return []
+
     # [추가 20261023] 수집 회차(run_slot) 시간대 - 07:45 모요 / 08:0x 허브처럼 사이트마다 시각이 달라 넓게 잡음
     _SLOT_HOURS = {'morning': (6, 11), 'afternoon': (12, 15), 'evening': (16, 20)}
 

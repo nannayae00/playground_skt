@@ -977,8 +977,10 @@ def _sale_price_txt(p):
     return f"{fp:,}({m}개월)" if m and bp and bp != fp else f"{fp:,}"
 
 
-def compute_rm_groups(pairs):
+def compute_rm_groups(pairs, recent=None):
     """pairs: {site: (prev_plans, curr_plans)} → {network: [변동 dict...]}
+    recent: {site: [기준 회차 이전 수집 plans, ...]} - 비교 기준에 없던 요금제라도 여기 하나라도 있으면 신규로 안 봄
+      ([추가 20261024] 기준 수집이 스크래핑 실패로 빠졌던 요금제가 '신규'로 잡히던 문제, 사용자 결정: 3회 연속 없을 때만 신규)
     변동 dict: {'kind': 'up'|'down'|'promo'|'new'|'gone', 'prov', 'data', 'before', 'after', 'diff'}
     직전 수집이 없는 사이트는 건너뜀. 같은 변동이 여러 사이트에 잡히면 1건으로."""
     out, seen = {}, set()
@@ -993,6 +995,9 @@ def compute_rm_groups(pairs):
         if not prev or not curr:
             continue
         a, b = _rm_index(site, prev), _rm_index(site, curr)
+        recent_keys = set()
+        for rp in (recent or {}).get(site, []):
+            recent_keys |= set(_rm_index(site, rp))
         # [추가 20261023] 요금제명만 바뀐 경우(같은 사업자·망·데이터가 한쪽에서 사라지고 다른 쪽에 생김)는
         # 신규+삭제가 아니라 가격 변동 1건으로 짝지음
         new_keys  = [k for k in b if k not in a]
@@ -1007,6 +1012,8 @@ def compute_rm_groups(pairs):
             q = a.get(k)
             prov, data = _disp_provider(_canon_provider(p.get('provider'))), _compact_data(p.get('data', ''))
             if q is None:
+                if k in recent_keys:
+                    continue
                 _add(k[3], {'kind': 'new', 'prov': prov, 'data': data, 'before': '', 'after': _sale_price_txt(p), 'diff': 0})
                 continue
             dfp = (p.get('final_price') or 0) - (q.get('final_price') or 0)
@@ -1024,7 +1031,7 @@ def compute_rm_groups(pairs):
     return out
 
 
-_RM_KIND_ORDER = {'down': 0, 'up': 1, 'promo': 2, 'new': 3, 'gone': 4}
+_RM_KIND_ORDER = {'down': 0, 'up': 1, 'new': 2, 'promo': 3, 'gone': 4}   # [수정 20261024] 인하→인상→신규 (사용자 결정)
 
 
 def _data_rank(data):
@@ -1049,7 +1056,7 @@ def _price_num(txt):
 
 
 def _rm_sort_key(it):
-    """[수정 20261024] 시장 파급력 순 (사용자 결정): 유형(인하→인상→프로모션변경→신규) 안에서
+    """[수정 20261024] 시장 파급력 순 (사용자 결정): 유형(인하→인상→신규→프로모션변경) 안에서
     변동액 큰 순 → 데이터 용량 큰 순 → 현재 판매가 낮은 순"""
     gb, sp = _data_rank(it['data'])
     return (_RM_KIND_ORDER[it['kind']], -it['diff'], -gb, -sp, _price_num(it['after']))
@@ -1066,7 +1073,7 @@ def _rm_item_line(it):
 
 
 def _rm_group_lines(groups):
-    """→ {'S': [요약, 줄...], ...}  가격 인하·인상(변동액 큰 순) → 프로모션 기간 변경 → 신규 (삭제는 요약 건수만)"""
+    """→ {'S': [요약, 줄...], ...}  인하 → 인상 → 신규 → 프로모션 기간 변경 (삭제는 요약 건수만)"""
     out = {}
     for net, short in NET_SHORT.items():
         items = sorted(groups.get(net, []), key=_rm_sort_key)
@@ -2712,15 +2719,22 @@ def main():
         # ── 메시지5: 요금제 특이사항 [수정 20261019] (기존 단독/저렴 요금제 메시지 대체·축약) ──
         # [수정 20261023] RM 비교 기준 = RS와 같은 회차 규칙 (08시→전일 08시, 13시→당일 08시, 17시→당일 13시)
         #  해당 회차 기록이 없으면 저장 전에 받아둔 직전 수집으로 대체
+        rm_base_docs = {}
+
         def _rm_prev(site, fallback):
             d = db.get_data_by_slot(site, prev_slot, days_ago=prev_days_ago) if source_type == 'auto' else None
-            return (d or fallback or {}).get('plans')
+            rm_base_docs[site] = d or fallback or {}
+            return rm_base_docs[site].get('plans')
         rm_pairs = {
             'moyo':    (_rm_prev('moyo', prev_moyo_latest), plans),
             'aldot':   (_rm_prev('aldot', prev_aldot_latest), aldot_plans),
             'mvnohub': (_rm_prev('mvnohub', prev_hub_latest), mvnohub_plans),
         }
-        rm_groups = compute_rm_groups(rm_pairs) if any(v[0] for v in rm_pairs.values()) else None
+        # [추가 20261024] 신규 판정: 비교 기준 회차 + 그 직전 2회(총 3회) 모두에 없던 요금제만
+        #  (기준 회차가 스크래핑 실패로 일부 빠졌을 때 오탐 방지. 기준 이후 회차는 안 봄 → 아침 '전일 08시 대비'에 하루치 신규가 다 나옴)
+        rm_recent = {site: [d.get('plans') or [] for d in db.get_recent_data(site, 2, before=rm_base_docs[site]['checked_at'])]
+                     for site, (pv, cur) in rm_pairs.items() if pv and cur and rm_base_docs[site].get('checked_at')}
+        rm_groups = compute_rm_groups(rm_pairs, rm_recent) if any(v[0] for v in rm_pairs.values()) else None
         msg5 = build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
                                 aldot_plans, mvnohub_plans, plans, run_slot,
                                 datetime.now(KOREA_TZ).strftime('%m/%d %H:%M'))
