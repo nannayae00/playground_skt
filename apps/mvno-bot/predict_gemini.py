@@ -80,19 +80,14 @@ def _get_db():
 
 
 def get_tout_goal(year: int, month: int) -> int:
-    """월별 T Out 목표 조회 (Firestore 우선, 환경변수 폴백)"""
-    ym = f'{year:04d}-{month:02d}'
-    try:
-        db = _get_db()
-        doc = (db.collection('ktoa_config').document('tout_goal')
-               .collection('monthly').document(ym).get())
-        if doc.exists:
-            goal = doc.to_dict().get('goal', 0)
-            if goal > 0:
-                return int(goal)
-    except Exception as e:
-        log.warning(f"T Out 목표 조회 실패: {e}")
-    return int(os.environ.get('KTOA_TOUT_GOAL', '42000'))
+    """월별 T Out 목표 조회. [수정 20261015] bw_engine 단일 소스로 위임
+    (forecast_engine/ktoa_telegram/predict_gemini 3곳 중복 구현 제거).
+    이 파일 버전은 Firestore 컬렉션명이 'tout_goal'로 틀려 있었음(다른
+    두 곳은 'target_goal') - 문서를 못 찾아 항상 환경변수 폴백(42000,
+    옛 목표치)으로 떨어지면서, 이 엔진을 타는 일마감 메시지만 조용히
+    틀린 월목표로 계산되고 있던 버그였음. bw_engine.get_tout_goal() 참고"""
+    from bw_engine import get_tout_goal as _gtg
+    return _gtg(year, month)
 
 
 def get_elapsed_stats(year: int, month: int, today_day: int) -> dict:
@@ -122,6 +117,7 @@ def get_elapsed_stats(year: int, month: int, today_day: int) -> dict:
     cum_mvno = 0
     elapsed_bw = 0.0
     history = []  # (skt, bw) 확정 실적 이력
+    today_confirmed = False  # [추가 20261015] 오늘(today_day)이 이 루프에 포함됐는지
 
     for day in range(1, today_day + 1):
         ds = f"{year:04d}-{month:02d}-{day:02d}"
@@ -138,6 +134,8 @@ def get_elapsed_stats(year: int, month: int, today_day: int) -> dict:
         cum_skt  += int(skt)
         cum_mvno += int(mvno)
         history.append((int(skt), bw))
+        if day == today_day:
+            today_confirmed = True
 
     # ── 단순 bw가중 평균
     daily_avg_skt  = round(cum_skt  / elapsed_bw, 1) if elapsed_bw > 0 else 0
@@ -165,6 +163,7 @@ def get_elapsed_stats(year: int, month: int, today_day: int) -> dict:
         'daily_avg_skt':       daily_avg_skt,        # 전체 단순 bw가중 평균
         'daily_avg_skt_recent': daily_avg_skt_recent, # 최근 5일 2배 가중 평균
         'daily_avg_mvno':      daily_avg_mvno,
+        'today_confirmed':     today_confirmed,
     }
 
 
@@ -711,12 +710,15 @@ def get_forecast(date_str: str, current_skt: int, current_hour: int,
     pattern   = get_hourly_pattern(date_str, current_hour, bw, current_minute)
 
     daily_avg   = elapsed['daily_avg_skt']
-    # 오늘 목표 = 잔여일평균 × 오늘 bw (실적기반 daily_avg 아닌 잔여 기준)
-    _remaining_cum = max(0, goal - elapsed['cum_skt_out'])
-    _remaining_bw_incl = fc['remaining_bw'] + bw  # 오늘 포함 잔여
-    remaining_avg = int(_remaining_cum / _remaining_bw_incl) if _remaining_bw_incl > 0 else 0
-    today_goal  = int(remaining_avg * bw) if bw > 0 else 0
-    pct_of_goal = round(current_skt / today_goal * 100) if today_goal > 0 else 0
+    # [수정 20261015] remaining_avg/today_goal: bw_engine 공용 함수로 통일
+    # (forecast_engine/predict_gemini/ktoa_telegram 폴백 2곳 - 총 4곳 중복
+    # 구현 제거, bw_engine.calc_remaining_avg_today_goal() 참고)
+    from bw_engine import calc_remaining_avg_today_goal as _crag
+    _rag = _crag(year, month, day, elapsed['cum_skt_out'], goal,
+                 elapsed['today_confirmed'], bw_today=bw, today_actual=current_skt)
+    remaining_avg = _rag['remaining_avg']
+    today_goal    = _rag['today_goal']
+    pct_of_goal   = _rag['pct_of_goal']
 
     # 일마감 수식 예측
     if pattern.get('available') and pattern['rate_at_hour'] > 0:
