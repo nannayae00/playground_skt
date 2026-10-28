@@ -167,7 +167,7 @@ REPORT_JOB = "projects/mvno-484509/locations/asia-northeast3/jobs/mvno-brand-rep
 def trigger_report_job() -> None:
     """
     신규일자 확인 직후 mvno-brand-report-job 실행 (v1.5) - 사업자별 실적 → 선불 실적 →
-    최신일자 업데이트 메시지. 실패하면 알림만 (07:20 스케줄이 보완).
+    최신일자 업데이트 메시지. 실패하면 알림만 (07:30 스케줄이 보완).
     """
     try:
         import google.auth
@@ -178,7 +178,7 @@ def trigger_report_job() -> None:
         log.info(f"리포트 job 실행 요청 완료: {resp.json().get('name')}")
     except Exception as e:
         log.error(f"리포트 job 실행 실패: {e}")
-        tg_send_personal(f"⚠️ 사업자별·선불 실적 job 실행 실패 ({e}) - 07:20 스케줄로 진행")
+        tg_send_personal(f"⚠️ 사업자별·선불 실적 job 실행 실패 ({e}) - 07:30 스케줄로 진행")
 
 
 def main():
