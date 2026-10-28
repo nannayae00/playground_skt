@@ -1,5 +1,9 @@
 """
 [수정 이력]
+- v1.8 (2026-10-28): 실행 시점을 07:20 → 00:31 신규일자 확인 직후로 변경(사용자 요청).
+  check_new_data.py가 신규일자를 확인하면 이 job을 바로 실행 → 사업자별 실적 → 선불 실적 →
+  "✅ 최신일자 업데이트" 메시지. 대상일별 완료 플래그(ktoa_daily_report_flags)로 07:20
+  스케줄은 못 끝낸 부분만 보완(선불 데이터가 00시대에 아직 없을 때 등).
 - v1.7 (2026-10-16): 매월 2일 아침(대상일=1일) 선불 전월 한 달 재수집 추가
   (_recollect_prev_month) - 7일보다 오래된 KTOA 정정값 반영.
 - v1.6 (2026-10-16): 일일/주간 분기 뒤에 선불 리포트(run_prepaid) 추가 -
@@ -341,12 +345,44 @@ def main():
 
     print("=== MVNO 사업자별 리포트 Job 시작 ===", flush=True)
 
-    if not run_scraper():
-        sys.exit(1)  # Cloud Run Job이 실패로 기록되도록 non-zero exit
-
     target_date = get_yesterday_kst()
     target_date_obj = date.fromisoformat(target_date)
 
+    # ── v1.8: 00:31 신규일자 확인 직후(check_new_data.py가 이 job을 실행) 돌고, 07:20 스케줄은
+    #    보완용. 대상일별로 "사업자별 실적"/"선불 실적" 완료 플래그를 두고 이미 끝난 부분은 건너뜀 ──
+    flags = _get_report_flags(target_date)
+    if flags.get("brand_done") and flags.get("prepaid_done"):
+        print(f"[스킵] 대상일({target_date}) 사업자별·선불 실적 모두 발송 완료", flush=True)
+        return
+
+    brand_status = "완료(이전 실행)" if flags.get("brand_done") else None
+    if brand_status is None:
+        if not run_scraper():
+            from ktoa_mvno_scraper import tg_send_personal
+            tg_send_personal(f"⚠️ 사업자별 실적 수집 실패 ({target_date}) - 07:20 재시도")
+            sys.exit(1)  # Cloud Run Job이 실패로 기록되도록 non-zero exit
+        run_brand_reports(target_date, target_date_obj)
+        _set_report_flag(target_date, "brand_done")
+        brand_status = "완료"
+
+    if flags.get("prepaid_done"):
+        prepaid_status = "완료(이전 실행)"
+    elif run_prepaid(target_date_obj):
+        _set_report_flag(target_date, "prepaid_done")
+        prepaid_status = "완료"
+    else:
+        retry = datetime.now(KST).hour < 7
+        prepaid_status = "미반영" + (" (07:20 재시도)" if retry else "")
+
+    from ktoa_mvno_scraper import tg_send_personal
+    tg_send_personal(f"✅ 최신일자 업데이트 ({target_date})\n"
+                     f"· 사업자별 MNP 실적 : {brand_status}\n"
+                     f"· 선불 실적 : {prepaid_status}")
+    print("=== 전체 완료 ===", flush=True)
+
+
+def run_brand_reports(target_date: str, target_date_obj: date) -> None:
+    """사업자별 MNP 리포트: 일일(또는 주간요약) + 월마감. 실패 시 exit(1)."""
     # ── 트리거 판단: 어제가 일요일이거나 실적 합계 0이면 주간요약, 아니면 일일 리포트 ──
     is_sunday = target_date_obj.weekday() == 6
     total_perf = None
@@ -364,9 +400,6 @@ def main():
         if not run_report(target_date):
             sys.exit(1)
 
-    # ── 선불 리포트: MNP 리포트 뒤에 이어서 발송. 실패해도 job은 성공 처리 ──
-    run_prepaid(target_date_obj)
-
     # ── 월마감 판단: 위 분기와 별개로 항상 체크. 매월 1일엔 의도적으로 겹쳐서 발송 ──
     try:
         from mvno_period_utils import is_month_end
@@ -375,7 +408,29 @@ def main():
     except Exception as e:
         print(f"월마감 판단/처리 실패 (무시하고 계속): {e}", flush=True)
 
-    print("=== 전체 완료 ===", flush=True)
+
+REPORT_FLAG_COLLECTION = "ktoa_daily_report_flags"   # {대상일}: {brand_done, prepaid_done}
+
+
+def _get_report_flags(target_date: str) -> dict:
+    try:
+        from google.cloud import firestore
+        db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
+        doc = db.collection(REPORT_FLAG_COLLECTION).document(target_date).get()
+        return doc.to_dict() or {}
+    except Exception as e:
+        print(f"완료 플래그 조회 실패 (처음부터 진행): {e}", flush=True)
+        return {}
+
+
+def _set_report_flag(target_date: str, key: str) -> None:
+    try:
+        from google.cloud import firestore
+        db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
+        db.collection(REPORT_FLAG_COLLECTION).document(target_date).set(
+            {key: True, f"{key}_at": datetime.now(KST).isoformat()}, merge=True)
+    except Exception as e:
+        print(f"완료 플래그 저장 실패 ({key}): {e}", flush=True)
 
 
 if __name__ == "__main__":

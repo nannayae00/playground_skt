@@ -39,6 +39,9 @@
   안 되는 것을 보고 지적). main()에서 today_str -> target_str(어제)로
   전면 변경, 플래그 저장/조회도 target_str 기준으로 통일.
 
+- v1.5 (2026-10-28): 신규일자 확인 시 mvno-brand-report-job을 바로 실행(trigger_report_job) -
+  사업자별·선불 실적을 07:20 대신 00시대에 발송 (사용자 요청).
+
 사용법:
     python3 check_new_data.py
 (인자 없음 - 항상 "어제(KST) 날짜가 데이터에 올라왔는지"를 확인)
@@ -158,6 +161,26 @@ def check_once() -> tuple[bool, str | None]:
             driver.quit()
 
 
+REPORT_JOB = "projects/mvno-484509/locations/asia-northeast3/jobs/mvno-brand-report-job"
+
+
+def trigger_report_job() -> None:
+    """
+    신규일자 확인 직후 mvno-brand-report-job 실행 (v1.5) - 사업자별 실적 → 선불 실적 →
+    최신일자 업데이트 메시지. 실패하면 알림만 (07:20 스케줄이 보완).
+    """
+    try:
+        import google.auth
+        from google.auth.transport.requests import AuthorizedSession
+        creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        resp = AuthorizedSession(creds).post(f"https://run.googleapis.com/v2/{REPORT_JOB}:run", json={}, timeout=30)
+        resp.raise_for_status()
+        log.info(f"리포트 job 실행 요청 완료: {resp.json().get('name')}")
+    except Exception as e:
+        log.error(f"리포트 job 실행 실패: {e}")
+        tg_send_personal(f"⚠️ 사업자별·선불 실적 job 실행 실패 ({e}) - 07:20 스케줄로 진행")
+
+
 def main():
     now_kst = datetime.now(KST)
     # 확인 대상은 "오늘"이 아니라 "어제" - KTOA 사이트 반영이 하루 지연되는
@@ -197,6 +220,7 @@ def main():
         log.info(f"신규일자 확인됨: {latest_norm}")
         tg_send_personal(f"{hour_label} 확인 : 신규일자 확인 ({latest_norm})")
         mark_confirmed(db, target_str, latest_norm)
+        trigger_report_job()
     else:
         log.info(f"아직 확인 안됨 (대상 {target_norm}, 최신 {latest_norm})")
         tg_send_personal(f"{hour_label} 확인 : 최신업데이트 미진행 (최신 {latest_norm})")
