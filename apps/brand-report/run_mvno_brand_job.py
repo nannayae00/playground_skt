@@ -1,5 +1,7 @@
 """
 [수정 이력]
+- v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
+  망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
   확인하고 "🔎 07:30 재수집 확인" 메시지 1건(run_morning_verify). 리포트 재발송 없음 (사용자 요청).
 - v1.8 (2026-10-28): 실행 시점을 07:20 → 00:31 신규일자 확인 직후로 변경(사용자 요청).
@@ -416,12 +418,14 @@ def _snapshot(target_date: str) -> dict:
     """대상일 값 스냅샷: 사업자별 MNP(IN/OUT)와 선불(망 합계·사업자×망의 신규/해지/IN/OUT)."""
     from google.cloud import firestore
     db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
-    mnp, prepaid = {}, {}
+    mnp, prepaid, mnp_net = {}, {}, {}
     for coll, field, idx in (("ktoa_mvno_brand_in", "total_in", 0), ("ktoa_mvno_brand_out", "total_out", 1)):
         for d in db.collection(coll).where("date", "==", target_date).stream():
             x = d.to_dict()
             v = mnp.setdefault(f"{x.get('brand')}", [0, 0])
             v[idx] = x.get(field) or 0
+            if x.get("network"):
+                mnp_net[x.get("brand")] = x["network"]
     doc = db.collection("ktoa_prepaid_summary").document(target_date).get()
     if doc.exists:
         s = doc.to_dict()
@@ -432,7 +436,26 @@ def _snapshot(target_date: str) -> dict:
             for n in ("S", "K", "L"):
                 if n in b:
                     prepaid[f"{b['short']}({n})"] = [b[n].get(k, 0) for k in keys]
-    return {"mnp": {k: tuple(v) for k, v in mnp.items()}, "prepaid": {k: tuple(v) for k, v in prepaid.items()}}
+    return {"mnp": {k: tuple(v) for k, v in mnp.items()}, "prepaid": {k: tuple(v) for k, v in prepaid.items()},
+            "mnp_net": mnp_net}
+
+
+def _active_operator_line(snap: dict) -> str:
+    """MNO(SKT/KT/LGU+) 제외, 당일 IN>0인 알뜰폰 사업자 수를 망별로 (v1.10)."""
+    from ktoa_mvno_report import is_mno_brand, clean_brand_name
+    from ktoa_prepaid_summary import ALIASES
+    cnt = {"SKT": 0, "KT": 0, "LGU": 0}
+    merged = set()   # 망 통합: 망 표시를 뗀 이름 기준 (프리텔레콤SKT/KT + 프리티LG = 1개)
+    for brand, (tin, _) in snap["mnp"].items():
+        net = snap["mnp_net"].get(brand)
+        if tin > 0 and net in cnt and not is_mno_brand(brand):
+            cnt[net] += 1
+            name, prev = brand, None
+            while name != prev:
+                prev, name = name, clean_brand_name(name)
+            merged.add(ALIASES.get(name, name))
+    return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
+            f"  실사업자(망 통합) : {len(merged)}개")
 
 
 def _diff_lines(before: dict, after: dict, cols: tuple, limit: int = 10) -> list[str]:
@@ -456,9 +479,10 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
 
     lines = [f"🔎 07:30 재수집 확인 ({target_date})"]
     if run_scraper():
-        after_mnp = _snapshot(target_date)["mnp"]
-        d, n = _diff_lines(before["mnp"], after_mnp, ("IN", "OUT"))
-        lines.append(f"· 사업자별 MNP : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {len(after_mnp)}개)")
+        after = _snapshot(target_date)
+        d, n = _diff_lines(before["mnp"], after["mnp"], ("IN", "OUT"))
+        lines.append(f"· 사업자별 MNP : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {len(after['mnp'])}개)")
+        lines.append(_active_operator_line(after))
         lines += d
     else:
         lines.append("· 사업자별 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
