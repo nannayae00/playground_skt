@@ -920,11 +920,25 @@ def build_sejong_correction_message(daily: dict, migration: dict,
     def _fmt(v):
         return f'{v:,}' if v is not None else '미확인'
 
+    # [수정 20261029] 월누적 한 줄 대신 월별 소계 + 전체 누적 표시
+    # (실무자 엑셀 표 "8월 807 / 9월 7,512 / 10월 3,079 / 누적 11,398" 형식과 동일하게)
+    from ktoa_firestore import get_sejong_migration_monthly_totals as _get_mig_monthly
+    _mig_monthly = _get_mig_monthly(date_str)
+    _mig_months  = _mig_monthly.get('months', [])
+    _mig_total   = _mig_monthly.get('total', {'SM': None, 'KM': None, 'LM': None})
+
+    def _mig_line(net_key):
+        if not _mig_months:
+            return _fmt(mig_cum.get(net_key))  # 과거 데이터 없으면 이번 달 값만
+        parts = [f'{m}월 {_fmt(cum.get(net_key))}' for m, cum in _mig_months]
+        parts.append(f'누적 {_fmt(_mig_total.get(net_key))}')
+        return ' / '.join(parts)
+
     migration_section = '\n'.join([
-        f'◎ 세종 → 고고, {dt.month}월누적(+전일증감)',
-        f' S망 : {_fmt(mig_cum.get("SM"))}건(+{_fmt(mig_daily.get("SM"))})',
-        f' K망 : {_fmt(mig_cum.get("KM"))}(+{_fmt(mig_daily.get("KM"))})',
-        f' L망 : {_fmt(mig_cum.get("LM"))}(+{_fmt(mig_daily.get("LM"))})',
+        f'◎ 세종 → 고고 이관 현황 (~{dt.month}/{dt.day})',
+        f' S망 : {_mig_line("SM")} (+{_fmt(mig_daily.get("SM"))})',
+        f' K망 : {_mig_line("KM")} (+{_fmt(mig_daily.get("KM"))})',
+        f' L망 : {_mig_line("LM")} (+{_fmt(mig_daily.get("LM"))})',
     ])
 
     lines = [
