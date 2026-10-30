@@ -103,7 +103,9 @@ def parse_images_with_gemini(image_urls: list) -> tuple:
             resp = client.models.generate_content(
                 model=model_name,
                 contents=[types.Part.from_bytes(data=img.content, mime_type=mime), GEMINI_PROMPT],
-                config=types.GenerateContentConfig(response_mime_type="application/json"),
+                # [수정 20261030] 생각(thinking) 없이 처리 (비용 절감)
+                config=types.GenerateContentConfig(response_mime_type="application/json",
+                                                   thinking_config=types.ThinkingConfig(thinking_budget=0)),
             )
             items = json.loads((resp.text or "[]").strip())
         except Exception as e:
