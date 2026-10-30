@@ -126,6 +126,8 @@ class FirebaseHandler:
                 'source_type':     source_type,
                 'screenshot_path': screenshot_path,
                 'plan_count':      len(plans),
+                # [추가 20261019] 사업자별 요금제 수 - 다음 수집 때 사업자 일괄 이탈 감지용 (문서 1건만 읽으면 됨)
+                'provider_counts': self._provider_counts(plans),
             })
             batch = self.db.batch()
             count = 0
@@ -153,6 +155,37 @@ class FirebaseHandler:
             'plan_count':  data.get('plan_count'),
             'plans':       plans,
         }
+
+    @staticmethod
+    def _provider_counts(plans) -> dict:
+        counts = {}
+        for p in plans or []:
+            prov = (p.get('provider') or '').strip() or '(미상)'
+            counts[prov] = counts.get(prov, 0) + 1
+        return counts
+
+    def get_latest_provider_counts(self, site_name):
+        """[추가 20261019] 가장 최근 수집의 사업자별 요금제 수 {provider: n}.
+        예전 문서라 provider_counts가 없으면 그 문서의 요금제를 읽어 계산(최초 1회만 발생)."""
+        if not self.db:
+            return None
+        try:
+            docs = list(
+                self.db.collection('price_monitoring')
+                .document(site_name).collection('history')
+                .order_by('checked_at', direction=firestore.Query.DESCENDING)
+                .limit(1).stream()
+            )
+            if not docs:
+                return None
+            d = docs[0].to_dict() or {}
+            if d.get('provider_counts'):
+                return d['provider_counts']
+            data = self._read_doc(docs[0])
+            return self._provider_counts((data or {}).get('plans', []))
+        except Exception as e:
+            print(f"❌ 사업자별 요금제 수 조회 실패 [{site_name}]: {e}")
+            return None
 
     def get_latest_data(self, site_name):
         """가장 최근 수집 데이터 (타입 무관)"""
@@ -188,6 +221,46 @@ class FirebaseHandler:
             return self._read_doc(docs[1]) if len(docs) >= 2 else None
         except Exception as e:
             print(f"❌ 이전 데이터 조회 실패: {e}")
+            return None
+
+    def get_recent_data(self, site_name, n=3, before=None):
+        """[추가 20261024] before(이번 실행 시작 시각) 이전 최근 n회 수집 (plans 포함, 최신순) - RM 신규 판정용"""
+        if not self.db:
+            return []
+        try:
+            q = self.db.collection('price_monitoring').document(site_name).collection('history')
+            if before is not None:
+                q = q.where('checked_at', '<', before)
+            docs = list(q.order_by('checked_at', direction=firestore.Query.DESCENDING).limit(n).stream())
+            return [self._read_doc(d) for d in docs]
+        except Exception as e:
+            print(f"❌ 최근 수집 조회 실패 [{site_name}]: {e}")
+            return []
+
+    # [추가 20261023] 수집 회차(run_slot) 시간대 - 07:45 모요 / 08:0x 허브처럼 사이트마다 시각이 달라 넓게 잡음
+    _SLOT_HOURS = {'morning': (6, 11), 'afternoon': (12, 15), 'evening': (16, 20)}
+
+    def get_data_by_slot(self, site_name, run_slot, days_ago=0):
+        """특정 날짜 run_slot(morning/afternoon/evening) 시간대의 마지막 auto 수집 (plans 포함) 또는 None"""
+        if not self.db or run_slot not in self._SLOT_HOURS:
+            return None
+        try:
+            h0, h1 = self._SLOT_HOURS[run_slot]
+            d = (datetime.now(KOREA_TZ) - timedelta(days=days_ago)).date()
+            start = KOREA_TZ.localize(datetime(d.year, d.month, d.day, h0, 0, 0))
+            end   = KOREA_TZ.localize(datetime(d.year, d.month, d.day, h1, 59, 59))
+            docs = list(
+                self.db.collection('price_monitoring')
+                .document(site_name).collection('history')
+                .where('source_type', '==', 'auto')
+                .where('checked_at', '>=', start)
+                .where('checked_at', '<=', end)
+                .order_by('checked_at', direction=firestore.Query.DESCENDING)
+                .limit(1).stream()
+            )
+            return self._read_doc(docs[0]) if docs else None
+        except Exception as e:
+            print(f"❌ 회차 데이터 조회 실패 [{site_name}/{run_slot}]: {e}")
             return None
 
     def get_data_by_hour(self, site_name, target_hour=8, days_ago=0):
@@ -299,6 +372,7 @@ class FirebaseHandler:
         'general': 'moyo_rs_snapshot',
         'sub':     'sub_rs_snapshot',
         'mno':     'mno_rs_snapshot',
+        'general_rm': 'general_rm_snapshot',   # [추가 20261019] 일반사업자 RM 최저가 (요금제 특이사항 RM 비교용)
     }
 
     # ═══════════════════════════════════════════════════════════════════════

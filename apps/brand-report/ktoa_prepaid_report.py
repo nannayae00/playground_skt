@@ -3,6 +3,12 @@ ktoa_prepaid_report.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.5 | 2026-10-29 | 대상일 선불 실적이 0(일요일·공휴일)이면 전일 메시지 3개는 빼고 월누적 3개만 발송
+v1.4 | 2026-10-20 | 010·MNP 월누적 실적에도 전월 동기간 비교 추가 (사용자 요청): 망·사업자 줄 아래
+                     "└ 전월 IN / OUT / 순증", 신규(IN) 증감률은 ±5% 이상만 표시
+v1.3 | 2026-10-20 | 월누적 M/S를 "전월 동기간 → 당월" 비교 형식으로 변경 (사용자 요청):
+                     사업자별 총계 건수 증감·증감률, 망별 건수(M/S) 전월 → 당월.
+                     M/S 변화(%p)는 ±5%p 이상일 때만 표시 (한 줄이 길어지지 않게)
 v1.2 | 2026-10-16 | 메시지 구성 변경 (사용자 요청): 010은 일 실적 / 일 M/S / 월누적 실적 / 월누적 M/S
                      4개, MNP는 실적과 M/S를 합쳐 일 / 월누적 2개 → 총 6개. 월누적 M/S는 전월 동기간 대비.
                      M/S 기준 설명 문구 축약
@@ -90,20 +96,37 @@ def sum_summaries(summaries: list[dict], target: date) -> dict:
     return {"date": target.isoformat(), "networks": nets, "brands": brands}
 
 
-def build_list_lines(summary: dict, kind: str, floor: int = LIST_FLOOR) -> list[str]:
-    """망별 헤더(합계) + 해당 망에서 IN 또는 OUT이 floor 이상인 사업자 목록."""
+def build_list_lines(summary: dict, kind: str, floor: int = LIST_FLOOR, prev: dict | None = None) -> list[str]:
+    """
+    망별 헤더(합계) + 해당 망에서 IN 또는 OUT이 floor 이상인 사업자 목록.
+    prev(전월 동기간 합계)를 주면 각 줄 아래에 "└ 전월 IN / OUT / 순증 (IN 증감률)"을 붙임 (v1.4, 월누적용).
+    IN 증감률은 ±5% 이상일 때만 표시.
+    """
     k = KINDS[kind]
+
+    def prev_line(cur_m: dict, prev_m: dict | None, indent: str) -> list[str]:
+        if prev is None:
+            return []
+        prev_m = prev_m or {}
+        line = f"{indent}└ 전월 {_triple(prev_m, k, ' / ')}"
+        p_in, c_in = prev_m.get(k["in"], 0), cur_m.get(k["in"], 0)
+        if p_in and abs(c_in - p_in) / p_in * 100 >= MS_DIFF_SHOW:
+            line += f" ({'신규' if kind == '010' else 'IN'} {_signed((c_in - p_in) / p_in * 100)}%)"
+        return [line]
+
     lines = [f"[ {k['cols']} ]"]
     for net, net_key, label in NETS:
         total = summary["networks"].get(net_key, {})
         lines.append(f"\n◎ {label} ({_triple(total, k, '/')})")
-        rows = [(b["short"], b[net]) for b in summary["brands"].values()
+        lines += prev_line(total, prev["networks"].get(net_key) if prev else None, "  ")
+        rows = [(name, b["short"], b[net]) for name, b in summary["brands"].items()
                 if net in b and (b[net].get(k["in"], 0) >= floor or b[net].get(k["out"], 0) >= floor)]
-        rows.sort(key=lambda r: (-r[1][k["in"]], -r[1][k["out"]]))
+        rows.sort(key=lambda r: (-r[2][k["in"]], -r[2][k["out"]]))
         if not rows:
             lines.append(f"  ({floor:,}건 이상 사업자 없음)")
-        for i, (name, m) in enumerate(rows, 1):
-            lines.append(f"{i}) {name} : {_triple(m, k, ' / ')}")
+        for i, (name, short, m) in enumerate(rows, 1):
+            lines.append(f"{i}) {short} : {_triple(m, k, ' / ')}")
+            lines += prev_line(m, prev["brands"].get(name, {}).get(net) if prev else None, "   ")
     return lines
 
 
@@ -136,6 +159,47 @@ def build_ms_lines(today: dict, compare: list[dict], kind: str, min_s: int = MS_
             pct = v / t_sum * 100 if t_sum else 0.0
             diff = _signed(pct - comp_v[n] / c_sum * 100, ".1f", "%p") if c_sum else "비교불가"
             lines.append(f"  {n}: {v:,}건 ({pct:.0f}%) : {diff}")
+    return lines
+
+
+MS_DIFF_SHOW = 5.0   # 월누적 M/S 비교에서 %p를 표시하는 최소 변화폭
+
+
+def build_ms_compare_lines(cur: dict, prev: dict, kind: str, min_s: int) -> list[str]:
+    """
+    월누적 M/S 비교 본문 (v1.3): 전월 동기간 → 당월.
+    대상은 build_ms_lines와 같음 (당월 S망 min_s건 이상 + S망 포함 2개 망 이상).
+    """
+    field = KINDS[kind]["in"]
+    rows = []
+    for name, b in cur.items():
+        if b.get("S", {}).get(field, 0) < min_s:
+            continue
+        p = prev.get(name, {})
+        nets = [n for n, _, _ in NETS if b.get(n, {}).get(field, 0) or p.get(n, {}).get(field, 0)]
+        if len(nets) < 2 or "S" not in nets:
+            continue
+        rows.append((b["short"], {n: p.get(n, {}).get(field, 0) for n in nets},
+                     {n: b.get(n, {}).get(field, 0) for n in nets}))
+
+    rows.sort(key=lambda r: -sum(r[2].values()))
+    lines = []
+    if not rows:
+        lines.append(f"\n(대상 사업자 없음 - S망 {min_s:,}건 이상 + 2개 망 이상)")
+    for name, pv, cv in rows:
+        p_sum, c_sum = sum(pv.values()), sum(cv.values())
+        if p_sum:
+            chg = f"{_signed(c_sum - p_sum)}건, {_signed((c_sum - p_sum) / p_sum * 100)}%"
+        else:
+            chg = "전월 없음"
+        lines.append(f"\n◎ {name} : 총 {p_sum:,}건 → {c_sum:,}건 ({chg})")
+        for n in pv:
+            pp = pv[n] / p_sum * 100 if p_sum else 0.0
+            cp = cv[n] / c_sum * 100 if c_sum else 0.0
+            line = f"  {n}: {pv[n]:,}건 ({pp:.0f}%) → {cv[n]:,}건 ({cp:.0f}%)"
+            if p_sum and abs(cp - pp) >= MS_DIFF_SHOW:
+                line += f" : {_signed(cp - pp, '.1f', '%p')}"
+            lines.append(line)
     return lines
 
 
@@ -174,25 +238,31 @@ def build_prepaid_reports(target: date, db=None) -> list[str]:
     prev = sum_summaries(load_range(db, ps, pe), pe)
     period = f"{target.replace(day=1):%m/%d}~{target:%m/%d}, {n_days}일"
     note_day = "(M/S 기준 최근 7일 평균 대비 %p 차이)"
-    note_mtd = f"(M/S 기준 전월 동기간 {ps:%m/%d}~{pe:%m/%d} 대비 %p 차이)"
+    note_mtd = f"(전월 동기간 {ps:%m/%d}~{pe:%m/%d} → 당월, M/S 변화는 ±{MS_DIFF_SHOW:.0f}%p 이상만 표시)"
     mtd_floor, mtd_min_s = LIST_FLOOR * n_days, MS_MIN_S * n_days
 
     def msg(*parts):
         return "\n".join(x for p in parts for x in ([p] if isinstance(p, str) else p))
 
-    return [
+    msgs = [
         msg(f"📊 선불 010 주요 사업자별 실적 ({d})", build_list_lines(day, "010")),
         msg(f"📊 선불 010 사업자/망별 M/S ({d})", note_day, build_ms_lines(day["brands"], recent, "010")),
         msg(f"📊 선불 010 월누적 사업자별 실적 ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
-            build_list_lines(mtd, "010", mtd_floor)),
+            build_list_lines(mtd, "010", mtd_floor, prev)),
         msg(f"📊 선불 010 월누적 망별 M/S ({period})", note_mtd,
-            build_ms_lines(mtd["brands"], [prev["brands"]], "010", mtd_min_s)),
+            build_ms_compare_lines(mtd["brands"], prev["brands"], "010", mtd_min_s)),
         msg(f"📊 선불 MNP 전일 ({d})", build_list_lines(day, "MNP"),
             "\n[ 사업자/망별 M/S ]", note_day, build_ms_lines(day["brands"], recent, "MNP")),
         msg(f"📊 선불 MNP 월누적 ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
-            build_list_lines(mtd, "MNP", mtd_floor),
-            "\n[ 사업자/망별 M/S ]", note_mtd, build_ms_lines(mtd["brands"], [prev["brands"]], "MNP", mtd_min_s)),
+            build_list_lines(mtd, "MNP", mtd_floor, prev),
+            "\n[ 사업자/망별 M/S ]", note_mtd, build_ms_compare_lines(mtd["brands"], prev["brands"], "MNP", mtd_min_s)),
     ]
+    # v1.5: 일요일·공휴일은 KTOA 선불 실적이 0 (다음 영업일에 합산) → 전일 메시지 3개는 빼고 월누적만
+    if not any(day["networks"].get("MVNO", {}).values()):
+        log.info(f"[{d}] 선불 실적 0건 (일요일·공휴일) - 전일 메시지 생략, 월누적만 발송")
+        msgs = [msgs[2], msgs[3], msgs[5]]
+        msgs[0] = msgs[0].replace("\n", f"\n({target:%m/%d} 선불 실적 0건 - KTOA는 일요일·공휴일분을 다음 영업일에 합산, 전일 메시지 생략)\n", 1)
+    return msgs
 
 
 def save_context(db, target: date, messages: list[str]) -> None:
