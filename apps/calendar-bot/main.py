@@ -47,6 +47,8 @@ v3.2 | 2026-10-20 | 사진 캡션을 버리던 문제 - "11/12 고양시 대회"
      | 첫 장에만 붙어서 오므로 media_group_id로 공유
 v3.3 | 2026-10-21 | 여러 날에 걸친 시간 일정 표시를 "11-03 (화) 15:30 ~ 11-05 (목) 07:25"로
      | 변경 (예전 표시는 매일 15:30~07:25처럼 보였음, 캘린더 등록은 원래 정상)
+v3.4 | 2026-10-30 | 텔레그램 메시지 전송 중 Connection reset이 나면 일정은 다 등록됐는데도
+     | "캘린더 등록 실패"로 안내되던 문제 - send_message 재시도 + 예외 전파 안 함
 """
 
 import os
@@ -93,12 +95,23 @@ def esc(text) -> str:
 
 
 def send_message(chat_id: int, text: str, reply_markup: dict = None):
+    """[v3.4] 연결 끊김(Connection reset)은 최대 3번 재시도하고, 그래도 실패하면
+    로그만 남김. 예전엔 예외가 호출한 쪽으로 올라가서, 캘린더 등록은 다 됐는데
+    결과 메시지 전송이 끊기면 "캘린더 등록 실패"로 잘못 안내됐음."""
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    resp = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload)
-    if not resp.ok:
-        logger.error(f"sendMessage 실패 ({resp.status_code}): {resp.text[:300]} | text={text[:200]!r}")
+    for attempt in range(3):
+        try:
+            resp = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=30)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"sendMessage 연결 오류 (시도 {attempt + 1}/3): {e}")
+            time.sleep(2 ** attempt)
+            continue
+        if not resp.ok:
+            logger.error(f"sendMessage 실패 ({resp.status_code}): {resp.text[:300]} | text={text[:200]!r}")
+        return
+    logger.error(f"sendMessage 최종 실패 | text={text[:200]!r}")
 
 
 def make_modify_keyboard(events: list) -> dict:
