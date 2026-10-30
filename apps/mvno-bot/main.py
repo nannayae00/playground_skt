@@ -117,6 +117,7 @@ import functools
 import os
 import re
 import json
+import collections
 
 from config import DATA_STRUCTURE, MONTHLY_GOALS, KEY_FOCUS, DAILY_RESPONSE_FORMAT, GENERAL_RESPONSE_FORMAT, PERIOD_RESPONSE_FORMAT
 from flask import Flask, request, jsonify
@@ -138,6 +139,26 @@ GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 WEBHOOK_URL    = os.environ.get('WEBHOOK_URL')
 
 processed_today = set()
+
+# [추가 20261015] 텔레그램 webhook update_id 중복처리 방지 (최근 N개만 보관).
+# 세종이관 입력 등 Firestore 왕복이 많은 핸들러는 처리 시간이 길어질 수 있는데,
+# 응답이 늦으면 텔레그램이 같은 update를 재전송하는 경우가 있고 - 이 경로엔
+# 기존에 update_id 중복 체크가 전혀 없어서 재전송되면 그대로 두 번 처리/발송됐음
+# (사용자 보고: "수정일마감 메시지는 계속 두번씩 와" - 같은 방에 2번).
+_recent_update_ids = collections.deque(maxlen=500)
+_recent_update_ids_set = set()
+
+
+def _is_duplicate_update(update_id) -> bool:
+    if update_id is None:
+        return False
+    if update_id in _recent_update_ids_set:
+        return True
+    if len(_recent_update_ids) == _recent_update_ids.maxlen:
+        _recent_update_ids_set.discard(_recent_update_ids[0])
+    _recent_update_ids.append(update_id)
+    _recent_update_ids_set.add(update_id)
+    return False
 
 # ── Gemini 설정 ──────────────────────────────────────────────
 genai.configure(api_key=GOOGLE_API_KEY)
@@ -2297,7 +2318,12 @@ def webhook():
     """텔레그램 webhook"""
     try:
         update = request.get_json()
-        
+
+        # [추가 20261015] 중복 update_id(텔레그램 재전송 등) 즉시 무시
+        if _is_duplicate_update(update.get('update_id')):
+            print(f"⏭️ 중복 update_id 무시: {update.get('update_id')}")
+            return jsonify({'ok': True})
+
         # ✅ 채널 메시지 처리 (최우선!)
         if 'channel_post' in update:
             message = update['channel_post']
