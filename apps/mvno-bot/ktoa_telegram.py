@@ -332,6 +332,18 @@ def _k(v):
     return f'{int(v):,}'
 
 
+def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_text,
+                    remaining_bw_after_today=None):
+    """SKT OUT 첫 줄. [추가 20261031] 오늘이 마지막 영업일이거나 남은 영업일(오늘 포함)이
+    1일 이하면 "잔여 일평균"(영업일 1.0 환산 속도 - 오늘 bw가 0.9면 커 보이고, 월말 1.6이면
+    작아 보임) 대신 남은 목표 건수를 보여줌."""
+    if remaining_cum is not None and remaining_bw_incl_today is not None \
+            and remaining_bw_incl_today > 0 \
+            and (remaining_bw_incl_today <= 1.0 or remaining_bw_after_today == 0):
+        return f'남은 목표: {remaining_cum:,}(월목표 {goal_text})'
+    return f'잔여 일평균 목표: {remaining_avg:,}(월목표 {goal_text})'
+
+
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
     """
     전 시간 대비 증감 화살표 반환 (5단계 이모지)
@@ -505,7 +517,9 @@ def build_message(stats: dict, prev_stats: dict = None,
             _bw_label = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
             skt_lines = [
                 '◎ SKT OUT',
-                f'잔여 일평균 목표: {_mfc["remaining_avg"]:,}(월목표 {_fmt_man(tout_goal)})',
+                _tout_goal_line(_mfc["remaining_avg"], _mfc.get("remaining_cum"),
+                                _mfc.get("remaining_bw_incl_today"), _fmt_man(tout_goal),
+                                _mfc.get("remaining_bw_after_today")),
                 f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%) → 예상 {_daily_est:,}',
                 f'월마감 예측 : {_mfc["fc_low"]:,} ~ {_mfc["fc_high"]:,}  {icon}',
@@ -577,7 +591,9 @@ def build_message(stats: dict, prev_stats: dict = None,
             _bw_label = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
             skt_lines = [
                 '◎ SKT OUT',
-                f'잔여 일평균 목표: {_mfc["remaining_avg"]:,}(월목표 {_fmt_man(tout_goal)})',
+                _tout_goal_line(_mfc["remaining_avg"], _mfc.get("remaining_cum"),
+                                _mfc.get("remaining_bw_incl_today"), _fmt_man(tout_goal),
+                                _mfc.get("remaining_bw_after_today")),
                 f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%)'
                 + (f' → 예상 {_daily_est:,}' if _daily_est > 0 else ''),
@@ -614,7 +630,9 @@ def build_message(stats: dict, prev_stats: dict = None,
         _bw_label      = '영업일수' if _gbs(site_date) == 'bw_manual' else 'AI영업일수'
         skt_out_lines  = ['\n'.join([
             '◎ SKT OUT',
-            f'잔여 일평균 목표: {remaining_avg:,}(월목표 {_fmt_man(tout_goal)})',
+            _tout_goal_line(remaining_avg, _rag['remaining_cum'],
+                            _rag['remaining_bw_incl_today'], _fmt_man(tout_goal),
+                            _rag['remaining_bw']),
             f'오늘 목표 : {today_goal:,} (x{round(today_weight,2)}, {_bw_label})',
             f'당일 소진률 : {today_tout:,} ({pct_of_goal}%) → 예상 {_daily_est:,}',
         ]), '']

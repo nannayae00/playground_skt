@@ -766,7 +766,8 @@ def calc_remaining_avg_today_goal(year: int, month: int, today_day: int,
               "이전"까지의 확정 실적만 넣고, 잔여 영업일수에 오늘을 포함시켜
               "오늘 목표"를 산출.
 
-    Returns: {'remaining_avg', 'today_goal', 'pct_of_goal', 'remaining_bw', 'bw_today'}
+    Returns: {'remaining_avg', 'today_goal', 'pct_of_goal', 'remaining_bw',
+              'remaining_bw_incl_today', 'remaining_cum', 'bw_today'}
     """
     date_str = f"{year:04d}-{month:02d}-{today_day:02d}"
     if bw_today is None:
@@ -776,6 +777,7 @@ def calc_remaining_avg_today_goal(year: int, month: int, today_day: int,
     remaining_bw_excl_today = calc_remaining_bw(year, month, today_day)
 
     if today_confirmed:
+        remaining_bw_incl_today = remaining_bw_excl_today
         remaining_avg = (int(remaining_cum / remaining_bw_excl_today)
                           if remaining_bw_excl_today > 0 else 0)
         today_goal = 0
@@ -784,7 +786,11 @@ def calc_remaining_avg_today_goal(year: int, month: int, today_day: int,
         remaining_bw_incl_today = remaining_bw_excl_today + bw_today
         remaining_avg = (int(remaining_cum / remaining_bw_incl_today)
                           if remaining_bw_incl_today > 0 else 0)
-        today_goal = int(remaining_avg * bw_today) if bw_today > 0 else 0
+        # [수정 20261031] remaining_avg를 int로 버린 뒤 다시 곱하면 1건씩 작아짐
+        # (10/31 마지막 날: 잔여 1,018 → 1,131×0.9 = 1,017). 잔여목표를 영업일
+        # 비율로 바로 나눠 반올림 - 남은 날이 오늘뿐이면 잔여목표와 같아짐.
+        today_goal = (round(remaining_cum * bw_today / remaining_bw_incl_today)
+                      if bw_today > 0 and remaining_bw_incl_today > 0 else 0)
         pct_of_goal = round(today_actual / today_goal * 100) if today_goal > 0 else 0
 
     return {
@@ -792,6 +798,8 @@ def calc_remaining_avg_today_goal(year: int, month: int, today_day: int,
         'today_goal':    today_goal,
         'pct_of_goal':   pct_of_goal,
         'remaining_bw':  remaining_bw_excl_today,
+        'remaining_bw_incl_today': remaining_bw_incl_today,
+        'remaining_cum': remaining_cum,
         'bw_today':      bw_today,
     }
 
