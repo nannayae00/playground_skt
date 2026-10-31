@@ -336,16 +336,18 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
                     remaining_bw_after_today=None, cum_label=None, cum_before_today=None):
     """SKT OUT 첫 줄. [추가 20261031] 오늘이 마지막 영업일이거나 남은 영업일(오늘 포함)이
     1일 이하면 "잔여 일평균"(영업일 1.0 환산 속도 - 오늘 bw가 0.9면 커 보이고, 월말 1.6이면
-    작아 보임) 대신 남은 목표 건수를 보여주고, 그 위에 어제까지 당월 누적을 붙임
-    (cum_label 예: '~10/30')."""
+    작아 보임) 대신 남은 목표 건수를 보여줌. 어제까지 당월 누적이 있으면(월 첫 영업일
+    제외) 그 위에 '당월누적(~10/30) : N' 줄을 붙임."""
     if remaining_cum is not None and remaining_bw_incl_today is not None \
             and remaining_bw_incl_today > 0 \
             and (remaining_bw_incl_today <= 1.0 or remaining_bw_after_today == 0):
         line = f'남은 목표: {remaining_cum:,}(월목표 {goal_text})'
-        if cum_label and cum_before_today is not None:
-            line = f'당월누적({cum_label}) : {cum_before_today:,}\n' + line
-        return line
-    return f'잔여 일평균 목표: {remaining_avg:,}(월목표 {goal_text})'
+    else:
+        line = f'잔여 일평균 목표: {remaining_avg:,}(월목표 {goal_text})'
+    # [추가 20261031] 어제까지 당월 누적 - 월 첫 영업일(누적 0)엔 생략
+    if cum_label and cum_before_today:
+        line = f'당월누적({cum_label}) : {cum_before_today:,}\n' + line
+    return line
 
 
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
@@ -468,8 +470,17 @@ def build_message(stats: dict, prev_stats: dict = None,
     _on_hour = (_ref_minute == 0)
     _db_fc_s = _est_mno.get('S', 0) if _has_est else 0
 
+    # 당월누적 라벨: 직전 영업일(월요일이면 일요일 대신 토요일)
     from datetime import timedelta as _td
     _prev_day = dt - _td(days=1)
+    try:
+        from bw_engine import get_bw_final as _gbf_lbl
+        for _ in range(7):
+            if _prev_day.month != dt.month or _gbf_lbl(_prev_day.strftime('%Y-%m-%d')) > 0:
+                break
+            _prev_day -= _td(days=1)
+    except Exception:
+        pass
     _cum_label = f'~{_prev_day.month}/{_prev_day.day}'
     try:
         tout_goal = get_tout_goal(dt.year, dt.month)
