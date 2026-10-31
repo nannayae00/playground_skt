@@ -1270,18 +1270,50 @@ def clean_for_markdown(text):
     return '```'.join(result)
 
 
+TG_MAX_LEN = 4000  # 텔레그램 한도 4096자, 여유분
+
+
+def _split_message(text, limit=TG_MAX_LEN):
+    """줄 단위로 limit 이하 조각으로 나눔 (한 줄이 limit보다 길면 그 줄만 자름)."""
+    chunks, cur = [], ""
+    for line in str(text).split("\n"):
+        while len(line) > limit:
+            if cur:
+                chunks.append(cur); cur = ""
+            chunks.append(line[:limit]); line = line[limit:]
+        if cur and len(cur) + 1 + len(line) > limit:
+            chunks.append(cur); cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur.strip():
+        chunks.append(cur)
+    return chunks
+
+
 def send_to(chat_id, text, parse_mode="Markdown"):
+    # [수정 20261031] 4096자 초과 시 텔레그램이 거부해 메시지가 통째로 빠지던 문제 → 줄 단위로 나눠 발송,
+    #  실패 응답은 로그로 남기고 Markdown 오류면 서식 없이 재발송
     if not BOT_TOKEN or not chat_id: return
     if not text or not str(text).strip(): return  # 빈 문자열 발송 방지
-    try:
-        payload = {"chat_id": chat_id, "text": text}
-        if parse_mode:
-            payload["parse_mode"] = parse_mode
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json=payload, timeout=10
-        )
-    except: pass
+    for chunk in _split_message(text):
+        try:
+            payload = {"chat_id": chat_id, "text": chunk}
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
+            r = requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json=payload, timeout=10
+            )
+            if not r.ok and parse_mode:
+                payload.pop("parse_mode")
+                r = requests.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json=payload, timeout=10
+                )
+            if not r.ok:
+                print(f"⚠️ 텔레그램 발송 실패 ({len(chunk)}자): {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ 텔레그램 발송 오류: {e}")
 
 def send_log(text):
     send_to(CHAT_LOG, text)
