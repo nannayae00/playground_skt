@@ -942,6 +942,11 @@ def build_sejong_correction_message(daily: dict, migration: dict,
     def _fmt(v):
         return f'{v:,}' if v is not None else '미확인'
 
+    # [수정 20261030] 이번 달 누적(+전일증감) 블록 다음에 전체 누적(8월~) 블록 추가.
+    # 실무자 엑셀 '전체 누계'와 같은 값 = 월별 마지막 cum의 합 (월 경계에서 cum 리셋)
+    from ktoa_firestore import get_sejong_migration_monthly_totals as _get_mig_monthly
+    _mig_total = _get_mig_monthly(date_str).get('total', {})
+
     migration_section = '\n'.join([
         f'◎ 세종 → 고고, {dt.month}월누적(+전일증감)',
         f' S망 : {_fmt(mig_cum.get("SM"))}건(+{_fmt(mig_daily.get("SM"))})',
@@ -954,6 +959,13 @@ def build_sejong_correction_message(daily: dict, migration: dict,
     from bw_engine import calc_elapsed_remaining_bw as _cerbw
     _elapsed_bw_disp, _remaining_bw_disp = _cerbw(dt.year, dt.month, dt.day)
     migration_section = migration_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
+    migration_section = migration_section + '\n'.join([
+        '',
+        '',
+        '◎ 세종 → 고고, 전체 누적',
+        f' S망 : {_fmt(_mig_total.get("SM"))}',
+        f' K망 : {_fmt(_mig_total.get("KM"))}',
+    ])
 
     lines = [
         f'📋 수정 일마감 메시지 ({date_str} {weekday})',

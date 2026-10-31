@@ -2104,9 +2104,17 @@ def handle_report_excel(chat_id: str, year: int, month: int) -> None:
 
 def parse_sejong_migration_text(text: str):
     """
-    '세종이관 09-05\nS 0\nK 500\nL 미확인' 형식 파싱.
-    날짜 생략 시 어제 날짜로 처리 (실무자가 아침에 전일자 이관건수 입력하는 흐름).
-    반환: (date_str, sm:int, km:int, lm:int|None) 또는 파싱 실패 시 None.
+    [수정 20261029] 여러 날짜 한 번에 입력 지원.
+
+    단일(기존과 동일):
+      '세종이관 09-05\nS 0\nK 500\nL 미확인'
+    여러 날짜(신규):
+      '세종이관\n10-26\nS 0\nK 554\nL 미확인\n10-27\nS 1\nK 577\nL 미확인'
+
+    날짜 줄(MM-DD만 있는 줄)이 나올 때마다 새 블록 시작. 날짜 없이 바로
+    S/K/L이 나오면(기존 단일입력에서 날짜 생략한 경우) 어제 날짜로 블록 시작.
+    반환: [(date_str, sm:int, km:int, lm:int|None), ...] (날짜순 정렬) 또는
+    파싱 실패 시 None.
     """
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
@@ -2116,62 +2124,92 @@ def parse_sejong_migration_text(text: str):
 
     _now_kst = _dt.now(_tz(_td(hours=9)))
 
-    # 날짜 파싱 (첫 줄에 MM-DD 있으면 사용, 없으면 어제)
-    m = re.search(r'(\d{1,2})[-./](\d{1,2})', lines[0])
-    if m:
-        mo, da = int(m.group(1)), int(m.group(2))
+    def _to_date_str(mo, da):
         year = _now_kst.year
         # 12월 입력인데 현재 1월이면 작년으로 보정 (연말/연초 경계)
         if mo == 12 and _now_kst.month == 1:
             year -= 1
-        date_str = f'{year:04d}-{mo:02d}-{da:02d}'
-    else:
-        yesterday = _now_kst - _td(days=1)
-        date_str = yesterday.strftime('%Y-%m-%d')
+        return f'{year:04d}-{mo:02d}-{da:02d}'
 
-    vals = {'S': None, 'K': None, 'L': None}
-    for line in lines[1:]:
-        mm = re.match(r'^([SKL])\s*[:：]?\s*(.+)$', line, re.IGNORECASE)
+    # 첫 줄 '세종이관' 접두사 제거 - 남는 게 있으면(예: '세종이관 09-05') 날짜로 취급
+    first = re.sub(r'^세종이관\s*', '', lines[0]).strip()
+    scan_lines = ([first] if first else []) + lines[1:]
+
+    DATE_RE = re.compile(r'^(\d{1,2})[-./](\d{1,2})$')
+    KV_RE   = re.compile(r'^([SKL])\s*[:：]?\s*(.+)$', re.IGNORECASE)
+
+    blocks = []  # [{'date': str, 'vals': {'S':None,'K':None,'L':None}}]
+    cur = None
+    for line in scan_lines:
+        m = DATE_RE.match(line)
+        if m:
+            mo, da = int(m.group(1)), int(m.group(2))
+            cur = {'date': _to_date_str(mo, da), 'vals': {'S': None, 'K': None, 'L': None}}
+            blocks.append(cur)
+            continue
+        mm = KV_RE.match(line)
         if not mm:
             continue
+        if cur is None:
+            # 날짜 없이 바로 S/K/L → 어제 날짜로 블록 시작 (기존 단일입력 호환)
+            yesterday = _now_kst - _td(days=1)
+            cur = {'date': yesterday.strftime('%Y-%m-%d'), 'vals': {'S': None, 'K': None, 'L': None}}
+            blocks.append(cur)
         key = mm.group(1).upper()
         raw = mm.group(2).strip()
         if raw in ('미확인', '-', 'x', 'X', ''):
-            vals[key] = None
+            cur['vals'][key] = None
         else:
             num = re.sub(r'[^\d]', '', raw)
-            vals[key] = int(num) if num else None
+            cur['vals'][key] = int(num) if num else None
 
-    # S/K는 미확인이어도 0으로 (합계 계산 필요), L만 None 허용 (미확인 표시 유지)
-    sm = vals['S'] if vals['S'] is not None else 0
-    km = vals['K'] if vals['K'] is not None else 0
-    lm = vals['L']  # None 그대로 허용
+    if not blocks:
+        return None
 
-    return date_str, sm, km, lm
+    result = []
+    for b in blocks:
+        # S/K는 미확인이어도 0으로 (합계 계산 필요), L만 None 허용 (미확인 표시 유지)
+        sm = b['vals']['S'] if b['vals']['S'] is not None else 0
+        km = b['vals']['K'] if b['vals']['K'] is not None else 0
+        lm = b['vals']['L']
+        result.append((b['date'], sm, km, lm))
+
+    result.sort(key=lambda t: t[0])  # 날짜순 정렬 - 누적 계산이 어제→오늘 순서에 의존
+    return result
 
 
 def handle_sejong_migration(chat_id, text):
-    """세종→고고 이관 입력 처리 → 보정 마감 메시지 생성/발송"""
+    """세종→고고 이관 입력 처리 → 보정 마감 메시지 생성/발송.
+    [수정 20261029] 여러 날짜를 한 번에 입력할 수 있음 - 각 날짜는 전부 저장하되,
+    보정 마감 메시지는 가장 최근 날짜 기준으로 1번만 발송(날짜마다 보내면 스팸)."""
     import ktoa_firestore
     import ktoa_telegram
 
     parsed = parse_sejong_migration_text(text)
     if not parsed:
         send_telegram_message(chat_id,
-            "❌ 형식을 인식할 수 없습니다.\n\n사용법:\n세종이관 09-05\nS 0\nK 500\nL 미확인")
+            "❌ 형식을 인식할 수 없습니다.\n\n"
+            "사용법(단일):\n세종이관 09-05\nS 0\nK 500\nL 미확인\n\n"
+            "사용법(여러 날짜 한 번에):\n세종이관\n09-05\nS 0\nK 500\nL 미확인\n09-06\nS 1\nK 520\nL 미확인")
         return
 
-    date_str, sm, km, lm = parsed
+    saved = []  # [(date_str, daily, migration)]
+    for date_str, sm, km, lm in parsed:
+        daily = ktoa_firestore.get_daily(date_str)
+        if not daily:
+            send_telegram_message(chat_id, f"❌ {date_str} 마감 데이터가 아직 없습니다. 날짜를 확인해주세요.")
+            continue
+        migration = ktoa_firestore.save_sejong_migration(date_str, sm, km, lm)
+        saved.append((date_str, daily, migration))
 
-    daily = ktoa_firestore.get_daily(date_str)
-    if not daily:
-        send_telegram_message(chat_id, f"❌ {date_str} 마감 데이터가 아직 없습니다. 날짜를 확인해주세요.")
+    if not saved:
         return
 
-    migration = ktoa_firestore.save_sejong_migration(date_str, sm, km, lm)
-    prev_daily = ktoa_firestore.get_previous_daily_for_closing(date_str)
+    # 가장 최근(마지막) 날짜 기준으로만 보정 마감 메시지 발송
+    last_date_str, last_daily, last_migration = max(saved, key=lambda t: t[0])
+    prev_daily = ktoa_firestore.get_previous_daily_for_closing(last_date_str)
 
-    msg = ktoa_telegram.build_sejong_correction_message(daily, migration, prev_daily)
+    msg = ktoa_telegram.build_sejong_correction_message(last_daily, last_migration, prev_daily)
     send_telegram_message(chat_id, msg)
 
     # [v4.3] 기존 마감 리포트 방에도 동일 메시지 추가 발송
