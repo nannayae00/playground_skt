@@ -333,14 +333,18 @@ def _k(v):
 
 
 def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_text,
-                    remaining_bw_after_today=None):
+                    remaining_bw_after_today=None, cum_label=None, cum_before_today=None):
     """SKT OUT 첫 줄. [추가 20261031] 오늘이 마지막 영업일이거나 남은 영업일(오늘 포함)이
     1일 이하면 "잔여 일평균"(영업일 1.0 환산 속도 - 오늘 bw가 0.9면 커 보이고, 월말 1.6이면
-    작아 보임) 대신 남은 목표 건수를 보여줌."""
+    작아 보임) 대신 남은 목표 건수를 보여주고, 그 위에 어제까지 당월 누적을 붙임
+    (cum_label 예: '~10/30')."""
     if remaining_cum is not None and remaining_bw_incl_today is not None \
             and remaining_bw_incl_today > 0 \
             and (remaining_bw_incl_today <= 1.0 or remaining_bw_after_today == 0):
-        return f'남은 목표: {remaining_cum:,}(월목표 {goal_text})'
+        line = f'남은 목표: {remaining_cum:,}(월목표 {goal_text})'
+        if cum_label and cum_before_today is not None:
+            line = f'당월누적({cum_label}) : {cum_before_today:,}\n' + line
+        return line
     return f'잔여 일평균 목표: {remaining_avg:,}(월목표 {goal_text})'
 
 
@@ -464,6 +468,9 @@ def build_message(stats: dict, prev_stats: dict = None,
     _on_hour = (_ref_minute == 0)
     _db_fc_s = _est_mno.get('S', 0) if _has_est else 0
 
+    from datetime import timedelta as _td
+    _prev_day = dt - _td(days=1)
+    _cum_label = f'~{_prev_day.month}/{_prev_day.day}'
     try:
         tout_goal = get_tout_goal(dt.year, dt.month)
 
@@ -473,7 +480,12 @@ def build_message(stats: dict, prev_stats: dict = None,
             _mfc = _pm(site_date, today_tout, save_to_daily=False,
                        current_hour=_ref_hour)
             cum_tout      = _mfc['cum_skt']
-            goal_achieved = cum_tout >= tout_goal
+            # [수정 20261031] cum_skt는 오늘 일마감 "예측"(fc_daily)이 더해진 값이라
+            # 예측만으로 목표를 넘으면 SKT OUT 섹션 전체가 사라졌음(10/31 11시: 어제까지
+            # 35,982 + 예측 1,062 = 37,044). 달성 여부는 실제 실적(어제까지 + 오늘 현재)으로만.
+            goal_achieved = (today_tout >= _mfc['remaining_cum']
+                             if _mfc.get('remaining_cum') is not None
+                             else cum_tout >= tout_goal)
             icon = '✅' if _mfc['on_track'] else '⚠️'
             # [수정 20260930] 기존엔 _db_fc_s(predict_hourly()의 패턴기반 예측,
             # forecast_mno_out.S)를 우선 쓰고 fc_daily(완료율곡선 기반)는 그게 없을
@@ -519,7 +531,8 @@ def build_message(stats: dict, prev_stats: dict = None,
                 '◎ SKT OUT',
                 _tout_goal_line(_mfc["remaining_avg"], _mfc.get("remaining_cum"),
                                 _mfc.get("remaining_bw_incl_today"), _fmt_man(tout_goal),
-                                _mfc.get("remaining_bw_after_today")),
+                                _mfc.get("remaining_bw_after_today"),
+                                _cum_label, tout_goal - (_mfc.get("remaining_cum") or 0)),
                 f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%) → 예상 {_daily_est:,}',
                 f'월마감 예측 : {_mfc["fc_low"]:,} ~ {_mfc["fc_high"]:,}  {icon}',
@@ -533,7 +546,12 @@ def build_message(stats: dict, prev_stats: dict = None,
             _mfc = _pm(site_date, today_tout, save_to_daily=False,
                        current_hour=_ref_hour, use_gemini=False)
             cum_tout      = _mfc['cum_skt']
-            goal_achieved = cum_tout >= tout_goal
+            # [수정 20261031] cum_skt는 오늘 일마감 "예측"(fc_daily)이 더해진 값이라
+            # 예측만으로 목표를 넘으면 SKT OUT 섹션 전체가 사라졌음(10/31 11시: 어제까지
+            # 35,982 + 예측 1,062 = 37,044). 달성 여부는 실제 실적(어제까지 + 오늘 현재)으로만.
+            goal_achieved = (today_tout >= _mfc['remaining_cum']
+                             if _mfc.get('remaining_cum') is not None
+                             else cum_tout >= tout_goal)
 
             # [수정 20261003] 주석은 "직전 정시 예측값 사용"이라 돼있었지만 실제로는
             # 매 10분마다 today_tout(분자)만 커진 채로 fc_daily를 다시 계산하고
@@ -593,7 +611,8 @@ def build_message(stats: dict, prev_stats: dict = None,
                 '◎ SKT OUT',
                 _tout_goal_line(_mfc["remaining_avg"], _mfc.get("remaining_cum"),
                                 _mfc.get("remaining_bw_incl_today"), _fmt_man(tout_goal),
-                                _mfc.get("remaining_bw_after_today")),
+                                _mfc.get("remaining_bw_after_today"),
+                                _cum_label, tout_goal - (_mfc.get("remaining_cum") or 0)),
                 f'오늘 목표 : {_mfc["today_goal"]:,} (x{round(_mfc["bw"],2)}, {_bw_label})',
                 f'당일 소진률 : {today_tout:,} ({_mfc["pct_of_goal"]}%)'
                 + (f' → 예상 {_daily_est:,}' if _daily_est > 0 else ''),
@@ -632,7 +651,7 @@ def build_message(stats: dict, prev_stats: dict = None,
             '◎ SKT OUT',
             _tout_goal_line(remaining_avg, _rag['remaining_cum'],
                             _rag['remaining_bw_incl_today'], _fmt_man(tout_goal),
-                            _rag['remaining_bw']),
+                            _rag['remaining_bw'], _cum_label, _cum_before_today),
             f'오늘 목표 : {today_goal:,} (x{round(today_weight,2)}, {_bw_label})',
             f'당일 소진률 : {today_tout:,} ({pct_of_goal}%) → 예상 {_daily_est:,}',
         ]), '']
