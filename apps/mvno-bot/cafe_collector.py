@@ -711,6 +711,21 @@ def process_new_article(source: dict, article: dict) -> dict:
     db = _get_db()
     db.collection(source['firestore_collection']).document(doc_id).set(record)
     set_last_seen_article_id(source, article_id)
+
+    # [추가 20261024] 분석용 원문 아카이브 (엑셀·이미지 원본 GCS 보관 + 전 요금제·본문 조건 파싱 →
+    # offline_policy_rounds). 메시지·위 레코드와 별개라 실패해도 알림 흐름엔 영향 없음
+    try:
+        import offline_policy_archive as opa
+        source_key = next(k for k, v in SOURCES.items() if v is source)
+        driver, cookies = opa.open_driver()
+        try:
+            res = opa.archive_article(source_key, source, article, driver, cookies, force=True)
+        finally:
+            driver.quit()
+        opa.recompute_effective_periods(source_key)
+        print(f'[archive] {res}')
+    except Exception as e:
+        print(f'[archive] 실패 (메시지 발송과 무관): {e}')
     return record
 
 
