@@ -327,10 +327,9 @@ def _sign_pct(v, t):
     return f'+{p:.1f}%' if p >= 0 else f'▲{abs(p):.1f}%'
 
 def _k(v):
-    """천 단위 표기: 1500 → 1.5천, 27600 → 27.6천"""
-    if abs(v) >= 1000:
-        return f'{v/1000:.1f}천'
-    return f'{v:,}'
+    """누적 표기: 일의 자리까지 천 단위 쉼표 (27600 → 27,600)
+    2026-10-31 실무자 요청으로 '27.6천' 표기에서 변경 (일마감·수정일마감 누적 블록)"""
+    return f'{int(v):,}'
 
 
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
