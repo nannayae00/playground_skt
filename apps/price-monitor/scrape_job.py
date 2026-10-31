@@ -671,6 +671,31 @@ def _clean_provider_display(name):
     return re.sub(r'\s*\([^)]*\)', '', str(name)).strip()
 
 
+# [추가 20261022] S망 기준 알뜰폰 사업자 14개 (KTOA 등록 S01~S19 중 최근 실적 있는 15개 - 에스원 제외, 사용자 확정)
+# (표기 약자, 사이트 표기(_canon_provider 결과) 목록) - 순서는 S망 유입 규모순
+S_NET_OPERATORS = [
+    ('프리',   ['프리티', '프리텔레콤']),
+    ('텔링크', ['텔링크', '세븐', 'SK7모바일', 'SK세븐모바일', '세븐모바일', 'SK텔링크']),
+    ('아이즈', ['아이즈', '아이즈비전']),
+    ('조이텔', ['조이텔']),
+    ('유니',   ['유니', '모빙', '유니컴즈']),
+    ('KCT',    ['tplus', 'KCT', '티플러스']),
+    ('스테이지', ['핀다', '핀다이렉트', '스테이지파이브']),
+    ('에넥스', ['에이', '에이모바일', '에넥스텔레콤']),
+    ('큰사람', ['큰사람', '이야기', '이야기모바일']),
+    ('스마텔', ['스마텔']),
+    ('고고',   ['고고', '고고모바일', '고고팩토리']),
+    ('토스',   ['토스', '토스모바일']),
+    ('KB',     ['리브엠', '리브모바일', 'KB']),
+    ('네이블', ['네이블', '알비레오']),
+]
+_S_OP_BY_NAME = {n: op for op, names in S_NET_OPERATORS for n in names}
+
+
+def _s_operator(canon_name):
+    return _S_OP_BY_NAME.get(canon_name, canon_name)
+
+
 def build_source_status_block(title_emoji_label, plans, checked_at):
     """
     메시지1(통합 수집현황)의 소스 1개 블록.
@@ -692,6 +717,18 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     s_cnt = sum(1 for p in plans if p.get('network') == 'SKT')
     k_cnt = sum(1 for p in plans if p.get('network') == 'KT')
     l_cnt = sum(1 for p in plans if p.get('network') == 'LGU+')
+    # [추가 20261021] 망별 사업자 수 / [수정 20261022] MNO(통신3사) 제외
+    _gen, _sub, _mno = split_by_provider_type(plans)
+    _mvno = _gen + _sub
+
+    def _nprov(net):
+        return len({_canon_provider(p.get('provider')) for p in _mvno if p.get('network') == net})
+
+    # [추가 20261022] S망은 기준 사업자 14개 대비 이 사이트 등록 유/무 표시
+    s_ops = {_s_operator(_canon_provider(p.get('provider'))) for p in _mvno if p.get('network') == 'SKT'}
+    s_has = [op for op, _ in S_NET_OPERATORS if op in s_ops]
+    s_not = [op for op, _ in S_NET_OPERATORS if op not in s_ops]
+    s_etc = sorted(s_ops - {op for op, _ in S_NET_OPERATORS})
 
     lines = [f"{title_emoji_label} ({checked_at})", "```"]
     lines.append(f"{_wpad('구분', 8)}{_wpad('총계', 7, 'right')}{_wpad('RS', 6, 'right')}{_wpad('RM', 6, 'right')}")
@@ -699,7 +736,15 @@ def build_source_status_block(title_emoji_label, plans, checked_at):
     for label, tot, rs, rm in rows:
         lines.append(f"{_wpad(label, 8)}{tot:>7,}{rs:>6,}{rm:>6,}")
     lines.append("─" * 27)
-    lines.append(f"S망 {s_cnt} · K망 {k_cnt} · L망 {l_cnt}")
+    s_part = f"S망 {s_cnt}({len(s_has)}/{len(S_NET_OPERATORS)}개사)" if s_cnt else "S망 0"
+    k_part = f"K망 {k_cnt}({_nprov('KT')}개사)" if k_cnt else "K망 0"
+    l_part = f"L망 {l_cnt}({_nprov('LGU+')}개사)" if l_cnt else "L망 0"
+    lines.append(f"{s_part} · {k_part} · {l_part}")
+    if s_cnt:
+        lines.append(f"有: {'·'.join(s_has) or '-'}")
+        lines.append(f"無: {'·'.join(s_not) or '-'}")
+        if s_etc:
+            lines.append(f"기타: {'·'.join(s_etc)}")
     lines.append("```")
     return "\n".join(lines)
 
@@ -829,7 +874,7 @@ def build_source_highlights(aldot_plans, mvnohub_plans, moyo_plans):
 
 # 모요 등 채널의 알려진 구성 변화 - 매 메시지 '요금제 수'에 고정 표시 (필요 없어지면 비우면 됨)
 STANDING_PLAN_NOTES = [
-    "프리티·토스·통신3사 다이렉트 모요 미노출 (10/6~)",
+    "프리티·토스 모요 미노출 (10/6~)",
 ]
 
 # 사업자 일괄 이탈/입점 판정 기준
@@ -837,6 +882,20 @@ BULK_MIN_PLANS = 10      # 직전 요금제 수가 이 이상인 사업자만 �
 BULK_DROP_RATIO = 0.5    # 직전 대비 이 비율 이하로 줄면 '일괄 이탈'
 
 NET_SHORT = {'SKT': 'S', 'KT': 'K', 'LGU+': 'L'}
+
+# 사이트마다 다른 사업자 표기를 하나로 (괄호 부가설명 제거 후 별칭 → provider_map.shorten)
+_PROVIDER_ALIAS = {
+    'A모바일': '에이모바일', 'KCT': '티플러스', '케이티엠모바일': 'KT엠모바일',
+    '케이티스카이라이프': 'KT스카이라이프', '헬로모바일': 'LG헬로모바일', '고고팩토리': '고고모바일',
+}
+
+
+def _canon_provider(name):
+    import urllib.parse
+    n = urllib.parse.unquote(name or '').strip()
+    n = re.sub(r'_국문_bi$', '', n)
+    n = re.sub(r'\s*\(.*?\)\s*', '', n).strip()
+    return shorten(_PROVIDER_ALIAS.get(n, n))
 
 
 def detect_provider_changes(source_label, prev_counts, curr_plans):
@@ -895,47 +954,140 @@ def _price_change_lines(curr, prev_snapshot, base_label):
     return out
 
 
-# RM은 첫 몇 달 10원 같은 프로모션가가 많아 최저가 비교가 무의미 → 기존 RM 분석(build_rm_analysis)처럼
-# 금액대별 최대 데이터 제공량(GB)으로 비교
-RM_BUCKETS = [('100원↓', 0, 100), ('1천원↓', 100, 1000), ('3천원↓', 1000, 3000),
-              ('1만원↓', 3000, 10000), ('1만원↑', 10000, 99999999)]
+# [추가 20261022] RM 특이사항 = 요금제 단위 변동(직전 수집 대비)을 사업자별로 묶어서 표시
+# (백테스트 10/14~10/22 22회: 요금제 나열 시 최대 15줄 → 사업자 묶음 시 4~9줄)
+RM_MIN_DIFF = 100           # 이 금액 미만 가격 변동은 무시
+_PROVIDER_DISPLAY = {'tplus': '티플러스', 'skylife': '스카이라이프'}
 
 
-def rm_max_data_summary(plans):
-    out = {'_metric': 'max_gb'}
-    rm = [p for p in plans if not p.get('is_rs') and (p.get('final_price') or 0) > 0]
-    for label, lo, hi in RM_BUCKETS:
-        out[label] = {}
-        for net in NET_SHORT:
-            gbs = [p.get('data_gb') or 0 for p in rm if p.get('network') == net and lo < p.get('final_price', 0) <= hi]
-            out[label][net] = max(gbs) if gbs else 0
+def _disp_provider(canon):
+    op = _s_operator(canon)
+    return _PROVIDER_DISPLAY.get(op, op)
+
+
+def _rm_index(site, plans):
+    gen, sub, _ = split_by_provider_type(plans or [])
+    return {(site, p.get('provider'), p.get('name'), p.get('network')): p for p in gen + sub
+            if not p.get('is_rs') and (p.get('final_price') or 0) > 0}
+
+
+def _sale_price_txt(p):
+    """현재 판매가 (프로모션 중이면 개월수 표시)"""
+    fp, m, bp = p.get('final_price') or 0, p.get('discount_months') or 0, p.get('base_price') or 0
+    return f"{fp:,}({m}개월)" if m and bp and bp != fp else f"{fp:,}"
+
+
+def compute_rm_groups(pairs, recent=None):
+    """pairs: {site: (prev_plans, curr_plans)} → {network: [변동 dict...]}
+    recent: {site: [기준 회차 이전 수집 plans, ...]} - 비교 기준에 없던 요금제라도 여기 하나라도 있으면 신규로 안 봄
+      ([추가 20261024] 기준 수집이 스크래핑 실패로 빠졌던 요금제가 '신규'로 잡히던 문제, 사용자 결정: 3회 연속 없을 때만 신규)
+    변동 dict: {'kind': 'up'|'down'|'promo'|'new'|'gone', 'prov', 'data', 'before', 'after', 'diff'}
+    직전 수집이 없는 사이트는 건너뜀. 같은 변동이 여러 사이트에 잡히면 1건으로."""
+    out, seen = {}, set()
+
+    def _add(net, item):
+        sig = (item['kind'], item['prov'], item['data'], item['before'], item['after'], net)
+        if sig not in seen:
+            seen.add(sig)
+            out.setdefault(net, []).append(item)
+
+    for site, (prev, curr) in pairs.items():
+        if not prev or not curr:
+            continue
+        a, b = _rm_index(site, prev), _rm_index(site, curr)
+        recent_keys = set()
+        for rp in (recent or {}).get(site, []):
+            recent_keys |= set(_rm_index(site, rp))
+        # [추가 20261023] 요금제명만 바뀐 경우(같은 사업자·망·데이터가 한쪽에서 사라지고 다른 쪽에 생김)는
+        # 신규+삭제가 아니라 가격 변동 1건으로 짝지음
+        new_keys  = [k for k in b if k not in a]
+        gone_keys = [k for k in a if k not in b]
+        for nk in list(new_keys):
+            sig = (nk[1], nk[3], b[nk].get('data'), b[nk].get('voice'))
+            match = next((gk for gk in gone_keys if (gk[1], gk[3], a[gk].get('data'), a[gk].get('voice')) == sig), None)
+            if match:
+                a[nk] = a.pop(match)
+                gone_keys.remove(match)
+        for k, p in b.items():
+            q = a.get(k)
+            prov, data = _disp_provider(_canon_provider(p.get('provider'))), _compact_data(p.get('data', ''))
+            if q is None:
+                if k in recent_keys:
+                    continue
+                _add(k[3], {'kind': 'new', 'prov': prov, 'data': data, 'before': '', 'after': _sale_price_txt(p), 'diff': 0})
+                continue
+            dfp = (p.get('final_price') or 0) - (q.get('final_price') or 0)
+            same_months = (p.get('discount_months') or 0) == (q.get('discount_months') or 0)
+            if abs(dfp) < RM_MIN_DIFF and same_months:
+                continue
+            kind = 'down' if dfp <= -RM_MIN_DIFF else 'up' if dfp >= RM_MIN_DIFF else 'promo'
+            _add(k[3], {'kind': kind, 'prov': prov, 'data': data, 'before': _sale_price_txt(q),
+                        'after': _sale_price_txt(p), 'diff': abs(dfp)})
+        for k, q in a.items():
+            if k in b:
+                continue
+            prov, data = _disp_provider(_canon_provider(q.get('provider'))), _compact_data(q.get('data', ''))
+            _add(k[3], {'kind': 'gone', 'prov': prov, 'data': data, 'before': _sale_price_txt(q), 'after': '', 'diff': 0})
     return out
 
 
-def _gb_label(v):
-    if not v:
-        return '-'
-    if v >= 9999:
-        return '무제한'
-    return f"{v:g}G"
+_RM_KIND_ORDER = {'down': 0, 'up': 1, 'new': 2, 'promo': 3, 'gone': 4}   # [수정 20261024] 인하→인상→신규 (사용자 결정)
 
 
-def _rm_change_lines(curr, prev_snapshot, base_label):
-    prev = (prev_snapshot or {}).get('rs_min') or {}
-    if prev.get('_metric') != 'max_gb':
-        prev = {}
+def _data_rank(data):
+    """데이터 용량 정렬 키 (월 환산 GB, 소진 후 속도 Mbps). 매일 N GB는 ×30, 무제한은 최상위.
+    원문("월 11GB + 3Mbps")과 축약("11G+3M") 모두 처리."""
+    t = data or ''
+    if '무제한' in t:
+        return (1e6, 0)
+    gb = 0.0
+    for m in re.finditer(r'(매일\s*)?([\d.]+)\s*(GB?|MB)(?!ps)', t):
+        v = float(m.group(2)) / (1024 if m.group(3) == 'MB' else 1)
+        gb += v * (30 if m.group(1) else 1)
+    sp = 0.0
+    for m in re.finditer(r'([\d.]+)\s*(M|Mbps|Kbps)(?!B)', t):
+        sp = max(sp, float(m.group(1)) / (1000 if m.group(2) == 'Kbps' else 1))
+    return (gb, sp)
+
+
+def _price_num(txt):
+    m = re.match(r'[\d,]+', txt or '')
+    return int(m.group().replace(',', '')) if m else 0
+
+
+def _rm_sort_key(it):
+    """[수정 20261024] 시장 파급력 순 (사용자 결정): 유형(인하→인상→신규→프로모션변경) 안에서
+    변동액 큰 순 → 데이터 용량 큰 순 → 현재 판매가 낮은 순"""
+    gb, sp = _data_rank(it['data'])
+    return (_RM_KIND_ORDER[it['kind']], -it['diff'], -gb, -sp, _price_num(it['after']))
+
+
+def _rm_item_line(it):
+    head = f"{it['prov']} {it['data']}"
+    if it['kind'] == 'new':
+        return f"  + {head} {it['after']} 신규"
+    if it['kind'] == 'gone':
+        return f"  - {head} {it['before']} 삭제"
+    mark = {'down': '▼', 'up': '▲', 'promo': '◇'}[it['kind']]
+    return f"  {mark} {head} {it['before']}→{it['after']}"
+
+
+def _rm_group_lines(groups):
+    """→ {'S': [요약, 줄...], ...}  인하 → 인상 → 신규 → 프로모션 기간 변경 (삭제는 요약 건수만)"""
     out = {}
     for net, short in NET_SHORT.items():
-        if not prev:
-            out[short] = "비교 기준 없음(다음 회차부터 비교)"
+        items = sorted(groups.get(net, []), key=_rm_sort_key)
+        if not items:
+            out[short] = ["동일"]
             continue
-        items = []
-        for label, _, _ in RM_BUCKETS:
-            a = (prev.get(label) or {}).get(net, 0) or 0
-            b = (curr.get(label) or {}).get(net, 0) or 0
-            if a != b:
-                items.append(f"{label} {_gb_label(a)}→{_gb_label(b)} ({'확대' if b > a else '축소'})")
-        out[short] = ", ".join(items) if items else f"{base_label} 동일"
+        cnt = {}
+        for it in items:
+            cnt[it['kind']] = cnt.get(it['kind'], 0) + 1
+        label = {'down': '인하', 'up': '인상', 'promo': '프로모션변경', 'new': '신규', 'gone': '삭제'}
+        rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
+        # [수정 20261024] 삭제는 건수만, 나머지(인하·인상·프로모션변경·신규)는 개수 제한 없이 전부 (사용자 결정)
+        rows += [_rm_item_line(it) for it in items if it['kind'] != 'gone']
+        out[short] = rows
     return out
 
 
@@ -947,11 +1099,10 @@ def _compact_data(data):
 def _plan_short(prefix, p):
     nm   = _clean_provider_display(shorten(p.get('provider', '')))
     net  = NET_SHORT.get(p.get('network', ''), p.get('network', ''))
-    disc = f"→{p['discount_months']}개월후 {p['base_price']:,}" if p.get('discount_months') and p.get('base_price') else ""
-    return f"· {prefix} {nm}({net}) {_compact_data(p.get('data',''))} {p.get('final_price',0):,}{disc}"
+    return f"· {prefix} {nm}({net}) {_compact_data(p.get('data',''))} {_sale_price_txt(p)}"  # [수정 20261023] 정상가 생략, 개월수만
 
 
-def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
+def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
                      aldot_plans, mvnohub_plans, moyo_plans, run_slot, checked_at):
     base = '전일' if run_slot == 'morning' else '직전'
     lines = [f"📌 요금제 특이사항 ({checked_at})", ""]
@@ -965,26 +1116,48 @@ def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
         lines.append(f" {base} 대비 사업자 변동 없음")
     for note in STANDING_PLAN_NOTES:
         lines.append(f" ※ {note}")
+    # [추가 20261020] 망별 알뜰폰 사업자 수 (MNO 제외, 모요+알닷+허브 통합 / 괄호는 모요)
+    def _mvno_providers(plist):
+        gen, sub, _mno = split_by_provider_type(plist)
+        out = {}
+        for p in gen + sub:
+            out.setdefault(p.get('network', ''), set()).add(_canon_provider(p.get('provider')))
+        return out
+    all_prov, moyo_prov = _mvno_providers((moyo_plans or []) + (aldot_plans or []) + (mvnohub_plans or [])), _mvno_providers(moyo_plans or [])
+    for net, label in (('SKT', 'SM'), ('KT', 'KM'), ('LGU+', 'LM')):
+        lines.append(f" {label}: {len(all_prov.get(net, ()))}개 사업자 (모요 {len(moyo_prov.get(net, ()))})")
     lines.append("")
 
-    # 💰 RS 특이사항 (일반사업자 3사 통합 구간 최저가) / 📈 RM 특이사항 (금액대별 최대 데이터)
-    for title, ch in (("💰 RS 특이사항", _price_change_lines(curr_rs or {}, prev_general, base)),
-                      ("📈 RM 특이사항 (금액대별 최대 데이터)", _rm_change_lines(curr_rm or {}, prev_rm, base))):
-        lines.append(title)
+    # 💰 RS 특이사항 (일반사업자 3사 통합 구간 최저가)
+    lines.append("💰 RS 특이사항")
+    ch = _price_change_lines(curr_rs or {}, prev_general, base)
+    for short in ('S', 'K', 'L'):
+        lines.append(f" {short}망 : {ch[short]}")
+    lines.append("")
+
+    # 📈 RM 특이사항 [수정 20261022] 요금제 단위 변동, 사업자별 묶음 (직전 수집 대비, 3사이트 통합, 알뜰폰만)
+    rm_base = {'morning': '전일 08시 대비', 'afternoon': '오늘 08시 대비', 'evening': '오늘 13시 대비'}.get(run_slot, '직전 대비')
+    lines.append(f"📈 RM 특이사항 ({rm_base})")
+    if rm_groups is None:
         for short in ('S', 'K', 'L'):
-            lines.append(f" {short}망 : {ch[short]}")
-        lines.append("")
+            lines.append(f" {short}망 : 비교 기준 없음")
+    else:
+        rm_lines = _rm_group_lines(rm_groups)
+        for short in ('S', 'K', 'L'):
+            lines.append(f" {short}망 : {rm_lines[short][0]}")
+            lines.extend(rm_lines[short][1:])
+    lines.append("")
 
     # 🆕 단독 / 📋 모요보다 저렴 (축약)
     only_aldot = _only_source_plans(aldot_plans, moyo_plans)
     only_hub   = _only_source_plans(mvnohub_plans, moyo_plans)
     if only_aldot or only_hub:
         lines.append(f"🆕 단독(모요 미등록) 알닷 {len(only_aldot)}·허브 {len(only_hub)}")
-        shown = [('알닷', p) for p in only_aldot[:3]] + [('허브', p) for p in only_hub[:3]]
+        # [수정 20261024] 개수 제한 없이 전부, 데이터 용량 큰 순 → 판매가 낮은 순 (사용자 결정)
+        shown = [('알닷', p) for p in only_aldot] + [('허브', p) for p in only_hub]
+        shown.sort(key=lambda sp: (-_data_rank(sp[1].get('data', ''))[0], -_data_rank(sp[1].get('data', ''))[1],
+                                   sp[1].get('final_price', 0)))
         lines.extend(_plan_short(src, p) for src, p in shown)
-        rest = max(len(only_aldot) - 3, 0) + max(len(only_hub) - 3, 0)
-        if rest:
-            lines.append(f"  외 {rest}개")
         lines.append("")
 
     cheaper = _cheaper_best_vs_moyo(aldot_plans, moyo_plans, '알닷', network_filter='LGU+') \
@@ -994,6 +1167,9 @@ def build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
         lines.extend(cheaper)
 
     return "\n".join(lines).strip()
+
+
+CHEAPER_MIN_DIFF = 1000
 
 
 def _cheaper_best_vs_moyo(source_plans, moyo_plans, src_label, network_filter=None):
@@ -1017,7 +1193,8 @@ def _cheaper_best_vs_moyo(source_plans, moyo_plans, src_label, network_filter=No
     for seg in segments:
         for net in nets:
             mv, sp = moyo_min.get((seg, net)), src_min.get((seg, net))
-            if mv and sp and sp['final_price'] < mv['final_price']:
+            # [수정 20261020] 차이가 CHEAPER_MIN_DIFF(1,000원) 미만이면 사실상 같은 가격이라 표시 안 함
+            if mv and sp and mv['final_price'] - sp['final_price'] >= CHEAPER_MIN_DIFF:
                 nm = _clean_provider_display(shorten(sp.get('provider', '')))
                 out.append(f"· {src_label} {seg}({NET_SHORT.get(net, net)}) {nm} {sp['final_price']:,} "
                            f"(모요 {mv['final_price']:,}, ↓{mv['final_price'] - sp['final_price']:,})")
@@ -2366,6 +2543,8 @@ def main():
             else:
                 # 제외된 요금제(프리티 하나은행 등): is_lowest_rs=False 강제
                 p['is_lowest_rs'] = False
+        # [추가 20261022] RM 특이사항용 직전 수집(저장 전 최신 1건 = 직전 회차) - 3사 통합 수집일 때만
+        prev_moyo_latest = db.get_latest_data('moyo') if scrape_type != 'aldot' else None
         db.save_check_result('moyo', plans, screenshot, source_type=source_type)
         print("✅ 모요 Firebase 저장 완료")
 
@@ -2417,11 +2596,13 @@ def main():
         # ── 알닷 수집 ────────────────────────────────────────────────────────
         aldot_plans = []
         prev_aldot_counts = None
+        prev_aldot_latest = None
         try:
             aldot_scraper = AldotScraper(progress_callback=progress)
             aldot_plans, _ = aldot_scraper.scrape()
             aldot_plans = comparator.tag_plans_with_lowest(aldot_plans)
-            prev_aldot_counts = db.get_latest_provider_counts('aldot')  # [추가 20261019] 저장 전 = 직전 수집
+            prev_aldot_latest = db.get_latest_data('aldot')  # [수정 20261022] 저장 전 = 직전 수집 (RM 비교·사업자 수 공용)
+            prev_aldot_counts = FirebaseHandler._provider_counts((prev_aldot_latest or {}).get('plans', [])) if prev_aldot_latest else None
             db.save_check_result('aldot', aldot_plans, None, source_type=source_type)
             print(f"✅ 알닷 {len(aldot_plans)}개 수집 완료")
         except Exception as e:
@@ -2435,11 +2616,13 @@ def main():
         # ── 알뜰폰허브 수집 ──────────────────────────────────────────────────
         mvnohub_plans = []
         prev_hub_counts = None
+        prev_hub_latest = None
         try:
             hub_scraper = MvnohubScraper(progress_callback=progress)
             mvnohub_plans, _ = hub_scraper.scrape()
             mvnohub_plans = comparator.tag_plans_with_lowest(mvnohub_plans)
-            prev_hub_counts = db.get_latest_provider_counts('mvnohub')  # [추가 20261019]
+            prev_hub_latest = db.get_latest_data('mvnohub')  # [수정 20261022]
+            prev_hub_counts = FirebaseHandler._provider_counts((prev_hub_latest or {}).get('plans', [])) if prev_hub_latest else None
             db.save_check_result('mvnohub', mvnohub_plans, None, source_type=source_type)
             print(f"✅ 알뜰폰허브 {len(mvnohub_plans)}개 수집 완료")
         except Exception as e:
@@ -2462,7 +2645,6 @@ def main():
         curr_rs  = comparator.get_segment_min_prices(filter_for_rs(merged_general_all), rs_only=True)
         curr_sub = comparator.get_segment_min_prices(filter_for_rs(merged_sub_all), rs_only=True)
         curr_mno = get_mno_segment_min_prices(merged_mno_all)  # RS+RM 통합, 필터 없음(기존과 동일)
-        curr_rm  = rm_max_data_summary(merged_general_all)  # [추가 20261019] 일반 RM: 금액대별 최대 데이터
 
         # ── 직전 스냅샷 조회 (일반/자회사/MNO 각각, 병합값 기준) ────────────
         # 하루 3회(08/13/17시) 롤링 비교: 08시→전일 08시 / 13시→당일 08시 / 17시→당일 13시
@@ -2482,14 +2664,12 @@ def main():
         prev_general = _load_prev_snapshot('general')
         prev_sub     = _load_prev_snapshot('sub')
         prev_mno     = _load_prev_snapshot('mno')
-        prev_rm      = _load_prev_snapshot('general_rm')
 
         # 스냅샷 저장: auto 수집일 때만 (3종 모두 병합값 기준, run_slot 태깅하여 저장)
         if source_type == 'auto':
             db.save_rs_snapshot(curr_rs,  source_type=source_type, snap_type='general', run_slot=run_slot)
             db.save_rs_snapshot(curr_sub, source_type=source_type, snap_type='sub',     run_slot=run_slot)
             db.save_rs_snapshot(curr_mno, source_type=source_type, snap_type='mno',     run_slot=run_slot)
-            db.save_rs_snapshot(curr_rm,  source_type=source_type, snap_type='general_rm', run_slot=run_slot)
         else:
             print("ℹ️ 수동 수집 - RS 스냅샷 저장 생략")
 
@@ -2537,7 +2717,25 @@ def main():
         alert_msg = build_provider_alert(provider_changes, moyo_checked_at)
 
         # ── 메시지5: 요금제 특이사항 [수정 20261019] (기존 단독/저렴 요금제 메시지 대체·축약) ──
-        msg5 = build_plan_notes(curr_rs, prev_general, curr_rm, prev_rm, provider_changes,
+        # [수정 20261023] RM 비교 기준 = RS와 같은 회차 규칙 (08시→전일 08시, 13시→당일 08시, 17시→당일 13시)
+        #  해당 회차 기록이 없으면 저장 전에 받아둔 직전 수집으로 대체
+        rm_base_docs = {}
+
+        def _rm_prev(site, fallback):
+            d = db.get_data_by_slot(site, prev_slot, days_ago=prev_days_ago) if source_type == 'auto' else None
+            rm_base_docs[site] = d or fallback or {}
+            return rm_base_docs[site].get('plans')
+        rm_pairs = {
+            'moyo':    (_rm_prev('moyo', prev_moyo_latest), plans),
+            'aldot':   (_rm_prev('aldot', prev_aldot_latest), aldot_plans),
+            'mvnohub': (_rm_prev('mvnohub', prev_hub_latest), mvnohub_plans),
+        }
+        # [추가 20261024] 신규 판정: 비교 기준 회차 + 그 직전 2회(총 3회) 모두에 없던 요금제만
+        #  (기준 회차가 스크래핑 실패로 일부 빠졌을 때 오탐 방지. 기준 이후 회차는 안 봄 → 아침 '전일 08시 대비'에 하루치 신규가 다 나옴)
+        rm_recent = {site: [d.get('plans') or [] for d in db.get_recent_data(site, 2, before=rm_base_docs[site]['checked_at'])]
+                     for site, (pv, cur) in rm_pairs.items() if pv and cur and rm_base_docs[site].get('checked_at')}
+        rm_groups = compute_rm_groups(rm_pairs, rm_recent) if any(v[0] for v in rm_pairs.values()) else None
+        msg5 = build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
                                 aldot_plans, mvnohub_plans, plans, run_slot,
                                 datetime.now(KOREA_TZ).strftime('%m/%d %H:%M'))
 
