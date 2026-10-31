@@ -249,19 +249,12 @@ def _get_db():
 # ══════════════════════════════════════════════════════════════════
 
 def get_tout_goal(year: int, month: int) -> int:
-    """월별 T-Out 목표 조회 (Firestore → 환경변수 폴백)"""
-    ym = f'{year:04d}-{month:02d}'
-    try:
-        db = _get_db()
-        doc = (db.collection('ktoa_config').document('target_goal')
-               .collection('monthly').document(ym).get())
-        if doc.exists:
-            goal = doc.to_dict().get('goal', 0)
-            if goal > 0:
-                return int(goal)
-    except Exception as e:
-        log.warning(f"T-Out 목표 조회 실패: {e}")
-    return int(os.environ.get('KTOA_TARGET_GOAL', '42000'))
+    """월별 T-Out 목표 조회. [수정 20261015] bw_engine 단일 소스로 위임
+    (forecast_engine/ktoa_telegram/predict_gemini 3곳 중복 구현 제거 -
+    predict_gemini.py 쪽만 Firestore 컬렉션명이 틀려있어서 조용히 다른
+    월목표를 쓰고 있던 버그가 있었음, bw_engine.get_tout_goal() 참고)"""
+    from bw_engine import get_tout_goal as _gtg
+    return _gtg(year, month)
 
 
 def _calc_weighted_avg(history: list, max_w: float = 5.0) -> float:
@@ -1276,7 +1269,7 @@ def _calendar_weight(date_str: str, bw: float) -> float:
 
 def _get_prev_month_analog_pred(date_str: str, cum_this: float,
                                 include_today: bool, group: str = 'mno_out',
-                                key: str = 'S') -> Optional[dict]:
+                                key: str = 'S', scaled_w: Optional[float] = None) -> Optional[dict]:
     """전월 동일시점 잔여속도법 월마감 예측 (위 설명 참고).
     cum_this: 이번달 경과 누적(오늘 포함 시 오늘 일마감 예측치까지 더한 값)
     include_today: cum_this에 오늘이 들어있는지 (False면 어제까지가 경과)
@@ -1323,7 +1316,8 @@ def _get_prev_month_analog_pred(date_str: str, cum_this: float,
     ws = [0.5 ** i for i in range(len(refs))]
     pure = sum(w * r[1] for w, r in zip(ws, refs)) / sum(ws)
     scaled = sum(w * r[1] * this_rate / r[0] for w, r in zip(ws, refs)) / sum(ws)
-    rate = (1 - ANALOG_SCALED_W) * pure + ANALOG_SCALED_W * scaled
+    w = ANALOG_SCALED_W if scaled_w is None else scaled_w
+    rate = (1 - w) * pure + w * scaled
     return {
         'pred': cum_this + rate * remaining_bw,
         'pred_pure': cum_this + pure * remaining_bw,
@@ -1517,6 +1511,29 @@ def get_end_aligned_mvno_pred(date_str: str, cum_in: float, cum_out: float,
 TOUT_END_ALIGNED_W = 0.3  # 혼합 비중 (0.3/0.5/0.7 비교 → 0.3이 전 구간 고르게 개선)
 TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 비교 → 0.5)
 
+# [v3.4, 추가 20261020] 월초 수준 배율 축소: 월 진행률(달력가중 기준)이 TOUT_EARLY_RAMP에
+# 이를 때까지 "이번달 수준" 반영 비중(잔여속도법 scaled 50%, 월말정렬 수준 50%)을
+# 진행률에 비례해 0부터 키움 - 월초 1~3영업일은 표본이 적고 월초 몰림 크기가 달마다
+# 달라 수준 배율이 과하게 튐(최근 4개월 1~10일 편향 +2.6%). 백테스트 1~10일 평균오차
+# (현행 → 10% 축소): 2025-10~2026-09 5.94 → 5.55%, 2026-06~09 3.81 → 3.34%.
+# 12개월 중 9개월 개선, 월초부터 수준이 실제로 바뀐 달(2026-01)은 5.2 → 8.9%로 나빠짐.
+# 범위 10/15/20/25% 비교 → 두 기간 모두 개선되는 10%.
+TOUT_EARLY_RAMP = 0.10
+
+
+def _tout_level_factor(date_str: str, include_today: bool) -> float:
+    """월초 수준 배율 축소 계수(0~1). 진행률 = 경과 달력가중 ÷ 월 전체 달력가중."""
+    if TOUT_EARLY_RAMP <= 0:
+        return 1.0
+    d = datetime.strptime(date_str, '%Y-%m-%d')
+    ref_day = d.day if include_today else d.day - 1
+    days = _get_month_days(d.year, d.month)
+    total = sum(_calendar_weight(ds, bw) for ds, bw, _ in days)
+    if total <= 0:
+        return 1.0
+    el = sum(_calendar_weight(ds, bw) for ds, bw, _ in days if int(ds[8:]) <= ref_day)
+    return min(1.0, (el / total) / TOUT_EARLY_RAMP)
+
 
 def get_end_aligned_tout_pred(date_str: str, cum_this: float,
                               include_today: bool) -> Optional[float]:
@@ -1528,7 +1545,8 @@ def get_end_aligned_tout_pred(date_str: str, cum_this: float,
     scale = 1.0
     if r['this_cw'] > 0 and r['ref_rate'][sp] > 0:
         scale = (cum_this / r['this_cw']) / r['ref_rate'][sp]
-    return cum_this + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+    lw = TOUT_LEVEL_W * _tout_level_factor(date_str, include_today)
+    return cum_this + r['rem'][sp] * ((1 - lw) + lw * scale)
 
 
 def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
@@ -1540,7 +1558,9 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
     반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
     sp = ('mno_out', 'S')
     if not intraday:
-        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed)
+        f = _tout_level_factor(date_str, today_confirmed)
+        a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed,
+                                        scaled_w=ANALOG_SCALED_W * f)
         if not a:
             return None
         e = get_end_aligned_tout_pred(date_str, cum_now, include_today=today_confirmed)
@@ -1548,7 +1568,9 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
                 'remaining_bw': a['remaining_bw']}
 
     # 장중: 어제까지 확정 실적으로 속도(수준 배율 포함)를 구하고, 잔여는 오늘 제외
-    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False)
+    f0 = _tout_level_factor(date_str, False)
+    a0 = _get_prev_month_analog_pred(date_str, cum_db, include_today=False,
+                                     scaled_w=ANALOG_SCALED_W * f0)
     if not a0:
         return None
     bw_today = next((bw for ds, bw, _ in _get_month_days(
@@ -1563,7 +1585,8 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
         scale = 1.0
         if r0['this_cw'] > 0 and r0['ref_rate'][sp] > 0:
             scale = (cum_db / r0['this_cw']) / r0['ref_rate'][sp]
-        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - TOUT_LEVEL_W) + TOUT_LEVEL_W * scale)
+        lw = TOUT_LEVEL_W * f0
+        out['pred_ea'] = cum_now + r['rem'][sp] * ((1 - lw) + lw * scale)
     return out
 
 
@@ -1602,6 +1625,8 @@ def predict_monthly(date_str: str, today_skt: int,
     history    = []  # (skt, bw) 확정 실적 이력
     _today_confirmed = False  # 오늘(day)이 이미 일마감돼 위 루프에 포함됐는지
 
+    elapsed_bw_man = 0.0  # [추가 20261015] bw_manual 우선 경과bw (remaining_avg용, 아래 참고)
+
     try:
         _db2 = _get_db()
         for _d in range(1, day + 1):
@@ -1610,7 +1635,8 @@ def predict_monthly(date_str: str, today_skt: int,
             if not _doc.exists:
                 continue
             _dd = _doc.to_dict()
-            # 경과bw: bw_ai_prev 고정 (엑셀과 동일, w1~w3 미사용)
+            # 경과bw: bw_ai_prev 고정 (엑셀과 동일, w1~w3 미사용) - fc_low/mid/high
+            # 밴드(rbw_ai 등) 계산용이라 건드리지 않음.
             _bw = float(_dd.get('bw_ai_prev') or _dd.get('bw_manual') or 0)
             if not _bw or _bw <= 0:
                 continue
@@ -1619,6 +1645,12 @@ def predict_monthly(date_str: str, today_skt: int,
                 continue  # 실적 미집계 → elapsed_bw 제외
             _mvno = _dd.get('mvno_in', {}).get('계', 0) or 0
             elapsed_bw += _bw
+            # [수정 20261015] remaining_avg/today_goal(rbw_man 기반)은 bw_manual
+            # 우선 경과bw로 따로 빼야 함 - _total_man(월 전체 합, bw_manual 우선)에서
+            # elapsed_bw(AI 우선)를 빼면 과거 영업일들의 "manual값-AI값" 차이가
+            # 고스란히 잔여치에 섞여 들어가는 버그가 있었음(실측: 1.8일 과소산출).
+            from bw_engine import get_bw_final as _gbf_elapsed
+            elapsed_bw_man += _gbf_elapsed(_ds, _dd)
             cum_skt_db += int(_skt)
             cum_mvno   += int(_mvno)
             history.append((int(_skt), _bw))
@@ -1659,6 +1691,12 @@ def predict_monthly(date_str: str, today_skt: int,
     # 기존 "10시대는 미표시" 폴백이 정상적으로 발동하게 함.
     _ratio = _get_hour_completion_ratio(date_str, current_hour) if (today_skt > 0 and current_hour >= 11) else 0.0
     fc_daily = int(today_skt / _ratio) if _ratio > 0 else (fc_daily_raw if current_hour >= 11 else 0)
+    # [수정 20261020] 일마감(20:01)·RECHECK(20:25)는 current_hour 기본값 19로 호출되는데
+    # today_skt는 이미 하루 전체 실적 - 19시 완료율(약 93.5%)로 또 나눠서 fc_daily가
+    # 매일 실적보다 7~9% 크게 저장됐음(10/19 실적 1,405 → fc_daily 1,502, 19:50 메시지
+    # 예상은 1,419). 오늘이 마감 확정이면 실적 그대로 씀.
+    if _today_confirmed and today_skt > 0:
+        fc_daily = int(today_skt)
 
     avg_skt = avg_recent  # 메시지/잔여 일평균 계산용 기준
 
@@ -1672,6 +1710,7 @@ def predict_monthly(date_str: str, today_skt: int,
 
     try:
         db = _get_db()
+        from bw_engine import get_bw_final as _gbf_total
         # 잔여bw = total - elapsed (B방식, last_biz 제거 → 월말 수렴)
         _total_ai = _total_w2 = _total_man = 0.0
         for d2 in range(1, last_day + 1):
@@ -1679,11 +1718,18 @@ def predict_monthly(date_str: str, today_skt: int,
             data = (db.collection('ktoa_daily').document(ds2).get().to_dict() or {})
             _total_ai  += float(data.get('bw_ai_prev') or 0)
             _total_w2  += float(data.get('bw_ai_w2') or data.get('bw_ai_prev') or 0)
-            _total_man += float(data.get('bw_manual') or data.get('bw_ai_prev') or 0)
+            # [수정 20261015] bw_manual/bw_ai_prev 둘 다 없는 먼 미래일(아직 AI
+            # 사전계산 안 된 날)에 0으로 비는 걸 막으려고 get_bw_final()의 전체
+            # 폴백 체인(w3>w2>w1>calc_bw_ai)까지 사용 - bw_manual 우선은 그대로.
+            _total_man += _gbf_total(ds2, data)
         # B방식: last_biz 제거 → 월말 수렴 개선. elapsed_bw가 오늘 미마감 시 오늘을
         # 제외하므로(위 루프 참고), 이 rbw_*는 그 경우 "오늘 포함 잔여"가 됨.
         rbw_ai  = round(_total_ai  - elapsed_bw, 3)  # Low (보수적, bw_ai_prev)
-        rbw_man = round(_total_man - elapsed_bw, 3)  # High (낙관적, bw_manual)
+        # [수정 20261015] rbw_man은 elapsed_bw(AI 우선 경과분)가 아니라
+        # elapsed_bw_man(bw_manual 우선 경과분)을 빼야 _total_man과 같은 기준으로
+        # 과거 영업일이 정확히 상쇄됨 (안 그러면 "manual값-AI값" 차이가 잔여치에
+        # 섞여 들어감 - 실측으로 1.8일 정도 과소산출되던 원인).
+        rbw_man = round(_total_man - elapsed_bw_man, 3)  # High (낙관적, bw_manual)
         rbw_w2  = round((rbw_ai + rbw_man) / 2, 3)  # Mid (중간값)
         _rbw_includes_today = not _today_confirmed
     except Exception as e:
@@ -1694,7 +1740,12 @@ def predict_monthly(date_str: str, today_skt: int,
             bw_map.get(f"{year:04d}-{month:02d}-{d2:02d}", 0.0)
             for d2 in range(day + 1, last_day + 1)), 3)  # 폴백은 항상 오늘 제외
 
-    rbw = rbw_w2  # 기준값 (remaining_avg 계산용, mid 기준)
+    # [수정 20261015] remaining_avg/today_goal/need_avg(= "잔여 일평균 목표" 표시용)는
+    # fc_low/mid/high 3시나리오 밴드와 별개로, bw_manual 우선 값(rbw_man)을 기준으로
+    # 삼음. rbw_w2(ai+manual 평균)를 쓰면 bw_manual이 있는 날에도 AI 예측과 섞여서
+    # "실무자가 넣은 영업일수와 다른 숫자"가 표시되는 문제가 있었음 (fc_low/mid/high
+    # 밴드 자체는 그대로 rbw_ai/rbw_w2/rbw_man 3종을 따로 씀 - 안 건드림).
+    rbw = rbw_man  # 기준값 (remaining_avg 계산용, bw_manual 우선)
 
     # ── cum_skt: 오늘 실시간 반영 (사장님 요청 - "정시에 일마감 예측수치가 계산에
     # 반영돼야 함. 늘어날수도 있고 소폭 줄어들수도 있지")
@@ -1719,7 +1770,7 @@ def predict_monthly(date_str: str, today_skt: int,
             rbw_ai  = round(max(0.0, rbw_ai  - bw), 3)
             rbw_man = round(max(0.0, rbw_man - bw), 3)
             rbw_w2  = round((rbw_ai + rbw_man) / 2, 3)
-            rbw     = rbw_w2
+            rbw     = rbw_man
 
     # ── 수식 기반 일평균 보정 (avg가 여전히 0인 극단적 케이스만)
     # rolling avg가 정상이면 여기 안 탐
@@ -1869,11 +1920,15 @@ def predict_monthly(date_str: str, today_skt: int,
     need_avg = int(remaining_cum / rbw) if rbw > 0 else 0
     ach_rate = round(cum_skt / goal * 100, 1) if goal > 0 else 0
 
-    # remaining_avg/today_goal: Gemini 블록과 무관하게 먼저 계산
-    _remaining_bw_incl = rbw + bw
-    remaining_avg = int(remaining_cum / _remaining_bw_incl) if _remaining_bw_incl > 0 else 0
-    today_goal    = int(remaining_avg * bw) if bw > 0 else 0
-    pct_of_goal   = round(today_skt / today_goal * 100) if today_goal > 0 else 0
+    # [수정 20261015] remaining_avg/today_goal: bw_engine 공용 함수로 통일
+    # (forecast_engine/predict_gemini/ktoa_telegram 폴백 2곳 - 총 4곳 중복
+    # 구현 제거, bw_engine.calc_remaining_avg_today_goal() 참고)
+    from bw_engine import calc_remaining_avg_today_goal as _crag
+    _rag = _crag(year, month, day, cum_skt_db, goal, _today_confirmed,
+                 bw_today=bw, today_actual=today_skt)
+    remaining_avg = _rag['remaining_avg']
+    today_goal    = _rag['today_goal']
+    pct_of_goal   = _rag['pct_of_goal']
 
     # ── Gemini: comment + on_track 판단에만 사용 (fc_low/high는 수식 고정)
     comment = ''
@@ -1944,6 +1999,9 @@ def predict_monthly(date_str: str, today_skt: int,
         'remaining_avg': remaining_avg,
         'today_goal':    today_goal,
         'pct_of_goal':   pct_of_goal,
+        'remaining_cum': _rag['remaining_cum'],
+        'remaining_bw_incl_today': _rag['remaining_bw_incl_today'],
+        'remaining_bw_after_today': _rag['remaining_bw'],
         'progress_ratio':   round(progress_ratio, 3),
         'hist_ratio_used':  hist_ratio_used,
     }

@@ -548,3 +548,46 @@ def get_month_sejong_migration(year: int, month: int) -> dict:
     except Exception as e:
         log.warning(f"[세종이관] 월 조회 실패: {e}")
     return result
+
+
+def get_sejong_migration_monthly_totals(upto_date_str: str) -> dict:
+    """[신규 20261029] 월별 소계 + 전체 누적 조회 (실무자가 보는 엑셀 표
+    '8월 소계 807 / 9월 소계 7,512 / 10월 소계 3,079 / 전체 누적 11,398' 형식의
+    텔레그램 메시지 표시용).
+
+    각 월의 '소계' = 그 달 마지막으로 저장된 날짜의 cum 값. save_sejong_migration()의
+    누적이 월 경계에서 0으로 리셋되는 구조라, 그 달 마지막 날의 cum이 곧 그 달 순증분과
+    같음. upto_date_str보다 미래인 날짜는 집계에서 제외.
+
+    Returns: {'months': [(월(int), {'SM','KM','LM'}), ...] (오름차순),
+              'total': {'SM','KM','LM'} (LM은 한 달이라도 미확인 섞이면 전체도 미확인=None)}
+    """
+    months_out = []
+    total = {'SM': 0, 'KM': 0, 'LM': 0}
+    lm_unconfirmed = False
+    try:
+        db = _get_db()
+        docs = db.collection(SEJONG_MIG_COLLECTION).stream()
+        by_month = {}  # 'YYYY-MM' -> {date_str: payload}
+        for doc in docs:
+            if doc.id > upto_date_str:
+                continue
+            ym = doc.id[:7]
+            by_month.setdefault(ym, {})[doc.id] = doc.to_dict()
+
+        for ym in sorted(by_month.keys()):
+            last_date = max(by_month[ym].keys())
+            cum = by_month[ym][last_date].get('cum', {}) or {}
+            month_num = int(ym.split('-')[1])
+            months_out.append((month_num, cum))
+            total['SM'] += cum.get('SM', 0) or 0
+            total['KM'] += cum.get('KM', 0) or 0
+            if cum.get('LM') is None:
+                lm_unconfirmed = True
+            else:
+                total['LM'] += cum.get('LM', 0)
+    except Exception as e:
+        log.warning(f"[세종이관] 월별 소계 조회 실패: {e}")
+
+    total['LM'] = None if lm_unconfirmed else total['LM']
+    return {'months': months_out, 'total': total}
