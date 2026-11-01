@@ -841,7 +841,20 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
     # 둘 다 동일하게 bw_engine 단일 소스로 계산해서 덧붙임 (경로 간 숫자 불일치 방지)
     from bw_engine import calc_elapsed_remaining_bw as _cerbw
     _elapsed_bw_disp, _remaining_bw_disp = _cerbw(dt.year, dt.month, dt.day)
-    skt_section = skt_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
+    # [추가 20261031] 월 마지막 영업일(잔여 영업일 0) 일마감은 월 확정치 - SKT OUT은
+    # "N월 마감 : 실적 (목표 대비 ▲/+차이)"로, 누적 블록 제목은 "N월 마감"으로 표시.
+    _month_closed = _remaining_bw_disp <= 0
+    _cum_title = '마감' if _month_closed else '누적'
+    if _month_closed:
+        skt_section = '\n'.join([
+            '◎ SKT OUT',
+            f'목표 : {tout_goal:,}',
+            f'{month}월 마감 : {cum_tout:,} (목표 대비 {_sign(cum_tout - tout_goal)}) '
+            + ('✅' if cum_tout <= tout_goal else '⚠️'),
+            f'영업일: {_elapsed_bw_disp:.1f}일',
+        ])
+    else:
+        skt_section = skt_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
 
     lines = [
         f'■ 실적 현황 보고_{mmdd}({weekday})',
@@ -857,7 +870,7 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'계  {mi["계"]:,}',
         '',
         # ── MVNO IN 월 누적
-        f'◎ MVNO IN ({month}월 누적)',
+        f'◎ MVNO IN ({month}월 {_cum_title})',
         f'SM  {_k(cmi["SM"])} ({_pct(cmi["SM"], cmi["계"])})',
         f'KM  {_k(cmi["KM"])} ({_pct(cmi["KM"], cmi["계"])})',
         f'LM  {_k(cmi["LM"])} ({_pct(cmi["LM"], cmi["계"])})',
@@ -871,7 +884,7 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'계  {mno["계"]:,}',
         '',
         # ── MNO Out 월 누적
-        f'◎ MNO Out ({month}월 누적)',
+        f'◎ MNO Out ({month}월 {_cum_title})',
         f'S  {_k(cmno["S"])} ({_pct(cmno["S"], cmno["계"])})',
         f'K  {_k(cmno["K"])} ({_pct(cmno["K"], cmno["계"])})',
         f'L  {_k(cmno["L"])} ({_pct(cmno["L"], cmno["계"])})',
@@ -890,7 +903,7 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
         # ── 순증감 월 누적
-        f'◎ 순증감 ({month}월 누적)',
+        f'◎ 순증감 ({month}월 {_cum_title})',
         f'SM  {_sign(cnet["SM"])}',
         f'KM  {_sign(cnet["KM"])}',
         f'LM  {_sign(cnet["LM"])}',
@@ -909,7 +922,7 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'계  {mo["계"]:,}',
         '',
         # ── MVNO Out 월 누적
-        f'◎ MVNO Out ({month}월 누적)',
+        f'◎ MVNO Out ({month}월 {_cum_title})',
         f'SM  {_k(cmo["SM"])} ({_pct(cmo["SM"], cmo["계"])})',
         f'KM  {_k(cmo["KM"])} ({_pct(cmo["KM"], cmo["계"])})',
         f'LM  {_k(cmo["LM"])} ({_pct(cmo["LM"], cmo["계"])})',
@@ -1005,7 +1018,11 @@ def build_sejong_correction_message(daily: dict, migration: dict,
     # bw_engine 단일 소스로 계산
     from bw_engine import calc_elapsed_remaining_bw as _cerbw
     _elapsed_bw_disp, _remaining_bw_disp = _cerbw(dt.year, dt.month, dt.day)
-    migration_section = migration_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
+    _month_closed = _remaining_bw_disp <= 0   # [추가 20261031] build_closing_message()와 동일
+    _cum_title = '마감' if _month_closed else '누적'
+    migration_section = migration_section + (
+        f'\n영업일: {_elapsed_bw_disp:.1f}일' if _month_closed
+        else f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)')
     migration_section = migration_section + '\n'.join([
         '',
         '',
@@ -1026,7 +1043,7 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'LM  {mi["LM"]:,} ({_pct(mi["LM"], mi["계"])}){arr_pct("LM", mi, pmi)}',
         f'계  {mi["계"]:,}',
         '',
-        f'◎ MVNO IN ({month}월 누적)',
+        f'◎ MVNO IN ({month}월 {_cum_title})',
         f'SM  {_k(cmi["SM"])} ({_pct(cmi["SM"], cmi["계"])})',
         f'KM  {_k(cmi["KM"])} ({_pct(cmi["KM"], cmi["계"])})',
         f'LM  {_k(cmi["LM"])} ({_pct(cmi["LM"], cmi["계"])})',
@@ -1038,7 +1055,7 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'L  {mno["L"]:,} ({_pct(mno["L"], mno["계"])})',
         f'계  {mno["계"]:,}',
         '',
-        f'◎ MNO Out ({month}월 누적)',
+        f'◎ MNO Out ({month}월 {_cum_title})',
         f'S  {_k(daily.get("cum_mno_out", {}).get("S", 0))}',
         f'K  {_k(daily.get("cum_mno_out", {}).get("K", 0))}',
         f'L  {_k(daily.get("cum_mno_out", {}).get("L", 0))}',
@@ -1055,7 +1072,7 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'L   {_sign(net["L"])}',
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
-        f'◎ 순증감 ({month}월 누적)',
+        f'◎ 순증감 ({month}월 {_cum_title})',
         f'SM  {_sign(cnet["SM"])}',
         f'KM  {_sign(cnet["KM"])}',
         f'LM  {_sign(cnet["LM"])}',
@@ -1072,7 +1089,7 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'LM  {mo["LM"]:,} ({_pct(mo["LM"], mo["계"])}){arr_pct("LM", mo, pmo)}',
         f'계  {mo["계"]:,}',
         '',
-        f'◎ MVNO Out ({month}월 누적)',
+        f'◎ MVNO Out ({month}월 {_cum_title})',
         f'SM  {_k(cmo["SM"])} ({_pct(cmo["SM"], cmo["계"])})',
         f'KM  {_k(cmo["KM"])} ({_pct(cmo["KM"], cmo["계"])})',
         f'LM  {_k(cmo["LM"])} ({_pct(cmo["LM"], cmo["계"])})',
