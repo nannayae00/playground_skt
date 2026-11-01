@@ -1461,13 +1461,43 @@ def _run_month_end_bw(today_str: str) -> None:
         saved = generate_month_bw_ai_prev(next_year, next_month)
         log.info(f"=== {next_ym} bw_ai_prev {saved}일 저장 완료 ===")
 
+        # [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
+        # 합계·영업하는 날 수와 이번 달(AI·엑셀) 합계를 같이 표시.
+        def _bw_sums(ym):
+            ai = man = 0.0
+            open_days = days = 0
+            has_man = False
+            for _s in _db3.collection('ktoa_daily') \
+                          .where('date', '>=', f'{ym}-01').where('date', '<=', f'{ym}-31').stream():
+                _x = _s.to_dict()
+                if 'bw_ai_prev' in _x:
+                    days += 1
+                    ai += _x.get('bw_ai_prev') or 0
+                    open_days += 1 if (_x.get('bw_ai_prev') or 0) > 0 else 0
+                if _x.get('bw_manual') is not None:
+                    has_man = True
+                    man += _x['bw_manual']
+            return ai, open_days, days, (man if has_man else None)
+
+        text = f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료 ({saved}일)'
+        try:
+            from ktoa_firestore import _get_db as _fdb3
+            _db3 = _fdb3()
+            _ai, _open, _days, _ = _bw_sums(next_ym)
+            _pai, _, _, _pman = _bw_sums(f'{year:04d}-{month:02d}')
+            text = (f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료\n'
+                    f'합계 {_ai:.2f}일 (영업 {_open}일 / {_days}일)\n'
+                    f'참고 {month}월: AI {_pai:.2f}일'
+                    + (f' / 엑셀 {_pman:.1f}일' if _pman is not None else ''))
+        except Exception as _se:
+            log.warning(f"bw 합계 계산 실패 (기본 문구로 발송): {_se}")
+
         token   = os.environ.get('TELEGRAM_TOKEN', '')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
         if token and chat_id:
             requests.post(
                 f'https://api.telegram.org/bot{token}/sendMessage',
-                json={'chat_id': chat_id,
-                      'text': f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료 ({saved}일)'},
+                json={'chat_id': chat_id, 'text': text},
                 timeout=10,
             )
 
