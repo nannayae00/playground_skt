@@ -1462,7 +1462,7 @@ def _run_month_end_bw(today_str: str) -> None:
         log.info(f"=== {next_ym} bw_ai_prev {saved}일 저장 완료 ===")
 
         # [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
-        # 합계·영업하는 날 수와 이번 달(AI·엑셀) 합계를 같이 표시.
+        # 다음 달·이번 달 각각 AI 합계 / 실무(bw_manual) 합계 (영업하는 날 / 날짜 수).
         def _bw_sums(ym):
             ai = man = 0.0
             open_days = days = 0
@@ -1483,12 +1483,13 @@ def _run_month_end_bw(today_str: str) -> None:
         try:
             from ktoa_firestore import _get_db as _fdb3
             _db3 = _fdb3()
-            _ai, _open, _days, _ = _bw_sums(next_ym)
-            _pai, _, _, _pman = _bw_sums(f'{year:04d}-{month:02d}')
+            def _line(m, ym):
+                _ai, _open, _days, _man = _bw_sums(ym)
+                _man_txt = f'실무 {_man:.1f}일' if _man is not None else '실무 입력전'
+                return f'{m}월 AI {_ai:.2f}일 / {_man_txt} (영업 {_open}일 / {_days}일)'
             text = (f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료\n'
-                    f'합계 {_ai:.2f}일 (영업 {_open}일 / {_days}일)\n'
-                    f'참고 {month}월: AI {_pai:.2f}일'
-                    + (f' / 엑셀 {_pman:.1f}일' if _pman is not None else ''))
+                    + _line(next_month, next_ym) + '\n'
+                    + _line(month, f'{year:04d}-{month:02d}'))
         except Exception as _se:
             log.warning(f"bw 합계 계산 실패 (기본 문구로 발송): {_se}")
 
