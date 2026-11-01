@@ -2722,7 +2722,7 @@ def _backfill_bw_performance(year: int, month: int) -> int:
     (10월: 10/26 일괄 계산분은 10/25까지 평균 12,210, 나머지는 당일까지 평균 →
     합계 25.57). 월마감엔 모든 영업일을 같은 월평균(MVNO IN 일평균)으로 다시 나눠
     저장 → 합계 = 영업한 날 수. 바뀌는 날은 이전 값을 bw_performance_running에
-    백업(처음 한 번만)하고, 바뀐 날이 있으면 텔레그램으로 결과를 알림.
+    백업(처음 한 번만).
     반환: 값이 바뀐 일수
     """
     from calendar import monthrange as _mr
@@ -2780,20 +2780,6 @@ def _backfill_bw_performance(year: int, month: int) -> int:
     if changed:
         log.info(f"bw_performance 월마감 재계산: {year}-{month:02d} {changed}일 변경, "
                  f"합계 {old_sum:.2f} → {new_sum:.2f}")
-        try:
-            import requests as _rq
-            token = os.environ.get('TELEGRAM_TOKEN', '')
-            chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
-            if token and chat_id:
-                _rq.post(f'https://api.telegram.org/bot{token}/sendMessage',
-                         json={'chat_id': chat_id, 'text': (
-                             f'✅ {year}-{month:02d} 실적 영업일수(bw_performance) 월마감 재계산\n'
-                             f'{month}월 실적 {new_sum:.2f}일 (영업 {open_days}일 / {last_day}일, '
-                             f'MVNO IN 일평균 {month_avg:,.0f})\n'
-                             f'일별 계산 합계 {old_sum:.2f}일 → 월평균 기준으로 {changed}일 갱신')},
-                         timeout=10)
-        except Exception as e:
-            log.warning(f"bw_performance 재계산 알림 실패 (무시): {e}")
     return changed
 
 

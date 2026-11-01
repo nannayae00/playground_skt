@@ -1414,6 +1414,42 @@ def _recheck_scrape_and_close(now_kst, today_str: str) -> None:
         log.error(f"RECHECK 재처리 실패: {_e}")
 
 
+def _bw_generated_text(year: int, month: int, next_year: int, next_month: int,
+                       saved: int) -> str:
+    """월말 bw_ai_prev 자동 생성 알림 문구.
+    [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
+    다음 달·이번 달 각각 AI 합계 / 실무(bw_manual) 합계 (영업하는 날 / 날짜 수)."""
+    next_ym = f"{next_year:04d}-{next_month:02d}"
+    text = f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료 ({saved}일)'
+    try:
+        from ktoa_firestore import _get_db as _fdb3
+        _db3 = _fdb3()
+
+        def _line(m, ym):
+            ai = man = 0.0
+            open_days = days = 0
+            has_man = False
+            for _s in _db3.collection('ktoa_daily') \
+                          .where('date', '>=', f'{ym}-01').where('date', '<=', f'{ym}-31').stream():
+                _x = _s.to_dict()
+                if 'bw_ai_prev' in _x:
+                    days += 1
+                    ai += _x.get('bw_ai_prev') or 0
+                    open_days += 1 if (_x.get('bw_ai_prev') or 0) > 0 else 0
+                if _x.get('bw_manual') is not None:
+                    has_man = True
+                    man += _x['bw_manual']
+            man_txt = f'실무 {man:.1f}일' if has_man else '실무 입력전'
+            return f'{m}월 AI {ai:.2f}일 / {man_txt} (영업 {open_days}일 / {days}일)'
+
+        text = (f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료\n'
+                + _line(next_month, next_ym) + '\n'
+                + _line(month, f'{year:04d}-{month:02d}'))
+    except Exception as _se:
+        log.warning(f"bw 합계 계산 실패 (기본 문구로 발송): {_se}")
+    return text
+
+
 def _run_month_end_bw(today_str: str) -> None:
     from calendar import monthrange
     from datetime import datetime, timedelta
@@ -1461,37 +1497,7 @@ def _run_month_end_bw(today_str: str) -> None:
         saved = generate_month_bw_ai_prev(next_year, next_month)
         log.info(f"=== {next_ym} bw_ai_prev {saved}일 저장 완료 ===")
 
-        # [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
-        # 다음 달·이번 달 각각 AI 합계 / 실무(bw_manual) 합계 (영업하는 날 / 날짜 수).
-        def _bw_sums(ym):
-            ai = man = 0.0
-            open_days = days = 0
-            has_man = False
-            for _s in _db3.collection('ktoa_daily') \
-                          .where('date', '>=', f'{ym}-01').where('date', '<=', f'{ym}-31').stream():
-                _x = _s.to_dict()
-                if 'bw_ai_prev' in _x:
-                    days += 1
-                    ai += _x.get('bw_ai_prev') or 0
-                    open_days += 1 if (_x.get('bw_ai_prev') or 0) > 0 else 0
-                if _x.get('bw_manual') is not None:
-                    has_man = True
-                    man += _x['bw_manual']
-            return ai, open_days, days, (man if has_man else None)
-
-        text = f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료 ({saved}일)'
-        try:
-            from ktoa_firestore import _get_db as _fdb3
-            _db3 = _fdb3()
-            def _line(m, ym):
-                _ai, _open, _days, _man = _bw_sums(ym)
-                _man_txt = f'실무 {_man:.1f}일' if _man is not None else '실무 입력전'
-                return f'{m}월 AI {_ai:.2f}일 / {_man_txt} (영업 {_open}일 / {_days}일)'
-            text = (f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료\n'
-                    + _line(next_month, next_ym) + '\n'
-                    + _line(month, f'{year:04d}-{month:02d}'))
-        except Exception as _se:
-            log.warning(f"bw 합계 계산 실패 (기본 문구로 발송): {_se}")
+        text = _bw_generated_text(year, month, next_year, next_month, saved)
 
         token   = os.environ.get('TELEGRAM_TOKEN', '')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
