@@ -1420,7 +1420,7 @@ def _bw_generated_text(year: int, month: int, next_year: int, next_month: int,
     [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
     다음 달·이번 달 각각 AI 합계 / 실무(bw_manual) 합계 (영업하는 날 / 날짜 수)."""
     next_ym = f"{next_year:04d}-{next_month:02d}"
-    title = f"✅ '{next_year % 100:02d}-{next_month:02d} AI영업일 자동 생성 완료"
+    title = f"✅ '{next_year % 100:02d}.{next_month}월 AI영업일수 자동 생성 완료"
     text = f'{title} ({saved}일)'
     try:
         from ktoa_firestore import _get_db as _fdb3
@@ -1441,7 +1441,7 @@ def _bw_generated_text(year: int, month: int, next_year: int, next_month: int,
                     has_man = True
                     man += _x['bw_manual']
             man_txt = f'실무 {man:.1f}일' if has_man else '실무 입력전'
-            return f'{m}월 AI {ai:.1f}일 / {man_txt} (영업 {open_days}일 / {days}일)'
+            return f'{m}월 AI {ai:.1f}일 / {man_txt} (영업{open_days}일/ {days}일)'
 
         text = (f'{title}\n'
                 + _line(next_month, next_ym) + '\n'
