@@ -1557,6 +1557,11 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
     intraday=True면 수준 배율은 어제까지 확정 실적 기준, 잔여는 내일부터.
     반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
     sp = ('mno_out', 'S')
+    # [수정 20261102] 월 첫 영업일 장중엔 확정 누적이 0이라 잔여속도법이 None → 옛
+    # 단순식 폴백(11/2 11시 29,265, 실제 수준 3.4만대)으로 떨어졌음. 확정 실적이 없으면
+    # 오늘 일마감 예상치를 경과 누적으로 보고 마감 확정과 같은 방식으로 계산.
+    if intraday and cum_db <= 0 < cum_now:
+        intraday, today_confirmed = False, True
     if not intraday:
         f = _tout_level_factor(date_str, today_confirmed)
         a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed,
