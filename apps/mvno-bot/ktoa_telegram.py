@@ -1157,6 +1157,56 @@ def send_ktoa_message(stats: dict, prev_stats: dict = None,
     """시간별 메시지 전송"""
     msg = build_message(stats, prev_stats, forecast=forecast)
     _send(msg)
+    # [추가 20261104] 정시(매시 00분)에만 당일 순증 매트릭스 이미지 추가 (10분 단위는 텍스트만)
+    import re as _re_p
+    _m = _re_p.search(r'(\d+)시\s*(\d+)분', stats.get('reference_time', ''))
+    if _m and int(_m.group(2)) == 0:
+        _hh = int(_m.group(1))
+        _d = stats.get('date', '')
+        send_net_matrix_photo(stats.get('matrix') or {}, None,
+                              f'{_d[5:7]}/{_d[8:10]} {_hh:02d}:00 기준' if _d else f'{_hh:02d}:00 기준')
+
+
+def send_net_matrix_photo(day_matrix: dict, daily_for_cum: dict = None,
+                          date_label: str = '', chat_id: str = None) -> None:
+    """[추가 20261104] 순증 매트릭스 이미지 발송 (net_matrix_image 참고).
+    daily_for_cum을 주면 월 누적 표도 같이 (일마감용). 실패해도 메시지 발송엔 영향 없음."""
+    if not day_matrix:
+        return
+    try:
+        import os as _os, tempfile as _tf
+        import net_matrix_image as _nmi
+        cum, cum_label = None, ''
+        if daily_for_cum:
+            cum = _month_cum_matrix(daily_for_cum)
+            _ds = daily_for_cum.get('date', '')
+            if cum and _ds:
+                from bw_engine import calc_elapsed_remaining_bw as _cerbw2
+                _y, _mo, _dd = int(_ds[:4]), int(_ds[5:7]), int(_ds[8:10])
+                _closed = _cerbw2(_y, _mo, _dd)[1] <= 0
+                cum_label = f'{_mo}월 {"마감" if _closed else "누적"}'
+        html_text = _nmi.build_html(day_matrix, cum, date_label, cum_label)
+        png = _os.path.join(_tf.gettempdir(), 'net_matrix.png')
+        _nmi.render_png(html_text, png)
+        with open(png, 'rb') as f:
+            resp = requests.post(f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto',
+                                 data={'chat_id': chat_id or CHAT_ID},
+                                 files={'photo': ('net_matrix.png', f, 'image/png')}, timeout=30)
+        if not resp.json().get('ok'):
+            log.error(f'순증 매트릭스 이미지 전송 실패: {resp.text[:200]}')
+        else:
+            log.info('순증 매트릭스 이미지 전송 완료')
+    except Exception as e:
+        log.warning(f'순증 매트릭스 이미지 생성/전송 실패 (무시): {e}')
+
+
+def _closing_date_label(daily: dict) -> str:
+    _ds = daily.get('date', '')
+    if not _ds:
+        return ''
+    import datetime as _dtm
+    _wd = ['월', '화', '수', '목', '금', '토', '일'][_dtm.date.fromisoformat(_ds).weekday()]
+    return f'{_ds[5:7]}/{_ds[8:10]}({_wd}) 마감'
 
 
 def send_closing_message(daily: dict, prev_daily: dict = None) -> None:
@@ -1165,6 +1215,7 @@ def send_closing_message(daily: dict, prev_daily: dict = None) -> None:
         msg = build_closing_message(daily, prev_daily)
         log.info(f'마감 메시지:\n{msg}')
         _send(msg)
+        send_net_matrix_photo(daily.get('matrix') or {}, daily, _closing_date_label(daily))
     except Exception as e:
         log.error(f'build_closing_message 실패: {e}')
         # [v3.17] 최소 폴백 메시지라도 전송

@@ -1340,6 +1340,10 @@ def _run_recheck(now_kst, today_str: str) -> None:
                 try:
                     _msg = build_closing_message(_daily_for_msg, _prev_daily_rc)
                     _tg_send(f"📋 수정 일마감 메시지 ({site_date})\n\n{_msg}")
+                    # [추가 20261104] 순증 매트릭스 이미지 (당일 + 월 누적)
+                    from ktoa_telegram import send_net_matrix_photo, _closing_date_label
+                    send_net_matrix_photo(_daily_for_msg.get('matrix') or {}, _daily_for_msg,
+                                          _closing_date_label(_daily_for_msg))
                     from ktoa_firestore import _get_db as _fdb_rcmsg
                     _fdb_rcmsg().collection('ktoa_daily').document(site_date).update({
                         '_recheck_msg_sent': True

@@ -3,6 +3,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-driver \
+    fonts-nanum \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
@@ -21,6 +22,8 @@ COPY ktoa_scraper.py .
 COPY ktoa_parser.py .
 COPY ktoa_firestore.py .
 COPY ktoa_telegram.py .
+# [추가 20261104] 순증 매트릭스 이미지 (일마감·정시 텔레그램 첨부)
+COPY net_matrix_image.py .
 COPY bw_engine.py .
 COPY forecast_excel.py .
 COPY predict_gemini.py .
