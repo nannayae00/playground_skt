@@ -6,6 +6,10 @@
 ktoa_daily.matrix[도착지][출발지] 기준, 음수는 ▲.
 """
 import html as _html
+import os as _os
+
+# [추가 20261104] Pretendard (SIL OFL) - 서버 기본 한글 글꼴이 투박하다는 피드백. 한자(對)는 Noto CJK로 대체 표시.
+_FONT = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'fonts', 'PretendardVariable.woff2')
 
 NODES = [('SKT', 'S'), ('KT', 'K'), ('LGU', 'L'),
          ('MVNO_SKT', 'SM'), ('MVNO_KT', 'KM'), ('MVNO_LGU', 'LM')]
@@ -42,7 +46,7 @@ def _table(m: dict, title: str) -> str:
     rows.append('<tr class="tot"><th class="rl">합계</th>'
                 + ''.join(_fmt(sum(_pair(m, c, r) for r in MNO + MVNO if r != c)) for c in COLS) + '</tr>')
     return (f'<div class="card"><div class="ttl">{_html.escape(title)}</div>'
-            f'<table><thead><tr><th class="rl">상대/기준</th>{head}</tr></thead>'
+            f'<table><thead><tr><th class="rl">구분</th>{head}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -54,14 +58,16 @@ def build_html(day_matrix: dict, cum_matrix: dict, date_label: str, cum_label: s
     parts = [_table(day_matrix, f'순증 매트릭스 [당일] {date_label}')]
     if cum_matrix:
         parts.append(_table(cum_matrix, f'순증 매트릭스 [{cum_label}]'))
-    return f'''<!doctype html><html><head><meta charset="utf-8"><style>
-body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Noto Sans CJK KR","Noto Sans KR","WenQuanYi Zen Hei","NanumGothic",sans-serif;color:#1f2a24;width:{width}px;box-sizing:border-box}}
+    font_face = (f'@font-face{{font-family:"Pretendard";src:url("file://{_FONT}") format("woff2");'
+                 f'font-weight:100 900}}') if _os.path.exists(_FONT) else ''
+    return f'''<!doctype html><html><head><meta charset="utf-8"><style>{font_face}
+body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Pretendard","Noto Sans CJK KR","Noto Sans KR","WenQuanYi Zen Hei","NanumGothic",sans-serif;color:#1f2a24;width:{width}px;box-sizing:border-box}}
 .card{{background:#fff;border-radius:10px;padding:10px 8px 6px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
 .ttl{{font-weight:700;font-size:16px;margin:0 0 4px 4px}}
 .note{{font-size:10.5px;color:#7a857f;margin:2px 4px 0}}
 table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}}
 th,td{{padding:5px 4px;text-align:right;white-space:nowrap}}
-thead th{{font-size:11px;color:#5d6b63;font-weight:600;border-bottom:1px solid #e3e8e5}}
+thead th{{font-size:13.5px;color:#3d4a43;font-weight:700;border-bottom:1px solid #e3e8e5}}
 th.rl{{text-align:left;font-weight:500;color:#2c3a32}}
 tbody tr{{border-bottom:1px solid #eef1ef}}
 tr.sub{{background:#e9f2ec}} tr.sub th.rl{{font-weight:700}}
@@ -93,6 +99,11 @@ def render_png(html_text: str, out_path: str, width: int = PAGE_WIDTH) -> str:
     d = webdriver.Chrome(options=opts)
     try:
         d.get('file://' + src)
+        import time as _t
+        for _ in range(30):  # 글꼴 로딩 대기 (최대 3초)
+            if d.execute_script('return document.fonts.status') == 'loaded':
+                break
+            _t.sleep(0.1)
         h = int(d.execute_script('return Math.ceil(document.body.getBoundingClientRect().height)'))
         d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',
                           {'width': width, 'height': h, 'deviceScaleFactor': 2, 'mobile': False})
