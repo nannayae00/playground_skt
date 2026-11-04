@@ -42,22 +42,26 @@ def _table(m: dict, title: str) -> str:
     rows.append('<tr class="tot"><th class="rl">합계</th>'
                 + ''.join(_fmt(sum(_pair(m, c, r) for r in MNO + MVNO if r != c)) for c in COLS) + '</tr>')
     return (f'<div class="card"><div class="ttl">{_html.escape(title)}</div>'
-            f'<table><thead><tr><th class="rl">상대 \\ 기준</th>{head}</tr></thead>'
+            f'<table><thead><tr><th class="rl">상대/기준</th>{head}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
-def build_html(day_matrix: dict, cum_matrix: dict, date_label: str, cum_label: str) -> str:
+PAGE_WIDTH = 500  # CSS px - 폰 화면 폭에 맞춤 (기존 760은 폰에서 확대해야 읽혔음)
+
+
+def build_html(day_matrix: dict, cum_matrix: dict, date_label: str, cum_label: str,
+               width: int = PAGE_WIDTH) -> str:
     parts = [_table(day_matrix, f'순증 매트릭스 [당일] {date_label}')]
     if cum_matrix:
         parts.append(_table(cum_matrix, f'순증 매트릭스 [{cum_label}]'))
     return f'''<!doctype html><html><head><meta charset="utf-8"><style>
-body{{margin:0;padding:16px;background:#f4f6f5;font-family:"NanumGothic","Noto Sans CJK KR","WenQuanYi Zen Hei",sans-serif;color:#1f2a24}}
-.card{{background:#fff;border-radius:14px;padding:14px 16px 10px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
-.ttl{{font-weight:700;font-size:17px;margin:0 0 4px}}
-.note{{font-size:11px;color:#7a857f;margin:0 0 8px}}
-table{{border-collapse:collapse;width:100%;font-size:14px}}
-th,td{{padding:6px 10px;text-align:right;white-space:nowrap}}
-thead th{{font-size:12px;color:#5d6b63;font-weight:600;border-bottom:1px solid #e3e8e5}}
+body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Noto Sans CJK KR","Noto Sans KR","WenQuanYi Zen Hei","NanumGothic",sans-serif;color:#1f2a24;width:{width}px;box-sizing:border-box}}
+.card{{background:#fff;border-radius:10px;padding:10px 8px 6px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
+.ttl{{font-weight:700;font-size:16px;margin:0 0 4px 4px}}
+.note{{font-size:10.5px;color:#7a857f;margin:2px 4px 0}}
+table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}}
+th,td{{padding:5px 4px;text-align:right;white-space:nowrap}}
+thead th{{font-size:11px;color:#5d6b63;font-weight:600;border-bottom:1px solid #e3e8e5}}
 th.rl{{text-align:left;font-weight:500;color:#2c3a32}}
 tbody tr{{border-bottom:1px solid #eef1ef}}
 tr.sub{{background:#e9f2ec}} tr.sub th.rl{{font-weight:700}}
@@ -70,8 +74,10 @@ td:nth-child(5){{border-left:2px solid #d5ddd8}} th:nth-child(5){{border-left:2p
 </body></html>'''
 
 
-def render_png(html_text: str, out_path: str, width: int = 760) -> str:
-    """headless Chromium으로 HTML → PNG (운영 이미지의 chromium/chromedriver 사용)."""
+def render_png(html_text: str, out_path: str, width: int = PAGE_WIDTH) -> str:
+    """headless Chromium으로 HTML → PNG (운영 이미지의 chromium/chromedriver 사용).
+    [수정 20261104] 창 크기로 맞추면 브라우저 테두리만큼 아래가 잘려 '계·합계' 줄이 빠졌음 →
+    CDP로 뷰포트를 내용 크기에 정확히 맞춘 뒤 캡처(2배 해상도)."""
     import os, tempfile
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -80,16 +86,22 @@ def render_png(html_text: str, out_path: str, width: int = 760) -> str:
         src = f.name
     opts = Options()
     for a in ('--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
-              f'--window-size={width},1600', '--force-device-scale-factor=2', '--hide-scrollbars'):
+              f'--window-size={width},2000', '--hide-scrollbars'):
         opts.add_argument(a)
     if os.environ.get('CHROME_BIN'):
         opts.binary_location = os.environ['CHROME_BIN']
     d = webdriver.Chrome(options=opts)
     try:
         d.get('file://' + src)
-        h = d.execute_script('return document.body.scrollHeight')
-        d.set_window_size(width, h + 20)
-        d.save_screenshot(out_path)
+        h = int(d.execute_script('return Math.ceil(document.body.getBoundingClientRect().height)'))
+        d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',
+                          {'width': width, 'height': h, 'deviceScaleFactor': 2, 'mobile': False})
+        import base64
+        shot = d.execute_cdp_cmd('Page.captureScreenshot',
+                                 {'format': 'png', 'captureBeyondViewport': True,
+                                  'clip': {'x': 0, 'y': 0, 'width': width, 'height': h, 'scale': 1}})
+        with open(out_path, 'wb') as f:
+            f.write(base64.b64decode(shot['data']))
     finally:
         d.quit()
         os.unlink(src)
