@@ -350,19 +350,54 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
     return line
 
 
-def _net_split_line(daily: dict, key: str) -> list:
-    """[추가 20261104] 당일 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S·K·L 밑).
-    matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄)."""
-    m = daily.get('matrix') or {}
+def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> list:
+    """[추가 20261104] 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S·K·L 밑).
+    matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄).
+    matrix/net을 주면 그 값(월 누적 등)으로, 아니면 daily의 당일 matrix·net_change로 계산."""
+    m = matrix if matrix is not None else (daily.get('matrix') or {})
     node = {'SM': 'MVNO_SKT', 'KM': 'MVNO_KT', 'LM': 'MVNO_LGU',
             'S': 'SKT', 'K': 'KT', 'L': 'LGU'}.get(key)
-    net = (daily.get('net_change') or {}).get(key)
+    if net is None:
+        net = (daily.get('net_change') or {}).get(key)
     if not m or node not in m or net is None:
         return []
     mnos = [n for n in ('SKT', 'KT', 'LGU') if n != node]
     vs_mno = (sum(m[node].get(n, 0) or 0 for n in mnos)
               - sum((m.get(n) or {}).get(node, 0) or 0 for n in mnos))
     return [f'  · 對MNO {_sign(vs_mno)}, 對MVNO {_sign(net - vs_mno)}']
+
+
+def _month_cum_matrix(daily: dict) -> dict:
+    """[추가 20261104] 월초~당일 matrix 합 (순증감 월 누적의 對MNO/對MVNO 분해용).
+    당일분은 넘겨받은 daily의 matrix를 쓰고, 그 전 날짜는 ktoa_daily에서 읽음.
+    실적 있는 날 중 matrix가 빠진 날이 있으면 {} (분해 줄 생략)."""
+    date_str = daily.get('date')
+    if not date_str or not daily.get('matrix'):
+        return {}
+    try:
+        db = _get_telegram_db()
+        docs = (db.collection('ktoa_daily')
+                  .where('date', '>=', date_str[:8] + '01')
+                  .where('date', '<', date_str).stream())
+        mats = [daily['matrix']]
+        for d in docs:
+            x = d.to_dict()
+            if (x.get('mvno_in') or {}).get('계'):
+                if not x.get('matrix'):
+                    return {}
+                mats.append(x['matrix'])
+        cum = {}
+        for mat in mats:
+            for r, row in mat.items():
+                for c, v in (row or {}).items():
+                    if c == '소계':
+                        continue
+                    cum.setdefault(r, {})
+                    cum[r][c] = cum[r].get(c, 0) + (v or 0)
+        return cum
+    except Exception as e:
+        log.warning(f"월 누적 matrix 계산 실패 (분해 줄 생략): {e}")
+        return {}
 
 
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
@@ -788,6 +823,7 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
     cmo  = daily.get('cum_mvno_out', {'SM': 0, 'KM': 0, 'LM': 0, '계': 0})
     cmno = daily.get('cum_mno_out',  {'S': 0,  'K': 0,  'L': 0,  '계': 0})
     cnet = daily.get('cum_net',      {'SM': 0, 'KM': 0, 'LM': 0, '계': 0, 'S': 0, 'K': 0, 'L': 0, 'MNO계': 0})
+    _cmat = _month_cum_matrix(daily)  # [추가 20261104] 순증감 월 누적 對MNO/對MVNO 분해
 
     # 전일 마감 비교용
     has_prev = prev_daily is not None
@@ -926,13 +962,19 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         # ── 순증감 월 누적
         f'◎ 순증감 ({month}월 {_cum_title})',
         f'SM  {_sign(cnet["SM"])}',
+        *_net_split_line(daily, 'SM', _cmat, cnet.get('SM')),
         f'KM  {_sign(cnet["KM"])}',
+        *_net_split_line(daily, 'KM', _cmat, cnet.get('KM')),
         f'LM  {_sign(cnet["LM"])}',
+        *_net_split_line(daily, 'LM', _cmat, cnet.get('LM')),
         f'MVNO 계  {_sign(cnet["계"])}',
         '',
         f'S   {_sign(cnet.get("S", 0))}',
+        *_net_split_line(daily, 'S', _cmat, cnet.get('S')),
         f'K   {_sign(cnet.get("K", 0))}',
+        *_net_split_line(daily, 'K', _cmat, cnet.get('K')),
         f'L   {_sign(cnet.get("L", 0))}',
+        *_net_split_line(daily, 'L', _cmat, cnet.get('L')),
         f'MNO 계  {_sign(cnet.get("MNO계", 0))}',
         '',
         # ── MVNO Out 당일
@@ -990,6 +1032,7 @@ def build_sejong_correction_message(daily: dict, migration: dict,
     mno     = daily.get('mno_out',    {'S': 0,  'K': 0,  'L': 0,  '계': 0})
     net     = daily.get('net_change', {'SM': 0, 'KM': 0, 'LM': 0, '계': 0, 'S': 0, 'K': 0, 'L': 0, 'MNO계': 0})
     cnet    = daily.get('cum_net',    {'SM': 0, 'KM': 0, 'LM': 0, '계': 0, 'S': 0, 'K': 0, 'L': 0, 'MNO계': 0})
+    _cmat = _month_cum_matrix(daily)  # [추가 20261104] 순증감 월 누적 對MNO/對MVNO 분해
 
     # 이관값 차감
     def _adjust(d, mig):
@@ -1101,13 +1144,19 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         '',
         f'◎ 순증감 ({month}월 {_cum_title})',
         f'SM  {_sign(cnet["SM"])}',
+        *_net_split_line(daily, 'SM', _cmat, cnet.get('SM')),
         f'KM  {_sign(cnet["KM"])}',
+        *_net_split_line(daily, 'KM', _cmat, cnet.get('KM')),
         f'LM  {_sign(cnet["LM"])}',
+        *_net_split_line(daily, 'LM', _cmat, cnet.get('LM')),
         f'MVNO 계  {_sign(cnet["계"])}',
         '',
         f'S   {_sign(cnet.get("S", 0))}',
+        *_net_split_line(daily, 'S', _cmat, cnet.get('S')),
         f'K   {_sign(cnet.get("K", 0))}',
+        *_net_split_line(daily, 'K', _cmat, cnet.get('K')),
         f'L   {_sign(cnet.get("L", 0))}',
+        *_net_split_line(daily, 'L', _cmat, cnet.get('L')),
         f'MNO 계  {_sign(cnet.get("MNO계", 0))}',
         '',
         '◎ MVNO Out (당일)',
