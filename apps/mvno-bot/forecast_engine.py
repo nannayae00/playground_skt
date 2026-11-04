@@ -1520,18 +1520,20 @@ TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 �
 # 범위 10/15/20/25% 비교 → 두 기간 모두 개선되는 10%.
 TOUT_EARLY_RAMP = 0.10
 
-# [v3.5, 20261104] T Out 월마감 범위: 일자 구간별 과거 오차 (예측-실제)/실제 의
-# 15%/85% 분위 (2025-10~2026-10 매 영업일 마감 시점 319개 백테스트, 유심 사태 달 제외).
-# low = mid/(1+q85), high = mid/(1+q15).
-TOUT_BAND_ERR = ((5, -0.111, 0.068), (10, -0.067, 0.047), (15, -0.053, 0.034),
-                 (20, -0.033, 0.024), (25, -0.014, 0.015), (31, -0.005, 0.009))
+# [v3.5, 20261104] T Out 월마감 범위 (실무 협의: 긍정 쪽은 보수적으로 좁게, 부정 쪽은 과거 오차만큼).
+#   부정(high) = mid/(1+q25) - q25: 일자 구간별 과거 오차 (예측-실제)/실제 의 25% 분위
+#     (2025-10~2026-10 매 영업일 마감 시점 319개 백테스트, 유심 사태 달 제외. 11~20일은 평활)
+#   긍정(low)  = mid × (1 - TOUT_BAND_LOW_PCT)
+TOUT_BAND_LOW_PCT = 0.005
+TOUT_BAND_ERR = ((5, -0.053), (10, -0.031), (15, -0.013), (20, -0.010),
+                 (25, -0.005), (31, -0.003))
 
 
-def _tout_band_err(day: int) -> tuple:
-    for upto, lo, hi in TOUT_BAND_ERR:
+def _tout_band_err(day: int) -> float:
+    for upto, lo in TOUT_BAND_ERR:
         if day <= upto:
-            return lo, hi
-    return TOUT_BAND_ERR[-1][1:]
+            return lo
+    return TOUT_BAND_ERR[-1][1]
 
 
 def _tout_level_factor(date_str: str, include_today: bool) -> float:
@@ -1924,12 +1926,11 @@ def predict_monthly(date_str: str, today_skt: int,
                      f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
             fc_mid = _mixed
 
-    # [v3.5, 20261104] 범위 = 진행시점(일자)별 과거 오차의 70% 구간 (긍정~부정).
+    # [v3.5, 20261104] 범위 = 긍정(mid -0.5%) ~ 부정(진행시점별 과거 과소예측 25% 분위).
     # 기존 "최대 ±500 고정"은 월초에 ±18처럼 좁게 나와 불확실성을 못 보여줬음
-    # (월초 실제 오차 -23%~+12%). fc_mid는 그대로.
-    _e_lo, _e_hi = _tout_band_err(day)
-    fc_low  = int(round(fc_mid / (1 + _e_hi)))   # 긍정 (예측이 과거만큼 높았을 때)
-    fc_high = int(round(fc_mid / (1 + _e_lo)))   # 부정 (예측이 과거만큼 낮았을 때)
+    # (월초 실제 오차 -23%~+12%). fc_mid는 그대로. TOUT_BAND_ERR 참고.
+    fc_low  = int(round(fc_mid * (1 - TOUT_BAND_LOW_PCT)))
+    fc_high = int(round(fc_mid / (1 + _tout_band_err(day))))
 
     band = round((fc_high - fc_low) / fc_mid, 3) if fc_mid > 0 else 0
 
