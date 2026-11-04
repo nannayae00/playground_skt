@@ -350,8 +350,8 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
     return line
 
 
-def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> list:
-    """[추가 20261104] 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S·K·L 밑).
+def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> str:
+    """[추가 20261104] 순증감 옆에 붙이는 對MNO + 對MVNO 분해 ' (= +29 +137)' (실무 요청, SM·KM·LM·S·K·L).
     matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄).
     matrix/net을 주면 그 값(월 누적 등)으로, 아니면 daily의 당일 matrix·net_change로 계산."""
     m = matrix if matrix is not None else (daily.get('matrix') or {})
@@ -360,11 +360,13 @@ def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> lis
     if net is None:
         net = (daily.get('net_change') or {}).get(key)
     if not m or node not in m or net is None:
-        return []
+        return ''
     mnos = [n for n in ('SKT', 'KT', 'LGU') if n != node]
     vs_mno = (sum(m[node].get(n, 0) or 0 for n in mnos)
               - sum((m.get(n) or {}).get(node, 0) or 0 for n in mnos))
-    return [f'  · 對MNO {_sign(vs_mno)}, 對MVNO {_sign(net - vs_mno)}']
+    def _pm(v):
+        return f'+{v:,}' if v >= 0 else f'-{abs(v):,}'
+    return f' (= {_pm(vs_mno)} {_pm(net - vs_mno)})'
 
 
 def _month_cum_matrix(daily: dict) -> dict:
@@ -942,39 +944,27 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'계  {_k(cmno["계"])}',
         '',
         # ── 순증감 당일
-        '◎ 순증감 (당일)',
-        f'SM  {_sign(net["SM"])}{arr_net("SM")}',
-        *_net_split_line(daily, 'SM'),
-        f'KM  {_sign(net["KM"])}{arr_net("KM")}',
-        *_net_split_line(daily, 'KM'),
-        f'LM  {_sign(net["LM"])}{arr_net("LM")}',
-        *_net_split_line(daily, 'LM'),
+        '◎ 순증감 [당일] (對MNO+對MVNO)',
+        f'SM  {_sign(net["SM"])}{_net_split_line(daily, "SM")}{arr_net("SM")}',
+        f'KM  {_sign(net["KM"])}{_net_split_line(daily, "KM")}{arr_net("KM")}',
+        f'LM  {_sign(net["LM"])}{_net_split_line(daily, "LM")}{arr_net("LM")}',
         f'MVNO 계  {_sign(net["계"])}',
         '',
-        f'S   {_sign(net["S"])}',
-        *_net_split_line(daily, 'S'),
-        f'K   {_sign(net["K"])}',
-        *_net_split_line(daily, 'K'),
-        f'L   {_sign(net["L"])}',
-        *_net_split_line(daily, 'L'),
+        f'S   {_sign(net["S"])}{_net_split_line(daily, "S")}',
+        f'K   {_sign(net["K"])}{_net_split_line(daily, "K")}',
+        f'L   {_sign(net["L"])}{_net_split_line(daily, "L")}',
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
         # ── 순증감 월 누적
-        f'◎ 순증감 ({month}월 {_cum_title})',
-        f'SM  {_sign(cnet["SM"])}',
-        *_net_split_line(daily, 'SM', _cmat, cnet.get('SM')),
-        f'KM  {_sign(cnet["KM"])}',
-        *_net_split_line(daily, 'KM', _cmat, cnet.get('KM')),
-        f'LM  {_sign(cnet["LM"])}',
-        *_net_split_line(daily, 'LM', _cmat, cnet.get('LM')),
+        f'◎ 순증감 [{month}월 {_cum_title}] (對MNO+對MVNO)',
+        f'SM  {_sign(cnet["SM"])}{_net_split_line(daily, "SM", _cmat, cnet.get("SM"))}',
+        f'KM  {_sign(cnet["KM"])}{_net_split_line(daily, "KM", _cmat, cnet.get("KM"))}',
+        f'LM  {_sign(cnet["LM"])}{_net_split_line(daily, "LM", _cmat, cnet.get("LM"))}',
         f'MVNO 계  {_sign(cnet["계"])}',
         '',
-        f'S   {_sign(cnet.get("S", 0))}',
-        *_net_split_line(daily, 'S', _cmat, cnet.get('S')),
-        f'K   {_sign(cnet.get("K", 0))}',
-        *_net_split_line(daily, 'K', _cmat, cnet.get('K')),
-        f'L   {_sign(cnet.get("L", 0))}',
-        *_net_split_line(daily, 'L', _cmat, cnet.get('L')),
+        f'S   {_sign(cnet.get("S", 0))}{_net_split_line(daily, "S", _cmat, cnet.get("S"))}',
+        f'K   {_sign(cnet.get("K", 0))}{_net_split_line(daily, "K", _cmat, cnet.get("K"))}',
+        f'L   {_sign(cnet.get("L", 0))}{_net_split_line(daily, "L", _cmat, cnet.get("L"))}',
         f'MNO 계  {_sign(cnet.get("MNO계", 0))}',
         '',
         # ── MVNO Out 당일
@@ -1125,38 +1115,26 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'L  {_k(daily.get("cum_mno_out", {}).get("L", 0))}',
         f'계  {_k(daily.get("cum_mno_out", {}).get("계", 0))}',
         '',
-        '◎ 순증감 (당일)',
-        f'SM  {_sign(net["SM"])}',
-        *_net_split_line(daily, 'SM'),
-        f'KM  {_sign(net["KM"])}',
-        *_net_split_line(daily, 'KM'),
-        f'LM  {_sign(net["LM"])}',
-        *_net_split_line(daily, 'LM'),
+        '◎ 순증감 [당일] (對MNO+對MVNO)',
+        f'SM  {_sign(net["SM"])}{_net_split_line(daily, "SM")}',
+        f'KM  {_sign(net["KM"])}{_net_split_line(daily, "KM")}',
+        f'LM  {_sign(net["LM"])}{_net_split_line(daily, "LM")}',
         f'MVNO 계  {_sign(net["계"])}',
         '',
-        f'S   {_sign(net["S"])}',
-        *_net_split_line(daily, 'S'),
-        f'K   {_sign(net["K"])}',
-        *_net_split_line(daily, 'K'),
-        f'L   {_sign(net["L"])}',
-        *_net_split_line(daily, 'L'),
+        f'S   {_sign(net["S"])}{_net_split_line(daily, "S")}',
+        f'K   {_sign(net["K"])}{_net_split_line(daily, "K")}',
+        f'L   {_sign(net["L"])}{_net_split_line(daily, "L")}',
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
-        f'◎ 순증감 ({month}월 {_cum_title})',
-        f'SM  {_sign(cnet["SM"])}',
-        *_net_split_line(daily, 'SM', _cmat, cnet.get('SM')),
-        f'KM  {_sign(cnet["KM"])}',
-        *_net_split_line(daily, 'KM', _cmat, cnet.get('KM')),
-        f'LM  {_sign(cnet["LM"])}',
-        *_net_split_line(daily, 'LM', _cmat, cnet.get('LM')),
+        f'◎ 순증감 [{month}월 {_cum_title}] (對MNO+對MVNO)',
+        f'SM  {_sign(cnet["SM"])}{_net_split_line(daily, "SM", _cmat, cnet.get("SM"))}',
+        f'KM  {_sign(cnet["KM"])}{_net_split_line(daily, "KM", _cmat, cnet.get("KM"))}',
+        f'LM  {_sign(cnet["LM"])}{_net_split_line(daily, "LM", _cmat, cnet.get("LM"))}',
         f'MVNO 계  {_sign(cnet["계"])}',
         '',
-        f'S   {_sign(cnet.get("S", 0))}',
-        *_net_split_line(daily, 'S', _cmat, cnet.get('S')),
-        f'K   {_sign(cnet.get("K", 0))}',
-        *_net_split_line(daily, 'K', _cmat, cnet.get('K')),
-        f'L   {_sign(cnet.get("L", 0))}',
-        *_net_split_line(daily, 'L', _cmat, cnet.get('L')),
+        f'S   {_sign(cnet.get("S", 0))}{_net_split_line(daily, "S", _cmat, cnet.get("S"))}',
+        f'K   {_sign(cnet.get("K", 0))}{_net_split_line(daily, "K", _cmat, cnet.get("K"))}',
+        f'L   {_sign(cnet.get("L", 0))}{_net_split_line(daily, "L", _cmat, cnet.get("L"))}',
         f'MNO 계  {_sign(cnet.get("MNO계", 0))}',
         '',
         '◎ MVNO Out (당일)',
