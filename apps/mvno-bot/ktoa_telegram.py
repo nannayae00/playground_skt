@@ -350,6 +350,21 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
     return line
 
 
+def _net_split_line(daily: dict, key: str) -> list:
+    """[추가 20261104] 당일 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S 밑).
+    matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄)."""
+    m = daily.get('matrix') or {}
+    node = {'SM': 'MVNO_SKT', 'KM': 'MVNO_KT', 'LM': 'MVNO_LGU',
+            'S': 'SKT', 'K': 'KT', 'L': 'LGU'}.get(key)
+    net = (daily.get('net_change') or {}).get(key)
+    if not m or node not in m or net is None:
+        return []
+    mnos = [n for n in ('SKT', 'KT', 'LGU') if n != node]
+    vs_mno = (sum(m[node].get(n, 0) or 0 for n in mnos)
+              - sum((m.get(n) or {}).get(node, 0) or 0 for n in mnos))
+    return [f'  * 對MNO {_sign(vs_mno)}, 對MVNO {_sign(net - vs_mno)}']
+
+
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
     """
     전 시간 대비 증감 화살표 반환 (5단계 이모지)
@@ -893,11 +908,15 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         # ── 순증감 당일
         '◎ 순증감 (당일)',
         f'SM  {_sign(net["SM"])}{arr_net("SM")}',
+        *_net_split_line(daily, 'SM'),
         f'KM  {_sign(net["KM"])}{arr_net("KM")}',
+        *_net_split_line(daily, 'KM'),
         f'LM  {_sign(net["LM"])}{arr_net("LM")}',
+        *_net_split_line(daily, 'LM'),
         f'MVNO 계  {_sign(net["계"])}',
         '',
         f'S   {_sign(net["S"])}',
+        *_net_split_line(daily, 'S'),
         f'K   {_sign(net["K"])}',
         f'L   {_sign(net["L"])}',
         f'MNO 계  {_sign(net["MNO계"])}',
@@ -1063,11 +1082,15 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         '',
         '◎ 순증감 (당일)',
         f'SM  {_sign(net["SM"])}',
+        *_net_split_line(daily, 'SM'),
         f'KM  {_sign(net["KM"])}',
+        *_net_split_line(daily, 'KM'),
         f'LM  {_sign(net["LM"])}',
+        *_net_split_line(daily, 'LM'),
         f'MVNO 계  {_sign(net["계"])}',
         '',
         f'S   {_sign(net["S"])}',
+        *_net_split_line(daily, 'S'),
         f'K   {_sign(net["K"])}',
         f'L   {_sign(net["L"])}',
         f'MNO 계  {_sign(net["MNO계"])}',
