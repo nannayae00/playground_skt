@@ -351,7 +351,7 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
 
 
 def _net_split_line(daily: dict, key: str) -> list:
-    """[추가 20261104] 당일 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S 밑).
+    """[추가 20261104] 당일 순증감을 對MNO / 對MVNO로 나눈 한 줄 (실무 요청: SM·KM·LM·S·K·L 밑).
     matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄)."""
     m = daily.get('matrix') or {}
     node = {'SM': 'MVNO_SKT', 'KM': 'MVNO_KT', 'LM': 'MVNO_LGU',
@@ -362,7 +362,7 @@ def _net_split_line(daily: dict, key: str) -> list:
     mnos = [n for n in ('SKT', 'KT', 'LGU') if n != node]
     vs_mno = (sum(m[node].get(n, 0) or 0 for n in mnos)
               - sum((m.get(n) or {}).get(node, 0) or 0 for n in mnos))
-    return [f'  * 對MNO {_sign(vs_mno)}, 對MVNO {_sign(net - vs_mno)}']
+    return [f'  · 對MNO {_sign(vs_mno)}, 對MVNO {_sign(net - vs_mno)}']
 
 
 def _trend_arrow(curr: float, prev: float, streak: int, threshold: float) -> str:
@@ -918,7 +918,9 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         f'S   {_sign(net["S"])}',
         *_net_split_line(daily, 'S'),
         f'K   {_sign(net["K"])}',
+        *_net_split_line(daily, 'K'),
         f'L   {_sign(net["L"])}',
+        *_net_split_line(daily, 'L'),
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
         # ── 순증감 월 누적
@@ -1092,7 +1094,9 @@ def build_sejong_correction_message(daily: dict, migration: dict,
         f'S   {_sign(net["S"])}',
         *_net_split_line(daily, 'S'),
         f'K   {_sign(net["K"])}',
+        *_net_split_line(daily, 'K'),
         f'L   {_sign(net["L"])}',
+        *_net_split_line(daily, 'L'),
         f'MNO 계  {_sign(net["MNO계"])}',
         '',
         f'◎ 순증감 ({month}월 {_cum_title})',
