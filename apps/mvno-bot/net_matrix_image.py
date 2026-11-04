@@ -64,7 +64,6 @@ def build_html(day_matrix: dict, cum_matrix: dict, date_label: str, cum_label: s
 body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Pretendard","Noto Sans CJK KR","Noto Sans KR","WenQuanYi Zen Hei","NanumGothic",sans-serif;color:#1f2a24;width:{width}px;box-sizing:border-box}}
 .card{{background:#fff;border-radius:10px;padding:10px 8px 6px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
 .ttl{{font-weight:700;font-size:16px;margin:0 0 4px 4px}}
-.note{{font-size:10.5px;color:#7a857f;margin:2px 4px 0}}
 table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}}
 th,td{{padding:5px 4px;text-align:right;white-space:nowrap}}
 thead th{{font-size:13.5px;color:#3d4a43;font-weight:700;border-bottom:1px solid #e3e8e5}}
@@ -75,9 +74,7 @@ tr.tot{{background:#1f4d36;color:#fff}} tr.tot th.rl{{color:#fff;font-weight:700
 td.pos{{color:#1e7a47}} td.neg{{color:#c0392b}} td.zero,td.na{{color:#9aa59f}}
 tr.tot td.pos{{color:#a8f0c6}} tr.tot td.neg{{color:#ffb3a8}}
 td:nth-child(5){{border-left:2px solid #d5ddd8}} th:nth-child(5){{border-left:2px solid #d5ddd8}}
-</style></head><body>{"".join(parts)}
-<div class="note">값 = 열(기준) 사업자가 행(상대)에게서 받은 건수 − 준 건수. 음수는 ▲. 출처: KTOA 번호이동 경로표</div>
-</body></html>'''
+</style></head><body>{"".join(parts)}</body></html>'''
 
 
 def render_png(html_text: str, out_path: str, width: int = PAGE_WIDTH) -> str:
