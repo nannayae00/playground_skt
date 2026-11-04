@@ -351,7 +351,7 @@ def _tout_goal_line(remaining_avg, remaining_cum, remaining_bw_incl_today, goal_
 
 
 def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> str:
-    """[추가 20261104] 순증감 옆에 붙이는 對MNO + 對MVNO 분해 ' (= +29 +137)' (실무 요청, SM·KM·LM·S·K·L).
+    """[추가 20261104] 순증감 옆에 붙이는 對MNO + 對MVNO 분해 ' (+29 +137)' (실무 요청, SM·KM·LM·S·K·L).
     matrix[도착지][출발지] 기준. 對MVNO = 순증감 - 對MNO (같은 망 알뜰폰끼리 이동은 상쇄).
     matrix/net을 주면 그 값(월 누적 등)으로, 아니면 daily의 당일 matrix·net_change로 계산."""
     m = matrix if matrix is not None else (daily.get('matrix') or {})
@@ -366,7 +366,7 @@ def _net_split_line(daily: dict, key: str, matrix: dict = None, net=None) -> str
               - sum((m.get(n) or {}).get(node, 0) or 0 for n in mnos))
     def _pm(v):
         return f'+{v:,}' if v >= 0 else f'-{abs(v):,}'
-    return f' (= {_pm(vs_mno)} {_pm(net - vs_mno)})'
+    return f' ({_pm(vs_mno)} {_pm(net - vs_mno)})'
 
 
 def _month_cum_matrix(daily: dict) -> dict:
