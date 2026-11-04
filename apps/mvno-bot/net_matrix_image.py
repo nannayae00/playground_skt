@@ -41,7 +41,7 @@ def _table(m: dict, title: str) -> str:
         for r in grp:
             rows.append(f'<tr><th class="rl">{ROW_LABEL[r]}</th>'
                         + ''.join(_fmt(_pair(m, c, r), same=(c == r)) for c in COLS) + '</tr>')
-        rows.append('<tr class="sub"><th class="rl">' + sub + '</th>'
+        rows.append(f'<tr class="sub{" mno-end" if sub == "MNO계" else ""}"><th class="rl">' + sub + '</th>'
                     + ''.join(_fmt(sum(_pair(m, c, r) for r in grp if r != c)) for c in COLS) + '</tr>')
     rows.append('<tr class="tot"><th class="rl">합계</th>'
                 + ''.join(_fmt(sum(_pair(m, c, r) for r in MNO + MVNO if r != c)) for c in COLS) + '</tr>')
@@ -66,7 +66,7 @@ body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Pretendard","Noto San
 .ttl{{font-weight:700;font-size:16px;margin:0 0 4px 4px}}
 table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}}
 th,td{{padding:5px 4px;text-align:right;white-space:nowrap}}
-thead th{{font-size:13.5px;color:#3d4a43;font-weight:700;border-bottom:1px solid #e3e8e5}}
+thead th{{font-size:13.5px;color:#3d4a43;font-weight:700;border-bottom:2px solid #d5ddd8}}
 th.rl{{text-align:left;font-weight:500;color:#2c3a32}}
 tbody tr{{border-bottom:1px solid #eef1ef}}
 tr.sub{{background:#e9f2ec}} tr.sub th.rl{{font-weight:700}}
@@ -74,6 +74,9 @@ tr.tot{{background:#1f4d36;color:#fff}} tr.tot th.rl{{color:#fff;font-weight:700
 td.pos{{color:#1e7a47}} td.neg{{color:#c0392b}} td.zero,td.na{{color:#9aa59f}}
 tr.tot td.pos{{color:#a8f0c6}} tr.tot td.neg{{color:#ffb3a8}}
 td:nth-child(5){{border-left:2px solid #d5ddd8}} th:nth-child(5){{border-left:2px solid #d5ddd8}}
+td:nth-child(2),th:nth-child(2){{border-left:2px solid #d5ddd8}}
+thead tr{{border-bottom:2px solid #d5ddd8}}
+tr.mno-end{{border-bottom:2px solid #d5ddd8}}
 </style></head><body>{"".join(parts)}</body></html>'''
 
 
