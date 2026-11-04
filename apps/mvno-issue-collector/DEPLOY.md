@@ -8,9 +8,13 @@ echo -n "YOUR_NEW_BOT_TOKEN" | \
   gcloud secrets create mvno-issue-bot-token \
   --data-file=- --project=mvno-484509
 
-# Gemini API 키 (기존에 있으면 건너뜀)
-# 이미 gemini-api-key secret 있으면:
-# gcloud secrets versions add gemini-api-key --data-file=<(echo -n "KEY")
+# Gemini API 키 (이 서비스 전용 시크릿, deploy.sh v1.5부터 필수)
+# 지금 Cloud Run에 평문 env로 들어있는 키를 화면 출력 없이 그대로 옮기는 방법:
+gcloud run services describe mvno-issue-collector --region asia-northeast3 --format=json \
+  | python3 -c "import json,sys;e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0]['env'];print(next(x['value'] for x in e if x['name']=='GEMINI_API_KEY'),end='')" \
+  | gcloud secrets create mvno-issue-gemini-key --replication-policy=automatic --data-file=- --project=mvno-484509
+# (런타임 계정 668782164620-compute@ 는 프로젝트 단위 secretAccessor가 있어 추가 권한 불필요)
+# 시크릿 생성 후 ./deploy.sh 로 재배포하면 env의 평문 키가 사라지고 시크릿 참조로 바뀜
 ```
 
 ## 2. TELEGRAM_CHAT_ID 확인
@@ -33,7 +37,19 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-## 4. daily 리포트 Cloud Scheduler 등록
+## 4. 스케줄러 (현재 등록된 것)
+
+| 잡 | 시각(KST) | 호출 |
+|---|---|---|
+| mvno-news-digest-morning | 07:45 | POST /daily-news |
+| mvno-news-digest-noon | 12:45 | POST /daily-news (2026-11-04 추가) |
+| mvno-news-digest-evening | 18:45 | POST /daily-news (2026-11-04 추가) |
+
+이미 보낸 기사는 `scraped_news_seen`으로 걸러져 회차마다 새 기사만 전송됨.
+수동 실행: `gcloud scheduler jobs run mvno-news-digest-morning --location asia-northeast3`
+전송 없이 확인: `curl -X POST "$SERVICE_URL/daily-news?dry_run=true"`
+
+## 5. daily 리포트 Cloud Scheduler 등록
 
 ```bash
 SERVICE_URL=$(gcloud run services describe mvno-issue-collector \

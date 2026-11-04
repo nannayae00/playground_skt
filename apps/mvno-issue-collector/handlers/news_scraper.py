@@ -1,6 +1,9 @@
 """
-handlers/news_scraper.py  v1.0
+handlers/news_scraper.py  v1.1
 작성일: 2026-10-05
+
+[수정 이력]
+[v1.1 / 2026-11-04] Google News 429 재시도·간격 추가, 브리핑 날짜 KST 표시
 
 [개요]
 하루 1회, 알뜰폰/MVNO 관련 뉴스를 Google News RSS에서 수집해
@@ -29,6 +32,7 @@ import re
 import json
 import logging
 import hashlib
+import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlparse, parse_qs, urljoin
 
@@ -49,6 +53,7 @@ DATABASE = "mvno-data"
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 SEEN_COLLECTION = "scraped_news_seen"
 SEEN_TTL_DAYS = 14
+KST = timezone(timedelta(hours=9))
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
@@ -190,6 +195,32 @@ def _article_id(google_link: str) -> str | None:
     return None
 
 
+# [수정 20261104] 운영(Cloud Run)에서 batchexecute가 간헐적으로 429(Too Many Requests,
+# google.com/sorry)를 받아 원문 URL 디코딩이 실패 → 본문 없이 제목만으로 판정되고 브리핑
+# 링크도 news.google.com 리다이렉트로 남았음 (실측: 2026-11-04 07:45 실행 2건 모두 429).
+# 429/503은 잠깐 쉬었다가 재시도하고, 기사 사이에도 간격을 둬서 연속 호출을 줄임.
+_RETRY_STATUS = (429, 503)
+_RETRY_WAITS = (3, 8, 15)  # 초. 최악 26초/건, 생존 기사는 보통 몇 건이라 540s 타임아웃 안쪽
+DECODE_INTERVAL_SEC = 2
+
+
+def _request_with_backoff(method: str, url: str, **kwargs) -> requests.Response | None:
+    for attempt in range(len(_RETRY_WAITS) + 1):
+        try:
+            resp = requests.request(method, url, timeout=10, **kwargs)
+        except Exception as e:
+            logger.warning(f"요청 실패 ({method} {url[:60]}): {e}")
+            resp = None
+        if resp is not None and resp.status_code not in _RETRY_STATUS:
+            return resp
+        if attempt < len(_RETRY_WAITS):
+            wait = _RETRY_WAITS[attempt]
+            code = resp.status_code if resp is not None else "error"
+            logger.warning(f"Google News {code} → {wait}초 후 재시도 ({attempt + 1}/{len(_RETRY_WAITS)})")
+            time.sleep(wait)
+    return resp
+
+
 def _decode_google_news_url(google_link: str) -> str | None:
     """Google News RSS의 리다이렉트 링크를 실제 기사 URL로 디코딩."""
     art_id = _article_id(google_link)
@@ -197,12 +228,9 @@ def _decode_google_news_url(google_link: str) -> str | None:
         return None
 
     page_url = f"https://news.google.com/rss/articles/{art_id}?hl=ko&gl=KR&ceid=KR:ko"
-    try:
-        resp = requests.get(page_url, headers={"User-Agent": UA}, timeout=10)
-        if resp.status_code != 200:
-            return None
-    except Exception as e:
-        logger.warning(f"Google News 페이지 조회 실패: {e}")
+    resp = _request_with_backoff("GET", page_url, headers={"User-Agent": UA})
+    if resp is None or resp.status_code != 200:
+        logger.warning(f"Google News 페이지 조회 실패: {getattr(resp, 'status_code', 'error')}")
         return None
 
     sg_m = _SG.search(resp.text)
@@ -216,11 +244,13 @@ def _decode_google_news_url(google_link: str) -> str | None:
     body = f"f.req={quote(json.dumps([envelope], separators=(',', ':')))}"
 
     try:
-        r2 = requests.post(
-            _BATCHEXECUTE_URL,
+        r2 = _request_with_backoff(
+            "POST", _BATCHEXECUTE_URL,
             headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", "User-Agent": UA},
-            data=body, timeout=10,
+            data=body,
         )
+        if r2 is None:
+            raise RuntimeError("응답 없음")
         r2.raise_for_status()
     except Exception as e:
         logger.warning(f"batchexecute 요청 실패: {e}")
@@ -386,7 +416,7 @@ def _format_pub_date(pub_date: str) -> str:
     dt = _parse_pubdate(pub_date)
     if not dt:
         return "-"
-    kst = dt.astimezone(timezone(timedelta(hours=9)))
+    kst = dt.astimezone(KST)
     return kst.strftime("%m/%d %H:%M")
 
 
@@ -432,8 +462,12 @@ def run_daily_news_scrape(dry_run: bool = False) -> str:
     seen_candidates = [c for c in candidates if c["title"] not in survivor_titles]
 
     final_items = []
-    for item in survivors:
+    for n, item in enumerate(survivors):
+        if n:
+            time.sleep(DECODE_INTERVAL_SEC)
         real_url = _decode_google_news_url(item["google_link"])
+        if not real_url:
+            logger.warning(f"원문 URL 디코딩 실패 → 제목만으로 판정: {item['title']}")
         item["url"] = real_url or item["google_link"]
         content = _fetch_article(real_url) if real_url else None
         item["content"] = content or ""
@@ -473,7 +507,8 @@ def run_daily_news_scrape(dry_run: bool = False) -> str:
 
     final_items.sort(key=lambda x: 0 if x["impact_level"] == "상" else 1)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # [수정 20261104] UTC 날짜를 쓰면 07:45 KST 실행 시 전날 날짜가 찍혀 KST로 변경
+    today = datetime.now(KST).strftime("%Y-%m-%d")
     header = f"📰 <b>알뜰폰 뉴스 브리핑</b> ({today}) - 영향도 높은 신규 기사 {len(final_items)}건"
 
     entries = []
