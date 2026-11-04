@@ -1326,6 +1326,12 @@ def _run_recheck(now_kst, today_str: str) -> None:
             # fc_ 갱신 반영된 daily 재조회
             _refreshed_rc = _db_rc.collection('ktoa_daily').document(site_date).get().to_dict()
             _daily_for_msg = _refreshed_rc or daily_data
+            # [추가 20261104] 재검증 후 확정값으로 순증 매트릭스 다시 저장 (net_matrix_store)
+            try:
+                from net_matrix_store import save_close as _save_nm_rc
+                _save_nm_rc(_daily_for_msg)
+            except Exception as _nme:
+                log.warning(f"RECHECK: 순증 매트릭스 저장 실패 (무시): {_nme}")
 
             # 전일 daily (closing message용)
             _prev_daily_rc = get_previous_daily_for_closing(site_date)

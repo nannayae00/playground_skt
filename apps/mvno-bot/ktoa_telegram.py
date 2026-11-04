@@ -1161,6 +1161,11 @@ def send_ktoa_message(stats: dict, prev_stats: dict = None,
     import re as _re_p
     _m = _re_p.search(r'(\d+)시\s*(\d+)분', stats.get('reference_time', ''))
     if _m and int(_m.group(2)) == 0:
+        try:
+            from net_matrix_store import save_hourly as _save_nm_h   # [추가 20261104] 정시 순증 매트릭스 저장
+            _save_nm_h(stats)
+        except Exception as _e:
+            log.warning(f'정시 순증 매트릭스 저장 실패 (무시): {_e}')
         _hh = int(_m.group(1))
         _d = stats.get('date', '')
         send_net_matrix_photo(stats.get('matrix') or {}, None,
@@ -1216,6 +1221,11 @@ def send_closing_message(daily: dict, prev_daily: dict = None) -> None:
         log.info(f'마감 메시지:\n{msg}')
         _send(msg)
         send_net_matrix_photo(daily.get('matrix') or {}, daily, _closing_date_label(daily))
+        try:
+            from net_matrix_store import save_close as _save_nm_c   # [추가 20261104] 일마감 순증 매트릭스 저장
+            _save_nm_c(daily)
+        except Exception as _e:
+            log.warning(f'순증 매트릭스 저장 실패 (무시): {_e}')
     except Exception as e:
         log.error(f'build_closing_message 실패: {e}')
         # [v3.17] 최소 폴백 메시지라도 전송

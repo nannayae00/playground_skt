@@ -24,6 +24,7 @@ COPY ktoa_firestore.py .
 COPY ktoa_telegram.py .
 # [추가 20261104] 순증 매트릭스 이미지 (일마감·정시 텔레그램 첨부)
 COPY net_matrix_image.py .
+COPY net_matrix_store.py .
 COPY fonts/ ./fonts/
 COPY bw_engine.py .
 COPY forecast_excel.py .
