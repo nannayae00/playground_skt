@@ -46,7 +46,8 @@ def _table(m: dict, title: str) -> str:
     rows.append('<tr class="tot"><th class="rl">합계</th>'
                 + ''.join(_fmt(sum(_pair(m, c, r) for r in MNO + MVNO if r != c)) for c in COLS) + '</tr>')
     return (f'<div class="card"><div class="ttl">{_html.escape(title)}</div>'
-            f'<table><thead><tr><th class="rl">구분</th>{head}</tr></thead>'
+            f'<table><colgroup><col class="lc">{"<col>" * len(COLS)}</colgroup>'
+            f'<thead><tr><th class="rl">구분</th>{head}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -64,10 +65,11 @@ def build_html(day_matrix: dict, cum_matrix: dict, date_label: str, cum_label: s
 body{{margin:0;padding:8px;background:#f4f6f5;font-family:"Pretendard","Noto Sans CJK KR","Noto Sans KR","WenQuanYi Zen Hei","NanumGothic",sans-serif;color:#1f2a24;width:{width}px;box-sizing:border-box}}
 .card{{background:#fff;border-radius:10px;padding:10px 8px 6px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}}
 .ttl{{font-weight:700;font-size:16px;margin:0 0 4px 4px}}
-table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums}}
-th,td{{padding:5px 4px;text-align:right;white-space:nowrap}}
-thead th{{font-size:13.5px;color:#3d4a43;font-weight:700;border-bottom:2px solid #d5ddd8}}
-th.rl{{text-align:left;font-weight:500;color:#2c3a32}}
+table{{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums;table-layout:fixed}}
+col.lc{{width:19%}}
+th,td{{padding:5px 2px;text-align:center;white-space:nowrap}}
+thead th{{font-size:12.5px;letter-spacing:-0.2px;color:#3d4a43;font-weight:700;border-bottom:2px solid #d5ddd8}}
+th.rl{{text-align:left;font-weight:500;color:#2c3a32;padding-left:6px}}
 tbody tr{{border-bottom:1px solid #eef1ef}}
 tr.sub{{background:#e9f2ec}} tr.sub th.rl{{font-weight:700}}
 tr.tot{{background:#1f4d36;color:#fff}} tr.tot th.rl{{color:#fff;font-weight:700}}
