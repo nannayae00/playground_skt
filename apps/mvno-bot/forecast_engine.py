@@ -1520,6 +1520,19 @@ TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 �
 # 범위 10/15/20/25% 비교 → 두 기간 모두 개선되는 10%.
 TOUT_EARLY_RAMP = 0.10
 
+# [v3.5, 20261104] T Out 월마감 범위: 일자 구간별 과거 오차 (예측-실제)/실제 의
+# 15%/85% 분위 (2025-10~2026-10 매 영업일 마감 시점 319개 백테스트, 유심 사태 달 제외).
+# low = mid/(1+q85), high = mid/(1+q15).
+TOUT_BAND_ERR = ((5, -0.111, 0.068), (10, -0.067, 0.047), (15, -0.053, 0.034),
+                 (20, -0.033, 0.024), (25, -0.014, 0.015), (31, -0.005, 0.009))
+
+
+def _tout_band_err(day: int) -> tuple:
+    for upto, lo, hi in TOUT_BAND_ERR:
+        if day <= upto:
+            return lo, hi
+    return TOUT_BAND_ERR[-1][1:]
+
 
 def _tout_level_factor(date_str: str, include_today: bool) -> float:
     """월초 수준 배율 축소 계수(0~1). 진행률 = 경과 달력가중 ÷ 월 전체 달력가중."""
@@ -1911,11 +1924,12 @@ def predict_monthly(date_str: str, today_skt: int,
                      f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
             fc_mid = _mixed
 
-    # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
-    # 좁으면 그대로 쓰고, 넓으면 ±500으로 압축.
-    _half = min(_avg_half, 500)
-    fc_low  = int(round(fc_mid - _half))
-    fc_high = int(round(fc_mid + _half))
+    # [v3.5, 20261104] 범위 = 진행시점(일자)별 과거 오차의 70% 구간 (긍정~부정).
+    # 기존 "최대 ±500 고정"은 월초에 ±18처럼 좁게 나와 불확실성을 못 보여줬음
+    # (월초 실제 오차 -23%~+12%). fc_mid는 그대로.
+    _e_lo, _e_hi = _tout_band_err(day)
+    fc_low  = int(round(fc_mid / (1 + _e_hi)))   # 긍정 (예측이 과거만큼 높았을 때)
+    fc_high = int(round(fc_mid / (1 + _e_lo)))   # 부정 (예측이 과거만큼 낮았을 때)
 
     band = round((fc_high - fc_low) / fc_mid, 3) if fc_mid > 0 else 0
 
