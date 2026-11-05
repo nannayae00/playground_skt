@@ -70,9 +70,11 @@ def _send(text: str) -> None:
 
 
 def _fmt_diff(label: str, old: int, new: int) -> str:
+    """[수정 20261106] 값의 음수는 ▲(팀 표기, 순증감 등), 괄호 안 변동분만 +/- 유지."""
     diff = new - old
     sign = "+" if diff >= 0 else ""
-    return f"{label}: {old:,} → {new:,} ({sign}{diff:,})"
+    _v = lambda x: f"▲{abs(x):,}" if x < 0 else f"{x:,}"
+    return f"{label}: {_v(old)} → {_v(new)} ({sign}{diff:,})"
 
 
 def check_and_notify(stats: dict, daily: dict, date_str: str,
