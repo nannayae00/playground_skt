@@ -30,7 +30,10 @@ def _fmt(v, same=False):
     if same:
         return '<td class="na">-</td>'
     cls = 'pos' if v > 0 else ('neg' if v < 0 else 'zero')
-    txt = f'+{v:,}' if v >= 0 else f'▲{abs(v):,}'
+    a = abs(v)
+    # [추가 20261105] 1만 이상은 '1.5만'(소수 1자리 반올림) - 월 누적이 커지면 칸이 넘침
+    num = f'{a / 10000:.1f}만' if a >= 10000 else f'{a:,}'
+    txt = f'+{num}' if v >= 0 else f'▲{num}'
     return f'<td class="{cls}">{txt}</td>'
 
 
