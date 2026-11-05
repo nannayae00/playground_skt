@@ -1521,19 +1521,24 @@ TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 �
 TOUT_EARLY_RAMP = 0.10
 
 # [v3.5, 20261104] T Out 월마감 범위 (실무 협의: 긍정 쪽은 보수적으로 좁게, 부정 쪽은 과거 오차만큼).
-#   부정(high) = mid/(1+q25) - q25: 일자 구간별 과거 오차 (예측-실제)/실제 의 25% 분위
-#     (2025-10~2026-10 매 영업일 마감 시점 319개 백테스트, 유심 사태 달 제외. 11~20일은 평활)
+#   부정(high) = mid/(1+q) - q: 일자별 과거 과소예측 분위 (아래 TOUT_BAND_ERR, 선형 보간)
 #   긍정(low)  = mid × (1 - TOUT_BAND_LOW_PCT)
 TOUT_BAND_LOW_PCT = 0.005
-TOUT_BAND_ERR = ((5, -0.053), (10, -0.031), (15, -0.013), (20, -0.010),
-                 (25, -0.005), (31, -0.003))
+# [수정 20261105] 절충안 + 날짜에 따라 매일 조금씩 줄어드는 형태 (구간 경계에서 위 끝이 갑자기
+# 떨어지지 않도록). (일자, q) 점 사이를 선형 보간, 양 끝은 고정. q = 과거 과소예측 분위
+# (지금 25% 분위와 15% 분위의 중간). 2025-10~2026-10 백테스트: 실제가 위 끝을 넘은 비율 16~21%.
+TOUT_BAND_ERR = ((3, -0.080), (8, -0.050), (13, -0.035), (18, -0.022),
+                 (23, -0.010), (28, -0.004))
 
 
 def _tout_band_err(day: int) -> float:
-    for upto, lo in TOUT_BAND_ERR:
-        if day <= upto:
-            return lo
-    return TOUT_BAND_ERR[-1][1]
+    pts = TOUT_BAND_ERR
+    if day <= pts[0][0]:
+        return pts[0][1]
+    for (d0, q0), (d1, q1) in zip(pts, pts[1:]):
+        if day <= d1:
+            return q0 + (q1 - q0) * (day - d0) / (d1 - d0)
+    return pts[-1][1]
 
 
 def _tout_level_factor(date_str: str, include_today: bool) -> float:
@@ -1926,7 +1931,7 @@ def predict_monthly(date_str: str, today_skt: int,
                      f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
             fc_mid = _mixed
 
-    # [v3.5, 20261104] 범위 = 긍정(mid -0.5%) ~ 부정(진행시점별 과거 과소예측 25% 분위).
+    # [v3.5, 20261104] 범위 = 긍정(mid -0.5%) ~ 부정(진행시점별 과거 과소예측 분위, 날짜에 따라 점차 축소).
     # 기존 "최대 ±500 고정"은 월초에 ±18처럼 좁게 나와 불확실성을 못 보여줬음
     # (월초 실제 오차 -23%~+12%). fc_mid는 그대로. TOUT_BAND_ERR 참고.
     fc_low  = int(round(fc_mid * (1 - TOUT_BAND_LOW_PCT)))
