@@ -2717,15 +2717,18 @@ def generate_month_report_for(year: int, month: int,
 def _backfill_bw_performance(year: int, month: int) -> int:
     """
     [v3.12] 월마감 시 해당 월 전체 영업일의 bw_performance를 계산/저장.
-    - calc_bw_performance_mvno(date, mvno_in_total, month_avg_mvno_in) 재사용
-    - month_avg_mvno_in: 그 시점까지의 영업일 MVNO IN 일평균 (get_month_avg_mvno_in)
-    - 이미 bw_performance가 있는 날은 건너뜀 (재계산 비용 절감)
-    반환: 새로 저장한 일수
+    [수정 20261101] 월 전체 평균으로 재계산. 기존엔 날마다 "그 시점까지 평균"으로
+    나눈 값을 저장하고 이미 있는 날은 건너뛰어서, 한 달 안에서 분모가 섞였음
+    (10월: 10/26 일괄 계산분은 10/25까지 평균 12,210, 나머지는 당일까지 평균 →
+    합계 25.57). 월마감엔 모든 영업일을 같은 월평균(MVNO IN 일평균)으로 다시 나눠
+    저장 → 합계 = 영업한 날 수. 바뀌는 날은 이전 값을 bw_performance_running에
+    백업(처음 한 번만).
+    반환: 값이 바뀐 일수
     """
     from calendar import monthrange as _mr
     try:
         from bw_engine import (calc_bw_performance_mvno, get_month_avg_mvno_in,
-                                save_bw_to_daily, is_zero_day)
+                                is_zero_day)
     except Exception as e:
         log.warning(f"bw_performance 백필: bw_engine import 실패 (스킵): {e}")
         return 0
@@ -2735,8 +2738,13 @@ def _backfill_bw_performance(year: int, month: int) -> int:
         return 0
 
     last_day = _mr(year, month)[1]
-    saved = 0
+    month_avg = get_month_avg_mvno_in(year, month, last_day)
+    if month_avg <= 0:
+        return 0
 
+    changed = 0
+    open_days = 0
+    old_sum = new_sum = 0.0
     for day in range(1, last_day + 1):
         ds = f"{year:04d}-{month:02d}-{day:02d}"
         if is_zero_day(ds):
@@ -2746,27 +2754,33 @@ def _backfill_bw_performance(year: int, month: int) -> int:
             if not doc.exists:
                 continue
             data = doc.to_dict()
-            if data.get('bw_performance'):
-                continue  # 이미 계산됨
-
             mvno_in_total = (data.get('mvno_in') or {}).get('계', 0) or 0
             if not mvno_in_total:
                 continue
 
-            month_avg = get_month_avg_mvno_in(year, month, day)
-            if month_avg <= 0:
-                continue
-
             bw_perf = calc_bw_performance_mvno(ds, mvno_in_total, month_avg)
-            if bw_perf > 0:
-                save_bw_to_daily(ds, 'bw_performance', bw_perf)
-                saved += 1
+            if bw_perf <= 0:
+                continue
+            open_days += 1
+            old = data.get('bw_performance')
+            old_sum += old or 0
+            new_sum += bw_perf
+            if old == bw_perf:
+                continue
+            upd = {'bw_performance': bw_perf, 'date': ds,
+                   'bw_performance_updated_at': datetime.utcnow(),
+                   'bw_performance_basis': f'month_avg {month_avg}'}
+            if old is not None and 'bw_performance_running' not in data:
+                upd['bw_performance_running'] = old
+            db.collection('ktoa_daily').document(ds).set(upd, merge=True)
+            changed += 1
         except Exception as e:
             log.warning(f"bw_performance 계산 실패 ({ds}, 무시): {e}")
 
-    if saved:
-        log.info(f"bw_performance 백필 완료: {year}-{month:02d} {saved}일")
-    return saved
+    if changed:
+        log.info(f"bw_performance 월마감 재계산: {year}-{month:02d} {changed}일 변경, "
+                 f"합계 {old_sum:.2f} → {new_sum:.2f}")
+    return changed
 
 
 def generate_month_closing_report(date_str: str, daily_data: dict,
