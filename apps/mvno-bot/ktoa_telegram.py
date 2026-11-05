@@ -908,6 +908,20 @@ def build_closing_message(daily: dict, prev_daily: dict = None) -> str:
         ])
     else:
         skt_section = skt_section + f'\n영업일: {_elapsed_bw_disp:.1f}일(누적), {_remaining_bw_disp:.1f}일(잔여)'
+        # [추가 20261105] 정시 메시지와 같은 형식의 월마감 예측 (마감 확정 기준, 저장된 fc 우선)
+        try:
+            _fl, _fh = daily.get('fc_low'), daily.get('fc_high')
+            _ok = daily.get('fc_on_track')
+            if not (_fl and _fh):
+                from forecast_engine import predict_monthly as _pm_c
+                _r = _pm_c(daily.get('date', ''), today_tout, save_to_daily=False,
+                           current_hour=20, use_gemini=False)
+                _fl, _fh, _ok = _r['fc_low'], _r['fc_high'], _r['on_track']
+            if _ok is None:
+                _ok = (daily.get('fc_mid') or _fl) <= tout_goal * 1.05
+            skt_section = skt_section + f'\n월마감 예측 : {_fl:,} ~ {_fh:,}  {"✅" if _ok else "⚠️"}'
+        except Exception as _fe:
+            log.warning(f'일마감 월마감 예측 줄 생성 실패 (생략): {_fe}')
 
     lines = [
         f'■ 실적 현황 보고_{mmdd}({weekday})',
