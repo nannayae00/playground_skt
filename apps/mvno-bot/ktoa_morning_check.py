@@ -70,9 +70,11 @@ def _send(text: str) -> None:
 
 
 def _fmt_diff(label: str, old: int, new: int) -> str:
+    """[수정 20261106] 값의 음수는 ▲(팀 표기, 순증감 등), 괄호 안 변동분만 +/- 유지."""
     diff = new - old
     sign = "+" if diff >= 0 else ""
-    return f"{label}: {old:,} → {new:,} ({sign}{diff:,})"
+    _v = lambda x: f"▲{abs(x):,}" if x < 0 else f"{x:,}"
+    return f"{label}: {_v(old)} → {_v(new)} ({sign}{diff:,})"
 
 
 def check_and_notify(stats: dict, daily: dict, date_str: str,
@@ -155,6 +157,11 @@ def check_and_notify(stats: dict, daily: dict, date_str: str,
     try:
         updated_daily = save_ktoa_daily(stats)
         log.info(f"ktoa_daily 업데이트 완료: {date_str}")
+        try:
+            from net_matrix_store import save_close as _save_nm   # [추가 20261104] 순증 매트릭스도 갱신
+            _save_nm(updated_daily if (updated_daily or {}).get('matrix') else {**stats, 'date': date_str})
+        except Exception as _e:
+            log.warning(f"순증 매트릭스 저장 실패 (무시): {_e}")
     except Exception as e:
         log.error(f"ktoa_daily 업데이트 실패: {e}")
         diff_lines.append(f"\n❌ DB 업데이트 실패: {e}")

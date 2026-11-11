@@ -1520,6 +1520,26 @@ TOUT_LEVEL_W = 0.5        # 월말정렬 쪽 수준 배율 반영 비중 (0~1 �
 # 범위 10/15/20/25% 비교 → 두 기간 모두 개선되는 10%.
 TOUT_EARLY_RAMP = 0.10
 
+# [v3.5, 20261104] T Out 월마감 범위 (실무 협의: 긍정 쪽은 보수적으로 좁게, 부정 쪽은 과거 오차만큼).
+#   부정(high) = mid/(1+q) - q: 일자별 과거 과소예측 분위 (아래 TOUT_BAND_ERR, 선형 보간)
+#   긍정(low)  = mid × (1 - TOUT_BAND_LOW_PCT)
+TOUT_BAND_LOW_PCT = 0.005
+# [수정 20261105] 절충안 + 날짜에 따라 매일 조금씩 줄어드는 형태 (구간 경계에서 위 끝이 갑자기
+# 떨어지지 않도록). (일자, q) 점 사이를 선형 보간, 양 끝은 고정. q = 과거 과소예측 분위
+# (지금 25% 분위와 15% 분위의 중간). 2025-10~2026-10 백테스트: 실제가 위 끝을 넘은 비율 16~21%.
+TOUT_BAND_ERR = ((5, -0.080), (10, -0.050), (15, -0.035), (20, -0.022),
+                 (25, -0.010), (30, -0.004))   # 1~5일 +8.7% 유지, 6일부터 매일 축소
+
+
+def _tout_band_err(day: int) -> float:
+    pts = TOUT_BAND_ERR
+    if day <= pts[0][0]:
+        return pts[0][1]
+    for (d0, q0), (d1, q1) in zip(pts, pts[1:]):
+        if day <= d1:
+            return q0 + (q1 - q0) * (day - d0) / (d1 - d0)
+    return pts[-1][1]
+
 
 def _tout_level_factor(date_str: str, include_today: bool) -> float:
     """월초 수준 배율 축소 계수(0~1). 진행률 = 경과 달력가중 ÷ 월 전체 달력가중."""
@@ -1557,6 +1577,11 @@ def get_tout_mid_parts(date_str: str, cum_db: float, cum_now: float,
     intraday=True면 수준 배율은 어제까지 확정 실적 기준, 잔여는 내일부터.
     반환: {'analog', 'pred_analog', 'pred_ea'(계산 불가 시 None), 'remaining_bw'} 또는 None."""
     sp = ('mno_out', 'S')
+    # [수정 20261102] 월 첫 영업일 장중엔 확정 누적이 0이라 잔여속도법이 None → 옛
+    # 단순식 폴백(11/2 11시 29,265, 실제 수준 3.4만대)으로 떨어졌음. 확정 실적이 없으면
+    # 오늘 일마감 예상치를 경과 누적으로 보고 마감 확정과 같은 방식으로 계산.
+    if intraday and cum_db <= 0 < cum_now:
+        intraday, today_confirmed = False, True
     if not intraday:
         f = _tout_level_factor(date_str, today_confirmed)
         a = _get_prev_month_analog_pred(date_str, cum_now, include_today=today_confirmed,
@@ -1906,11 +1931,11 @@ def predict_monthly(date_str: str, today_skt: int,
                      f"월말정렬 {int(round(_parts['pred_ea'])):,} → fc_mid {_mixed:,}")
             fc_mid = _mixed
 
-    # [v1.9] 밴드폭 최대 1000 고정 (mid 중심 대칭). avg법 스프레드가 이보다
-    # 좁으면 그대로 쓰고, 넓으면 ±500으로 압축.
-    _half = min(_avg_half, 500)
-    fc_low  = int(round(fc_mid - _half))
-    fc_high = int(round(fc_mid + _half))
+    # [v3.5, 20261104] 범위 = 긍정(mid -0.5%) ~ 부정(진행시점별 과거 과소예측 분위, 날짜에 따라 점차 축소).
+    # 기존 "최대 ±500 고정"은 월초에 ±18처럼 좁게 나와 불확실성을 못 보여줬음
+    # (월초 실제 오차 -23%~+12%). fc_mid는 그대로. TOUT_BAND_ERR 참고.
+    fc_low  = int(round(fc_mid * (1 - TOUT_BAND_LOW_PCT)))
+    fc_high = int(round(fc_mid / (1 + _tout_band_err(day))))
 
     band = round((fc_high - fc_low) / fc_mid, 3) if fc_mid > 0 else 0
 
@@ -1999,6 +2024,9 @@ def predict_monthly(date_str: str, today_skt: int,
         'remaining_avg': remaining_avg,
         'today_goal':    today_goal,
         'pct_of_goal':   pct_of_goal,
+        'remaining_cum': _rag['remaining_cum'],
+        'remaining_bw_incl_today': _rag['remaining_bw_incl_today'],
+        'remaining_bw_after_today': _rag['remaining_bw'],
         'progress_ratio':   round(progress_ratio, 3),
         'hist_ratio_used':  hist_ratio_used,
     }
