@@ -75,11 +75,21 @@ def _fmt_diff(label: str, old: int, new: int) -> str:
     return f"{label}: {old:,} → {new:,} ({sign}{diff:,})"
 
 
-def check_and_notify(stats: dict, daily: dict, date_str: str) -> None:
+def check_and_notify(stats: dict, daily: dict, date_str: str,
+                      skip_closing_resend: bool = False) -> None:
     """
     스크랩한 stats와 저장된 daily(ktoa_daily) 비교.
     차이 있으면: DB 업데이트 + 변경 내용 + 수정 일마감 메시지 → 개인채널
     차이 없음: "재수집 결과 동일" 알림 → 개인채널
+
+    skip_closing_resend: [추가 20261015] True면 "수정된 일마감 메시지
+    재전송"(build_closing_message 기반) 블록을 건너뜀. ktoa_scraper.py의
+    20:25 RECHECK가 이 함수(③④) 호출 뒤 바로 자기 자신의 "수정 일마감"
+    메시지(⑤, 다른 방 TELEGRAM_CHAT_ID로)를 또 보내서, 사용자가 "수정
+    일마감 메시지가 두 번 온다"고 느끼던 진짜 원인이었음(같은 build_
+    closing_message 결과를 PERSONAL_CHAT과 TELEGRAM_CHAT_ID 두 방에
+    몇 초 간격으로 중복 발송). 08:00 RECHECK는 ⑤ 블록이 스킵되므로
+    이 함수가 유일한 발송 경로라 skip_closing_resend=False로 유지.
     """
     log.info(f"=== DB 재검증 시작: {date_str} ===")
 
@@ -149,6 +159,12 @@ def check_and_notify(stats: dict, daily: dict, date_str: str) -> None:
         log.error(f"ktoa_daily 업데이트 실패: {e}")
         diff_lines.append(f"\n❌ DB 업데이트 실패: {e}")
         _send("\n".join(diff_lines))
+        return
+
+    if skip_closing_resend:
+        diff_lines.append("\n✅ DB 업데이트 완료 (일마감 보정은 20:25 재검증에서 함께 발송됨)")
+        _send("\n".join(diff_lines))
+        log.info(f"=== DB 재검증 완료: {date_str} === (수정 일마감 재전송은 RECHECK 20:25 ⑤ 블록에 위임)")
         return
 
     diff_lines.append("\n✅ DB 업데이트 완료 → 수정 일마감 메시지 재전송")
