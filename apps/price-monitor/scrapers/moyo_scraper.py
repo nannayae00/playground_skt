@@ -74,7 +74,8 @@ import asyncio
 BASE_URL    = "https://www.moyoplan.com/plans"
 MAX_PAGES   = 300
 EMPTY_STOP  = 3
-PAGE_WAIT   = 500   # ms
+PAGE_WAIT   = 2500  # ms (한 페이지 100개 렌더링 대기)
+PAGE_SIZE   = 100
 RETRY_MAX   = 3
 RETRY_WAIT  = 2000  # ms
 
@@ -275,13 +276,23 @@ def _parse_card(card_el):
     }
 
 
+def _page_url(page_num):
+    """[수정 20261114] 모요 목록 주소 형식 변경: ?page=N → page.page=N-1(0부터)&page.size=&필터.
+    10개씩 넘기면 추천순이 페이지마다 섞여 겹치고 빠지는 요금제가 생겨(1,463/365개), 100개씩 받음(2,030개 전부 확인).
+    예전 형식으로 열면 로딩 후 새 주소로 다시 이동해서 'Execution context was destroyed'로 수집이 끊김."""
+    return (f"{BASE_URL}?sort=RECOMMEND&page.page={page_num - 1}&page.size={PAGE_SIZE}"
+            "&filters.data.ranges.0.min=0&filters.data.ranges.0.max=0&filters.data.includeUnlimited=true")
+
+
 async def _collect_cards(page, seen_ids):
     card_data = await page.evaluate("""
         () => {
-            const cards = document.querySelectorAll('a[href^="/plans/"]');
-            return Array.from(cards).map(card => {
+            // [수정 20261114] 링크에 ?perceivedToggle=true가 붙고 테마·검색 링크도 섞여서, 숫자 요금제 링크만 받고 쿼리는 뗌
+            const cards = Array.from(document.querySelectorAll('a[href^="/plans/"]'))
+                .filter(c => /^\/plans\/\d+(\?|$)/.test(c.getAttribute('href') || ''));
+            return cards.map(card => {
                 const href = card.getAttribute('href') || '';
-                const id   = href.replace('/plans/', '');
+                const id   = href.replace('/plans/', '').split('?')[0];
                 const img  = card.querySelector('img');
                 const alt  = img ? (img.alt || '') : '';
                 const text = card.innerText
@@ -300,10 +311,12 @@ async def _collect_cards(page, seen_ids):
     """)
 
     page_plans = []
+    page_ids   = set()
     for item in card_data:
         plan_id = item.get('id', '')
-        if not plan_id or plan_id in seen_ids:
+        if not plan_id or plan_id in seen_ids or plan_id in page_ids:
             continue
+        page_ids.add(plan_id)  # [추가 20261114] 같은 요금제 카드가 한 페이지에 두 번 나오는 경우(상단 추천) 중복 제거
         plan = _parse_card({
             '_id':   plan_id,
             '_alt':  item.get('alt', '기타/확인불가') or '기타/확인불가',
@@ -363,7 +376,7 @@ class MoyoScraper:
             page = await context.new_page()
 
             for page_num in range(1, MAX_PAGES + 1):
-                url = BASE_URL if page_num == 1 else f"{BASE_URL}?page={page_num}"
+                url = _page_url(page_num)
                 try:
                     await page.goto(url, timeout=60_000, wait_until='domcontentloaded')
                     await page.wait_for_timeout(PAGE_WAIT)
