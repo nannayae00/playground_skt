@@ -539,10 +539,14 @@ def archive_article(source_key, source, article, driver, cookies, body_text=None
         bucket.blob(path).upload_from_string(content)
         ext = os.path.splitext(name)[1].lower()
         files.append({'name': name, 'gcs': f'gs://{BUCKET}/{path}', 'bytes': len(content)})
-        if ext in ('.xlsx', '.xlsm'):
-            xlsx_list.append((name, content))
-        elif ext in ('.png', '.jpg', '.jpeg'):
-            images.append((name, content))
+        # [추가 20261114] 비전 11/14 6차처럼 정책표를 ZIP 하나로만 올리는 경우 → 안의 엑셀·이미지를 꺼내 씀
+        members = _expand_zip(name, content, errors) if ext == '.zip' else [(name, content)]
+        for mname, mcontent in members:
+            mext = os.path.splitext(mname)[1].lower()
+            if mext in ('.xlsx', '.xlsm'):
+                xlsx_list.append((mname, mcontent))
+            elif mext in ('.png', '.jpg', '.jpeg'):
+                images.append((mname, mcontent))
 
     plans, sheet_notes, sheets, method = [], {}, [], None
     for name, content in xlsx_list:
@@ -618,7 +622,54 @@ def archive_article(source_key, source, article, driver, cookies, body_text=None
         'created_at': datetime.now(KST),
     }
     ref.set(record)
-    return {'doc_id': doc_id, 'plans': len(plans), 'method': method, 'errors': errors}
+    return {'doc_id': doc_id, 'plans': len(plans), 'method': method, 'errors': errors,
+            '_plan_rows': plans}   # 메시지 대체용 (로그엔 출력 안 함)
+
+
+def _expand_zip(name, content, errors):
+    """ZIP 첨부 → [(파일명, bytes)]. 한글 파일명은 UTF-8 플래그가 없으면 CP949로 복원. 폴더·숨김파일 제외"""
+    import zipfile
+    out = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                fname = info.filename
+                if not info.flag_bits & 0x800:
+                    try:
+                        fname = fname.encode('cp437').decode('cp949')
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        pass
+                base = os.path.basename(fname)
+                if not base or base.startswith(('.', '__MACOSX')) or '__MACOSX' in fname:
+                    continue
+                out.append((base, zf.read(info)))
+    except Exception as e:
+        errors.append(f'zip {name}: {e}')
+    return out
+
+
+def _base_gb(data_text):
+    """'11GB+일2GB' → 11, '7GB + 5GB' → 7 (기본 제공량 = 첫 GB 숫자, 일/매일 제외)"""
+    m = re.search(r'(?<![일\d.])\s*([\d.]+)\s*GB', str(data_text or ''), re.I)
+    return float(m.group(1)) if m else None
+
+
+def summary_prices_from_plans(plans, labels):
+    """[추가 20261114] 아카이브 파싱 요금제 → 메시지용 {라벨: {'seven','eleven'}}.
+    요약본 이미지와 같은 규칙: 기본 데이터 7GB/11GB 요금제의 내국인·외국인 MNP 중 최고값"""
+    out = {}
+    for label in labels:
+        rows = [p for p in plans if p.get('carrier') == label]
+
+        def mx(gb):
+            vals = [p.get(k) for p in rows if _base_gb(p.get('data')) == gb
+                    for k in ('dom_mnp', 'for_mnp') if isinstance(p.get(k), (int, float))]
+            return max(vals) if vals else None
+        if rows:
+            out[label] = {'seven': mx(7), 'eleven': mx(11), 'raw_plan_count': len(rows), 'source': 'archive'}
+    return out
 
 
 def recompute_effective_periods(source_key):
