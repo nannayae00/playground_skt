@@ -1,5 +1,13 @@
 """
 [수정 이력]
+- v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
+  망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
+- v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
+  확인하고 "🔎 07:30 재수집 확인" 메시지 1건(run_morning_verify). 리포트 재발송 없음 (사용자 요청).
+- v1.8 (2026-10-28): 실행 시점을 07:20 → 00:31 신규일자 확인 직후로 변경(사용자 요청).
+  check_new_data.py가 신규일자를 확인하면 이 job을 바로 실행 → 사업자별 실적 → 선불 실적 →
+  "✅ 최신일자 업데이트" 메시지. 대상일별 완료 플래그(ktoa_daily_report_flags)로 07:20
+  스케줄은 못 끝낸 부분만 보완(선불 데이터가 00시대에 아직 없을 때 등).
 - v1.7 (2026-10-16): 매월 2일 아침(대상일=1일) 선불 전월 한 달 재수집 추가
   (_recollect_prev_month) - 7일보다 오래된 KTOA 정정값 반영.
 - v1.6 (2026-10-16): 일일/주간 분기 뒤에 선불 리포트(run_prepaid) 추가 -
@@ -341,12 +349,45 @@ def main():
 
     print("=== MVNO 사업자별 리포트 Job 시작 ===", flush=True)
 
-    if not run_scraper():
-        sys.exit(1)  # Cloud Run Job이 실패로 기록되도록 non-zero exit
-
     target_date = get_yesterday_kst()
     target_date_obj = date.fromisoformat(target_date)
 
+    # ── v1.8: 00:31 신규일자 확인 직후(check_new_data.py가 이 job을 실행) 돌고, 07:20 스케줄은
+    #    보완용. 대상일별로 "사업자별 실적"/"선불 실적" 완료 플래그를 두고 이미 끝난 부분은 건너뜀 ──
+    flags = _get_report_flags(target_date)
+    if flags.get("brand_done") and flags.get("prepaid_done"):
+        # v1.9: 00시대에 이미 발송 완료 → 07:30에는 다시 수집해서 값이 바뀌었는지만 확인하고 알림
+        run_morning_verify(target_date, target_date_obj)
+        return
+
+    brand_status = "완료(이전 실행)" if flags.get("brand_done") else None
+    if brand_status is None:
+        if not run_scraper():
+            from ktoa_mvno_scraper import tg_send_personal
+            tg_send_personal(f"⚠️ 사업자별 실적 수집 실패 ({target_date}) - 07:30 재시도")
+            sys.exit(1)  # Cloud Run Job이 실패로 기록되도록 non-zero exit
+        run_brand_reports(target_date, target_date_obj)
+        _set_report_flag(target_date, "brand_done")
+        brand_status = "완료"
+
+    if flags.get("prepaid_done"):
+        prepaid_status = "완료(이전 실행)"
+    elif run_prepaid(target_date_obj):
+        _set_report_flag(target_date, "prepaid_done")
+        prepaid_status = "완료"
+    else:
+        retry = datetime.now(KST).hour < 7
+        prepaid_status = "미반영" + (" (07:30 재시도)" if retry else "")
+
+    from ktoa_mvno_scraper import tg_send_personal
+    tg_send_personal(f"✅ 최신일자 업데이트 ({target_date})\n"
+                     f"· 사업자별 MNP 실적 : {brand_status}\n"
+                     f"· 선불 실적 : {prepaid_status}")
+    print("=== 전체 완료 ===", flush=True)
+
+
+def run_brand_reports(target_date: str, target_date_obj: date) -> None:
+    """사업자별 MNP 리포트: 일일(또는 주간요약) + 월마감. 실패 시 exit(1)."""
     # ── 트리거 판단: 어제가 일요일이거나 실적 합계 0이면 주간요약, 아니면 일일 리포트 ──
     is_sunday = target_date_obj.weekday() == 6
     total_perf = None
@@ -364,9 +405,6 @@ def main():
         if not run_report(target_date):
             sys.exit(1)
 
-    # ── 선불 리포트: MNP 리포트 뒤에 이어서 발송. 실패해도 job은 성공 처리 ──
-    run_prepaid(target_date_obj)
-
     # ── 월마감 판단: 위 분기와 별개로 항상 체크. 매월 1일엔 의도적으로 겹쳐서 발송 ──
     try:
         from mvno_period_utils import is_month_end
@@ -375,7 +413,118 @@ def main():
     except Exception as e:
         print(f"월마감 판단/처리 실패 (무시하고 계속): {e}", flush=True)
 
-    print("=== 전체 완료 ===", flush=True)
+
+def _snapshot(target_date: str) -> dict:
+    """대상일 값 스냅샷: 사업자별 MNP(IN/OUT)와 선불(망 합계·사업자×망의 신규/해지/IN/OUT)."""
+    from google.cloud import firestore
+    db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
+    mnp, prepaid, mnp_net = {}, {}, {}
+    for coll, field, idx in (("ktoa_mvno_brand_in", "total_in", 0), ("ktoa_mvno_brand_out", "total_out", 1)):
+        for d in db.collection(coll).where("date", "==", target_date).stream():
+            x = d.to_dict()
+            v = mnp.setdefault(f"{x.get('brand')}", [0, 0])
+            v[idx] = x.get(field) or 0
+            if x.get("network"):
+                mnp_net[x.get("brand")] = x["network"]
+    doc = db.collection("ktoa_prepaid_summary").document(target_date).get()
+    if doc.exists:
+        s = doc.to_dict()
+        keys = ("reg", "term", "pin", "pout")
+        for n, m in s.get("networks", {}).items():
+            prepaid[n] = [m.get(k, 0) for k in keys]
+        for b in s.get("brands", {}).values():
+            for n in ("S", "K", "L"):
+                if n in b:
+                    prepaid[f"{b['short']}({n})"] = [b[n].get(k, 0) for k in keys]
+    return {"mnp": {k: tuple(v) for k, v in mnp.items()}, "prepaid": {k: tuple(v) for k, v in prepaid.items()},
+            "mnp_net": mnp_net}
+
+
+def _active_operator_line(snap: dict) -> str:
+    """MNO(SKT/KT/LGU+) 제외, 당일 IN>0인 알뜰폰 사업자 수를 망별로 (v1.10)."""
+    from ktoa_mvno_report import is_mno_brand, clean_brand_name
+    from ktoa_prepaid_summary import ALIASES
+    cnt = {"SKT": 0, "KT": 0, "LGU": 0}
+    merged = set()   # 망 통합: 망 표시를 뗀 이름 기준 (프리텔레콤SKT/KT + 프리티LG = 1개)
+    for brand, (tin, _) in snap["mnp"].items():
+        net = snap["mnp_net"].get(brand)
+        if tin > 0 and net in cnt and not is_mno_brand(brand):
+            cnt[net] += 1
+            name, prev = brand, None
+            while name != prev:
+                prev, name = name, clean_brand_name(name)
+            merged.add(ALIASES.get(name, name))
+    return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
+            f"  실사업자(망 통합) : {len(merged)}개")
+
+
+def _diff_lines(before: dict, after: dict, cols: tuple, limit: int = 10) -> list[str]:
+    diffs = []
+    for k in sorted(set(before) | set(after)):
+        b, a = before.get(k, (0,) * len(cols)), after.get(k, (0,) * len(cols))
+        if b != a:
+            parts = [f"{c} {x:,}→{y:,}" for c, x, y in zip(cols, b, a) if x != y]
+            diffs.append(f"  - {k} : " + ", ".join(parts))
+    return diffs[:limit] + ([f"  - 외 {len(diffs) - limit}건"] if len(diffs) > limit else []), len(diffs)
+
+
+def run_morning_verify(target_date: str, target_date_obj: date) -> None:
+    """
+    07:30 재확인 (v1.9, 사용자 요청): 00시대에 발송한 대상일 데이터를 다시 수집해서
+    값이 바뀌었는지만 확인하고 결과 메시지 1건. 리포트는 다시 보내지 않음.
+    """
+    from ktoa_mvno_scraper import tg_send_personal
+    print(f"[재확인] 대상일({target_date}) 00시대 발송 완료 → 재수집 후 변경 여부 확인", flush=True)
+    before = _snapshot(target_date)
+
+    lines = [f"🔎 07:30 재수집 확인 ({target_date})"]
+    if run_scraper():
+        after = _snapshot(target_date)
+        d, n = _diff_lines(before["mnp"], after["mnp"], ("IN", "OUT"))
+        lines.append(f"· 사업자별 MNP : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {len(after['mnp'])}개)")
+        lines.append(_active_operator_line(after))
+        lines += d
+    else:
+        lines.append("· 사업자별 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
+
+    try:
+        from ktoa_prepaid_scraper import run_daily
+        run_daily(7, dry_run=False, notify=False)
+        after_pp = _snapshot(target_date)["prepaid"]
+        d, n = _diff_lines(before["prepaid"], after_pp, ("신규", "해지", "IN", "OUT"))
+        lines.append(f"· 선불 : {'이상 없음' if not n else f'변경 {n}건'}")
+        lines += d
+    except Exception as e:
+        lines.append(f"· 선불 : ⚠️ 재수집 실패 ({e})")
+
+    if any(l.startswith("· ") and "변경" in l for l in lines):
+        lines.append("(DB는 재수집 값으로 갱신됨, 리포트는 재발송 안 함)")
+    tg_send_personal("\n".join(lines))
+    print("\n".join(lines), flush=True)
+
+
+REPORT_FLAG_COLLECTION = "ktoa_daily_report_flags"   # {대상일}: {brand_done, prepaid_done}
+
+
+def _get_report_flags(target_date: str) -> dict:
+    try:
+        from google.cloud import firestore
+        db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
+        doc = db.collection(REPORT_FLAG_COLLECTION).document(target_date).get()
+        return doc.to_dict() or {}
+    except Exception as e:
+        print(f"완료 플래그 조회 실패 (처음부터 진행): {e}", flush=True)
+        return {}
+
+
+def _set_report_flag(target_date: str, key: str) -> None:
+    try:
+        from google.cloud import firestore
+        db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
+        db.collection(REPORT_FLAG_COLLECTION).document(target_date).set(
+            {key: True, f"{key}_at": datetime.now(KST).isoformat()}, merge=True)
+    except Exception as e:
+        print(f"완료 플래그 저장 실패 ({key}): {e}", flush=True)
 
 
 if __name__ == "__main__":

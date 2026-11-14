@@ -1290,9 +1290,14 @@ def _run_recheck(now_kst, today_str: str) -> None:
         # 재발송 후에도 ④ DB 비교 계속 진행
 
     # ── ④ DB 비교 + 알림 ─────────────────────────────────────────────────────
+    # [수정 20261015] 20:25 RECHECK는 바로 뒤 ⑤ 블록에서 자기 자신의 "수정
+    # 일마감" 메시지를 또 보내므로(다른 방), check_and_notify()의 자체
+    # 재전송은 20:25에는 건너뛰어 중복 발송 방지. 08:00 RECHECK는 ⑤가
+    # 스킵되므로 그대로 재전송.
     try:
         from ktoa_morning_check import check_and_notify
-        check_and_notify(stats, daily_data, site_date)
+        check_and_notify(stats, daily_data, site_date,
+                         skip_closing_resend=(now_kst.hour == 20))
     except Exception as _mc:
         log.warning(f"RECHECK: check_and_notify 실패 (무시): {_mc}")
 
@@ -1321,6 +1326,12 @@ def _run_recheck(now_kst, today_str: str) -> None:
             # fc_ 갱신 반영된 daily 재조회
             _refreshed_rc = _db_rc.collection('ktoa_daily').document(site_date).get().to_dict()
             _daily_for_msg = _refreshed_rc or daily_data
+            # [추가 20261104] 재검증 후 확정값으로 순증 매트릭스 다시 저장 (net_matrix_store)
+            try:
+                from net_matrix_store import save_close as _save_nm_rc
+                _save_nm_rc(_daily_for_msg)
+            except Exception as _nme:
+                log.warning(f"RECHECK: 순증 매트릭스 저장 실패 (무시): {_nme}")
 
             # 전일 daily (closing message용)
             _prev_daily_rc = get_previous_daily_for_closing(site_date)
@@ -1335,6 +1346,10 @@ def _run_recheck(now_kst, today_str: str) -> None:
                 try:
                     _msg = build_closing_message(_daily_for_msg, _prev_daily_rc)
                     _tg_send(f"📋 수정 일마감 메시지 ({site_date})\n\n{_msg}")
+                    # [추가 20261104] 순증 매트릭스 이미지 (당일 + 월 누적)
+                    from ktoa_telegram import send_net_matrix_photo, _closing_date_label
+                    send_net_matrix_photo(_daily_for_msg.get('matrix') or {}, _daily_for_msg,
+                                          _closing_date_label(_daily_for_msg))
                     from ktoa_firestore import _get_db as _fdb_rcmsg
                     _fdb_rcmsg().collection('ktoa_daily').document(site_date).update({
                         '_recheck_msg_sent': True
@@ -1409,6 +1424,43 @@ def _recheck_scrape_and_close(now_kst, today_str: str) -> None:
         log.error(f"RECHECK 재처리 실패: {_e}")
 
 
+def _bw_generated_text(year: int, month: int, next_year: int, next_month: int,
+                       saved: int) -> str:
+    """월말 bw_ai_prev 자동 생성 알림 문구.
+    [수정 20261101] "(30일)"은 저장한 날짜 수라 영업일수가 얼마인지 안 보였음 -
+    다음 달·이번 달 각각 AI 합계 / 실무(bw_manual) 합계 (영업하는 날 / 날짜 수)."""
+    next_ym = f"{next_year:04d}-{next_month:02d}"
+    title = f"✅ '{next_year % 100:02d}.{next_month}월 AI영업일수 자동 생성 완료"
+    text = f'{title} ({saved}일)'
+    try:
+        from ktoa_firestore import _get_db as _fdb3
+        _db3 = _fdb3()
+
+        def _line(m, ym):
+            ai = man = 0.0
+            open_days = days = 0
+            has_man = False
+            for _s in _db3.collection('ktoa_daily') \
+                          .where('date', '>=', f'{ym}-01').where('date', '<=', f'{ym}-31').stream():
+                _x = _s.to_dict()
+                if 'bw_ai_prev' in _x:
+                    days += 1
+                    ai += _x.get('bw_ai_prev') or 0
+                    open_days += 1 if (_x.get('bw_ai_prev') or 0) > 0 else 0
+                if _x.get('bw_manual') is not None:
+                    has_man = True
+                    man += _x['bw_manual']
+            man_txt = f'실무 {man:.1f}일' if has_man else '실무 입력전'
+            return f'{m}월 AI {ai:.1f}일 / {man_txt} (영업{open_days}일/ {days}일)'
+
+        text = (f'{title}\n'
+                + _line(next_month, next_ym) + '\n'
+                + _line(month, f'{year:04d}-{month:02d}'))
+    except Exception as _se:
+        log.warning(f"bw 합계 계산 실패 (기본 문구로 발송): {_se}")
+    return text
+
+
 def _run_month_end_bw(today_str: str) -> None:
     from calendar import monthrange
     from datetime import datetime, timedelta
@@ -1456,13 +1508,14 @@ def _run_month_end_bw(today_str: str) -> None:
         saved = generate_month_bw_ai_prev(next_year, next_month)
         log.info(f"=== {next_ym} bw_ai_prev {saved}일 저장 완료 ===")
 
+        text = _bw_generated_text(year, month, next_year, next_month, saved)
+
         token   = os.environ.get('TELEGRAM_TOKEN', '')
         chat_id = os.environ.get('TELEGRAM_CHAT_ID', '')
         if token and chat_id:
             requests.post(
                 f'https://api.telegram.org/bot{token}/sendMessage',
-                json={'chat_id': chat_id,
-                      'text': f'✅ {next_ym} 영업일수(bw_ai_prev) 자동 생성 완료 ({saved}일)'},
+                json={'chat_id': chat_id, 'text': text},
                 timeout=10,
             )
 

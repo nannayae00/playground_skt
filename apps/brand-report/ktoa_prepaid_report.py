@@ -3,6 +3,7 @@ ktoa_prepaid_report.py  v1.0
 작성일: 2026-10-16
 
 [수정 이력]
+v1.5 | 2026-10-29 | 대상일 선불 실적이 0(일요일·공휴일)이면 전일 메시지 3개는 빼고 월누적 3개만 발송
 v1.4 | 2026-10-20 | 010·MNP 월누적 실적에도 전월 동기간 비교 추가 (사용자 요청): 망·사업자 줄 아래
                      "└ 전월 IN / OUT / 순증", 신규(IN) 증감률은 ±5% 이상만 표시
 v1.3 | 2026-10-20 | 월누적 M/S를 "전월 동기간 → 당월" 비교 형식으로 변경 (사용자 요청):
@@ -243,7 +244,7 @@ def build_prepaid_reports(target: date, db=None) -> list[str]:
     def msg(*parts):
         return "\n".join(x for p in parts for x in ([p] if isinstance(p, str) else p))
 
-    return [
+    msgs = [
         msg(f"📊 선불 010 주요 사업자별 실적 ({d})", build_list_lines(day, "010")),
         msg(f"📊 선불 010 사업자/망별 M/S ({d})", note_day, build_ms_lines(day["brands"], recent, "010")),
         msg(f"📊 선불 010 월누적 사업자별 실적 ({period})", f"(일평균 {LIST_FLOOR}건 이상 사업자)",
@@ -256,6 +257,12 @@ def build_prepaid_reports(target: date, db=None) -> list[str]:
             build_list_lines(mtd, "MNP", mtd_floor, prev),
             "\n[ 사업자/망별 M/S ]", note_mtd, build_ms_compare_lines(mtd["brands"], prev["brands"], "MNP", mtd_min_s)),
     ]
+    # v1.5: 일요일·공휴일은 KTOA 선불 실적이 0 (다음 영업일에 합산) → 전일 메시지 3개는 빼고 월누적만
+    if not any(day["networks"].get("MVNO", {}).values()):
+        log.info(f"[{d}] 선불 실적 0건 (일요일·공휴일) - 전일 메시지 생략, 월누적만 발송")
+        msgs = [msgs[2], msgs[3], msgs[5]]
+        msgs[0] = msgs[0].replace("\n", f"\n({target:%m/%d} 선불 실적 0건 - KTOA는 일요일·공휴일분을 다음 영업일에 합산, 전일 메시지 생략)\n", 1)
+    return msgs
 
 
 def save_context(db, target: date, messages: list[str]) -> None:
