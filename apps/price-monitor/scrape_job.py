@@ -1065,11 +1065,55 @@ def _rm_sort_key(it):
 def _rm_item_line(it):
     head = f"{it['prov']} {it['data']}"
     if it['kind'] == 'new':
-        return f"  + {head} {it['after']} 신규"
+        return f"  🆕 {head} {it['after']} 신규"
     if it['kind'] == 'gone':
         return f"  - {head} {it['before']} 삭제"
-    mark = {'down': '▼', 'up': '▲', 'promo': '◇'}[it['kind']]
-    return f"  {mark} {head} {it['before']}→{it['after']}"
+    # [수정 20261114] 인상·인하 색 구분 (텔레그램은 글자색 불가 → 🔺 인상 / 🔽 인하, 사용자 결정) + 변동액
+    mark = {'down': '🔽', 'up': '🔺', 'promo': '◇'}[it['kind']]
+    amt = f" ({'-' if it['kind'] == 'down' else '+'}{it['diff']:,})" if it['kind'] in ('down', 'up') and it.get('diff') else ""
+    return f"  {mark} {head} {it['before']}→{it['after']}{amt}"
+
+
+RM_SHOW = 3                     # [추가 20261114] 망·유형별로 펼쳐 보여줄 건수 (나머지는 접기)
+FOLD_OPEN, FOLD_CLOSE = "⟦FOLD⟧", "⟦/FOLD⟧"
+
+
+def _rm_provider_summary(groups):
+    """[추가 20261114] 망별 '누가 얼마나 올리고 내렸나' 한 줄: L망: 🔽 찬스 1 / 🔺 이지 40·아시아 20"""
+    out = []
+    for net, short in NET_SHORT.items():
+        cnt = {}
+        for it in groups.get(net, []):
+            if it['kind'] in ('up', 'down'):
+                cnt.setdefault(it['kind'], {}).setdefault(it['prov'], 0)
+                cnt[it['kind']][it['prov']] += 1
+        parts = []
+        for kind, icon in (('down', '🔽'), ('up', '🔺')):
+            top = sorted(cnt.get(kind, {}).items(), key=lambda kv: -kv[1])[:3]
+            if top:
+                parts.append(f"{icon} " + "·".join(f"{p} {n}" for p, n in top))
+        if parts:
+            out.append(f" {short}망: " + " / ".join(parts))
+    return out
+
+
+def plan_notes_html(text):
+    """FOLD 표식 → <blockquote expandable> (텔레그램 HTML). 나머지는 HTML 이스케이프"""
+    import html as _html
+    lines = []
+    for ln in text.split("\n"):
+        if ln == FOLD_OPEN:
+            lines.append("<blockquote expandable>")
+        elif ln == FOLD_CLOSE:
+            lines.append("</blockquote>")
+        else:
+            lines.append(_html.escape(ln, quote=False))
+    return "\n".join(lines).replace("<blockquote expandable>\n", "<blockquote expandable>").replace("\n</blockquote>", "</blockquote>")
+
+
+def plan_notes_plain(text):
+    """메일 본문용: 접기 표식만 제거 (전체 펼침)"""
+    return "\n".join(ln for ln in text.split("\n") if ln not in (FOLD_OPEN, FOLD_CLOSE))
 
 
 def _rm_group_lines(groups):
@@ -1083,10 +1127,18 @@ def _rm_group_lines(groups):
         cnt = {}
         for it in items:
             cnt[it['kind']] = cnt.get(it['kind'], 0) + 1
-        label = {'down': '인하', 'up': '인상', 'promo': '프로모션변경', 'new': '신규', 'gone': '삭제'}
+        label = {'down': '🔽인하', 'up': '🔺인상', 'promo': '◇프로모션변경', 'new': '🆕신규', 'gone': '삭제'}
         rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
         # [수정 20261024] 삭제는 건수만, 나머지(인하·인상·프로모션변경·신규)는 개수 제한 없이 전부 (사용자 결정)
-        rows += [_rm_item_line(it) for it in items if it['kind'] != 'gone']
+        # [수정 20261114] 유형별 상위 RM_SHOW건만 펼치고 나머지는 접기(FOLD 표식 → 텔레그램 HTML 접는 인용)
+        body = [it for it in items if it['kind'] != 'gone']
+        shown, folded, per_kind = [], [], {}
+        for it in body:
+            per_kind[it['kind']] = per_kind.get(it['kind'], 0) + 1
+            (shown if per_kind[it['kind']] <= RM_SHOW else folded).append(_rm_item_line(it))
+        rows += shown
+        if folded:
+            rows += [FOLD_OPEN] + folded + [FOLD_CLOSE]
         out[short] = rows
     return out
 
@@ -1138,6 +1190,11 @@ def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
     # 📈 RM 특이사항 [수정 20261022] 요금제 단위 변동, 사업자별 묶음 (직전 수집 대비, 3사이트 통합, 알뜰폰만)
     rm_base = {'morning': '전일 08시 대비', 'afternoon': '오늘 08시 대비', 'evening': '오늘 13시 대비'}.get(run_slot, '직전 대비')
     lines.append(f"📈 RM 특이사항 ({rm_base})")
+    summary = _rm_provider_summary(rm_groups) if rm_groups else []
+    if summary:
+        lines.append(" 📝 사업자별 요약 (건수)")
+        lines.extend(summary)
+        lines.append("")
     if rm_groups is None:
         for short in ('S', 'K', 'L'):
             lines.append(f" {short}망 : 비교 기준 없음")
@@ -1157,7 +1214,10 @@ def build_plan_notes(curr_rs, prev_general, rm_groups, provider_changes,
         shown = [('알닷', p) for p in only_aldot] + [('허브', p) for p in only_hub]
         shown.sort(key=lambda sp: (-_data_rank(sp[1].get('data', ''))[0], -_data_rank(sp[1].get('data', ''))[1],
                                    sp[1].get('final_price', 0)))
-        lines.extend(_plan_short(src, p) for src, p in shown)
+        rows = [_plan_short(src, p) for src, p in shown]
+        lines.extend(rows[:RM_SHOW])
+        if len(rows) > RM_SHOW:  # [수정 20261114] 나머지는 접기
+            lines += [FOLD_OPEN] + rows[RM_SHOW:] + [FOLD_CLOSE]
         lines.append("")
 
     cheaper = _cheaper_best_vs_moyo(aldot_plans, moyo_plans, '알닷', network_filter='LGU+') \
@@ -1270,18 +1330,67 @@ def clean_for_markdown(text):
     return '```'.join(result)
 
 
+TG_MAX_LEN = 4000  # 텔레그램 한도 4096자, 여유분
+
+
+def _split_message(text, limit=TG_MAX_LEN):
+    """줄 단위로 limit 이하 조각으로 나눔 (한 줄이 limit보다 길면 그 줄만 자름)."""
+    chunks, cur = [], ""
+    for line in str(text).split("\n"):
+        while len(line) > limit:
+            if cur:
+                chunks.append(cur); cur = ""
+            chunks.append(line[:limit]); line = line[limit:]
+        if cur and len(cur) + 1 + len(line) > limit:
+            chunks.append(cur); cur = line
+        else:
+            cur = f"{cur}\n{line}" if cur else line
+    if cur.strip():
+        chunks.append(cur)
+    return chunks
+
+
+def _balance_blockquotes(chunks):
+    """[추가 20261114] 나눠 보낼 때 접는 인용 중간에서 잘리면 앞 조각은 닫고 다음 조각은 다시 열어 HTML 오류 방지"""
+    out, carry = [], False
+    for c in chunks:
+        if carry:
+            c = "<blockquote expandable>" + c
+        opened = c.count("<blockquote") - c.count("</blockquote>")
+        carry = opened > 0
+        if carry:
+            c = c + "</blockquote>"
+        out.append(c)
+    return out
+
+
 def send_to(chat_id, text, parse_mode="Markdown"):
+    # [수정 20261031] 4096자 초과 시 텔레그램이 거부해 메시지가 통째로 빠지던 문제 → 줄 단위로 나눠 발송,
+    #  실패 응답은 로그로 남기고 Markdown 오류면 서식 없이 재발송
     if not BOT_TOKEN or not chat_id: return
     if not text or not str(text).strip(): return  # 빈 문자열 발송 방지
-    try:
-        payload = {"chat_id": chat_id, "text": text}
-        if parse_mode:
-            payload["parse_mode"] = parse_mode
-        requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json=payload, timeout=10
-        )
-    except: pass
+    chunks = _split_message(text)
+    if parse_mode == "HTML":
+        chunks = _balance_blockquotes(chunks)
+    for chunk in chunks:
+        try:
+            payload = {"chat_id": chat_id, "text": chunk}
+            if parse_mode:
+                payload["parse_mode"] = parse_mode
+            r = requests.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                json=payload, timeout=10
+            )
+            if not r.ok and parse_mode:
+                payload.pop("parse_mode")
+                r = requests.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json=payload, timeout=10
+                )
+            if not r.ok:
+                print(f"⚠️ 텔레그램 발송 실패 ({len(chunk)}자): {r.status_code} {r.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ 텔레그램 발송 오류: {e}")
 
 def send_log(text):
     send_to(CHAT_LOG, text)
@@ -1298,12 +1407,12 @@ def send_aldot(text, source_type='auto'):
     send_result(cleaned, source_type=source_type)
 
 
-def send_result(text, source_type='auto'):
-    send_to(CHAT_LOG, text)
+def send_result(text, source_type='auto', parse_mode="Markdown"):
+    send_to(CHAT_LOG, text, parse_mode)
     if source_type == 'auto':
-        send_to(CHAT_MOYO, text)
+        send_to(CHAT_MOYO, text, parse_mode)
     if REQUESTER_ID and REQUESTER_ID != CHAT_LOG:
-        send_to(REQUESTER_ID, text)
+        send_to(REQUESTER_ID, text, parse_mode)
 
 def send_telegram(text):
     send_to(CHAT_LOG, text)
@@ -1357,7 +1466,7 @@ def send_excel_mail(file_path, caption, body_parts=None):
             "",
         ]
         if body_parts:
-            labels = ['✅ 수집현황', '📶 일반사업자(3사통합)', '🏢 자회사(3사통합)', '📡 MNO(3사통합)', '📋 단독·저렴상세']
+            labels = ['✅ 수집현황', '📶 일반사업자(3사통합)', '🏢 자회사(3사통합)', '📡 MNO(3사통합)', '📌 요금제 특이사항']
             for label, part in zip(labels, body_parts):
                 if part:
                     body_lines.append(SEP)
@@ -2747,7 +2856,7 @@ def main():
         send_merged(msg2, source_type=source_type)
         if msg3:
             send_merged(msg3, source_type=source_type)
-        send_merged(msg5, source_type=source_type)
+        send_result(plan_notes_html(msg5), source_type=source_type, parse_mode="HTML")  # [수정 20261114] 접기·색 아이콘
 
         # ── 엑셀 전송 ────────────────────────────────────────────────────────
         if HAS_PANDAS:
@@ -2764,7 +2873,7 @@ def main():
                 send_excel_mail(
                     excel_path,
                     f"모요+알닷+허브 ({len(plans)}+{len(aldot_plans)}+{len(mvnohub_plans)}건) | {datetime.now(KOREA_TZ).strftime('%m/%d %H:%M')}",
-                    body_parts=[msg1, msg2, msg3, msg4, msg5]
+                    body_parts=[msg1, msg2, msg3, msg4, plan_notes_plain(msg5)]
                 )
             except Exception as e:
                 import traceback

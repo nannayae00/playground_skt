@@ -246,7 +246,9 @@ def parse_event_images(image_urls: list) -> tuple:
                 resp = client.models.generate_content(
                     model=model_name,
                     contents=[types.Part.from_bytes(data=data, mime_type=mime), GEMINI_PROMPT],
-                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                    # [수정 20261030] 생각량 1,024 제한 - 무제한과 일치율 같음(14장 중 9장, 무제한끼리도 9장), 비용 약 1/3
+                    config=types.GenerateContentConfig(response_mime_type="application/json",
+                                                       thinking_config=types.ThinkingConfig(thinking_budget=1024)),
                 )
                 obj = json.loads((resp.text or "{}").strip())
             except Exception as e:
