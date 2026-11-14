@@ -1466,7 +1466,7 @@ def send_excel_mail(file_path, caption, body_parts=None):
             "",
         ]
         if body_parts:
-            labels = ['✅ 수집현황', '📶 일반사업자(3사통합)', '🏢 자회사(3사통합)', '📡 MNO(3사통합)', '📋 단독·저렴상세']
+            labels = ['✅ 수집현황', '📶 일반사업자(3사통합)', '🏢 자회사(3사통합)', '📡 MNO(3사통합)', '📌 요금제 특이사항']
             for label, part in zip(labels, body_parts):
                 if part:
                     body_lines.append(SEP)
