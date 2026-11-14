@@ -670,7 +670,13 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     pre_ai_blocked = 0
     confirmed_ambiguous_filtered = []
     keyword_only_filtered = []
+    # [v3.7] 뽐뿌게시판(핫딜)에서 사업자명이 잡히고 데이터(GB)·요금(원) 표기가 있는 글은 요금제 특가글이라 AI 검증으로 보냄
+    #  (11/14 "[프리티] 300분, 데이터 15GB+1mbps(월7,700원/평생)"이 여기서 차단돼 누락)
+    PLAN_DEAL_RE = re.compile(r'\d+(\.\d+)?\s*(gb|g)\b.*\d[\d,]*\s*원|\d[\d,]*\s*원.*\d+(\.\d+)?\s*(gb|g)\b', re.I)
     for post in confirmed_ambiguous:
+        if post.get('board') == 'ppomppu' and PLAN_DEAL_RE.search(post['title']):
+            confirmed_ambiguous_filtered.append(post)
+            continue
         if post.get('board') in NON_MVNO_BOARDS:
             print(f"   🚫 AI전 차단(confirmed_ambiguous): [{post.get('board')}] {post['title'][:40]}")
             pre_ai_blocked += 1

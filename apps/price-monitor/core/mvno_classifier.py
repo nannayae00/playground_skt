@@ -92,9 +92,9 @@ except ImportError:
 
 MVNO_PROVIDER_ALIASES = {
     # ── 3사 공통 (13개) ──────────────────────────────────────────
-    "헬로모바일":    ["헬로모바일", "헬로 모바일", "LG헬로모바일", "헬로유심", "헬로"],  # 단독은 WEAK_ALIASES 동반 키워드 필수
+    "헬로모바일":    ["헬로모바일", "헬로 모바일", "LG헬로모바일", "헬로유심", "헬로", "헬모"],  # [v3.7] "헬모"  # 단독은 WEAK_ALIASES 동반 키워드 필수
     "토스모바일":    ["토스모바일", "toss모바일", "토스심", "토스", "toss"],  # 단독은 WEAK_ALIASES 동반 키워드 필수
-    "아이즈모바일":  ["아이즈모바일", "아이즈비전"],               # "아이즈" 단독은 AMBIGUOUS
+    "아이즈모바일":  ["아이즈모바일", "아이즈비전", "아이즈"],     # "아이즈" 단독은 AMBIGUOUS → [v3.7] WEAK(요금 키워드 동반 시 인정)
     "모빙":         ["모빙", "mobing"],
     "스마텔":       ["스마텔", "smartel"],
     "이야기모바일":  ["이야기모바일", "이야기"],                    # 단독은 WEAK_ALIASES 동반 키워드 필수
@@ -133,7 +133,7 @@ MVNO_PROVIDER_ALIASES = {
     "요고":         ["요고모바일", "요고 모바일", "kt요고", "kt 요고"],
 
     # ── KT 단독 ──────────────────────────────────────────────────
-    "KT엠모바일":   ["KT엠모바일", "KT엠", "엠모바일", "KTM모바일", "KTM 모바일", "ktm"],
+    "KT엠모바일":   ["KT엠모바일", "KT엠", "엠모바일", "KTM모바일", "KTM 모바일", "ktm", "kt m모바일", "kt m 모바일", "m모바일", "엠모"],  # [v3.7] 커뮤니티 줄임말 "엠모"
     "이지모바일":   ["이지모바일"],                                # "이지" 단독은 AMBIGUOUS
     "드림모바일":   ["드림모바일"],
     "쉐이크모바일": ["쉐이크모바일"],                              # "쉐이크" 단독은 AMBIGUOUS
@@ -147,7 +147,7 @@ MVNO_PROVIDER_ALIASES = {
     "퍼스트모바일": ["퍼스트모바일"],
 
     # ── LGU+ 단독 ────────────────────────────────────────────────
-    "U+유모바일":   ["유모바일", "U+유모바일", "유플러스알뜰", "유플러스유모바일"],
+    "U+유모바일":   ["유모바일", "U+유모바일", "유플러스알뜰", "유플러스유모바일", "유모비", "유모"],  # [v3.7] "유모"는 WEAK(동반 키워드·유모차 제외)
     "시월모바일":   ["시월모바일", "시월"],                          # "시월" 단독은 WEAK_ALIASES로 동반키워드 체크
     "슈가모바일":   ["슈가모바일"],                                # "슈가" 단독은 AMBIGUOUS
     "찬스모바일":   ["찬스모바일"],                                # "찬스" 단독은 AMBIGUOUS
@@ -325,6 +325,9 @@ WEAK_ALIASES = {
     "live":     _TELECOM_KW + ["리브", "liiv"],
     "리브":     _TELECOM_KW + ["엠", "liiv"],
     "헬로":     _TELECOM_KW,
+    # [v3.7] 요금제 표기(GB·Mbps·QoS·무제한)도 동반 키워드로 인정: "180G + 10mbps 시월", "아이즈 150g 5mbps"
+    "아이즈":   _TELECOM_KW + ["mbps", "qos", "무제한", "gb", "150g", "5m"],
+    "유모":     _TELECOM_KW + ["타임딜", "네페", "네이버페이", "쌀먹", "프로모션", "해지", "사은품"],  # [v3.7]
 
     # ── 🟡 중간: 혼동 가능, 동반 키워드 권장 ──
     "핀":       ["다이렉트"] + _TELECOM_KW,
@@ -342,7 +345,7 @@ WEAK_ALIASES = {
     "인스":     _TELECOM_KW,
     "찬스":     _TELECOM_KW,
     "슈가":     _TELECOM_KW,
-    "시월":     _TELECOM_KW,
+    "시월":     _TELECOM_KW + ["mbps", "qos", "무제한", "gb", "10m", "5m"],  # [v3.7] 요금제 표기도 동반 키워드
     "이지":     _TELECOM_KW,
     "쉐이크":   _TELECOM_KW,
     "snow":     _TELECOM_KW + ["man"],
@@ -443,6 +446,31 @@ def is_safe_confirmed(provider, title):
 # 함수: 사업자명 정규화
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _alias_in(alias, text_lower):
+    """[v3.7] 별칭 매칭. 영문은 기존처럼 앞뒤 단어경계, 한글로 끝나는 별칭은 앞 경계만 보고 뒤는 허용.
+    Python re는 한글을 \\w로 봐서 "엠모바일은", "헬모가", "엠모도"처럼 조사가 붙으면 \\b가 안 생겨
+    매칭이 전부 실패했음 (11/14 점검: 2주간 휴대폰포럼 알뜰폰 글 다수 누락)"""
+    if re.search(r'[가-힣]$', alias):
+        if alias == '유모' and '유모차' in text_lower:
+            return False
+        return bool(re.search(r'(?<![가-힣a-z0-9])' + re.escape(alias), text_lower))
+    return bool(re.search(r'\b' + re.escape(alias) + r'\b', text_lower))
+
+
+def _has_strong_mvno_alias(text_lower):
+    """[v3.7] 오탐 위험이 낮은(애매·약한 별칭이 아닌) 알뜰폰 사업자명이 있는지"""
+    for canonical, aliases in MVNO_PROVIDER_ALIASES.items():
+        if canonical in MNO_DIRECT_PROVIDERS:
+            continue
+        for a in [canonical] + aliases:
+            al = a.lower()
+            if a in AMBIGUOUS_ALIASES or al in WEAK_ALIASES or len(al) <= 2 and not re.search(r'[가-힣]', al):
+                continue
+            if _alias_in(al, text_lower):
+                return True
+    return False
+
+
 def normalize_provider(text, board=None):
     """
     텍스트에서 사업자명 감지 및 정규화
@@ -485,8 +513,8 @@ def normalize_provider(text, board=None):
             and not any(bl in text_lower for bl in YOGO_BLOCKLIST):
         return "요고"
 
-    if not is_skt_air:
-        # 제외 사업자 체크 (3대 통신사)
+    if not is_skt_air and not _has_strong_mvno_alias(text_lower):
+        # 제외 사업자 체크 (3대 통신사) - [v3.7] 확실한 알뜰폰 사업자명이 함께 있으면 망 언급으로 보고 건너뜀
         for excluded in EXCLUDE_PROVIDERS:
             if excluded.lower() in text_lower:
                 # 단, "KT엠모바일"처럼 알뜰폰인 경우는 제외하지 않음
@@ -531,7 +559,7 @@ def normalize_provider(text, board=None):
             if alias.lower() in WEAK_ALIASES:
                 matched = alias.lower() in text_lower
             else:
-                matched = bool(re.search(r'\b' + re.escape(alias.lower()) + r'\b', text_lower))
+                matched = _alias_in(alias.lower(), text_lower)
             if matched:
                 # [v2.4] WEAK_ALIASES: 동반 키워드 체크 (게시판 무관하게 적용)
                 if alias.lower() in WEAK_ALIASES:
@@ -618,6 +646,10 @@ def check_keywords(title, content='', board=None):
     # "알뜰"이 제목에 부분 포함되는지 추가로 검사 (일반 게시판/2개매칭 로직은 그대로 유지).
     ALDDAL_PATTERNS = {r'\b알뜰폰\b', r'\b알뜰\b'}
     has_alddal = any(kw in ALDDAL_PATTERNS for kw in matched_keywords) or '알뜰' in title
+    # [v3.7] 알뜰폰 비교 플랫폼(알닷·모요)·알뜰폰 은어(쌀먹)도 휴대폰포럼에선 알뜰폰 글로 봄
+    mvno_slang = [w for w in ('알닷', '모요', '쌀먹') if w in title]
+    if board == 'phone' and mvno_slang and not has_alddal:
+        return {'is_mvno': True, 'method': 'keyword_pattern', 'keywords': mvno_slang, 'confidence': 0.6}
     if board == 'phone' and has_alddal:
         if '알뜰' in title and not any(kw in ALDDAL_PATTERNS for kw in matched_keywords):
             matched_keywords = matched_keywords + ['알뜰(복합어)']
