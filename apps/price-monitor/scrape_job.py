@@ -1068,8 +1068,8 @@ def _rm_item_line(it):
         return f"  🆕 {head} {it['after']} 신규"
     if it['kind'] == 'gone':
         return f"  - {head} {it['before']} 삭제"
-    # [수정 20261114] 인상·인하 색 구분 (텔레그램은 글자색 불가 → 🔴 인상 / 🔵 인하, 주식 표기 관례) + 변동액
-    mark = {'down': '🔵', 'up': '🔴', 'promo': '◇'}[it['kind']]
+    # [수정 20261114] 인상·인하 색 구분 (텔레그램은 글자색 불가 → 🔺 인상 / 🔽 인하, 사용자 결정) + 변동액
+    mark = {'down': '🔽', 'up': '🔺', 'promo': '◇'}[it['kind']]
     amt = f" ({'-' if it['kind'] == 'down' else '+'}{it['diff']:,})" if it['kind'] in ('down', 'up') and it.get('diff') else ""
     return f"  {mark} {head} {it['before']}→{it['after']}{amt}"
 
@@ -1079,7 +1079,7 @@ FOLD_OPEN, FOLD_CLOSE = "⟦FOLD⟧", "⟦/FOLD⟧"
 
 
 def _rm_provider_summary(groups):
-    """[추가 20261114] 망별 '누가 얼마나 올리고 내렸나' 한 줄: L망: 🔴 이지 40·아시아 20 / 🔵 찬스 1"""
+    """[추가 20261114] 망별 '누가 얼마나 올리고 내렸나' 한 줄: L망: 🔽 찬스 1 / 🔺 이지 40·아시아 20"""
     out = []
     for net, short in NET_SHORT.items():
         cnt = {}
@@ -1088,7 +1088,7 @@ def _rm_provider_summary(groups):
                 cnt.setdefault(it['kind'], {}).setdefault(it['prov'], 0)
                 cnt[it['kind']][it['prov']] += 1
         parts = []
-        for kind, icon in (('down', '🔵'), ('up', '🔴')):
+        for kind, icon in (('down', '🔽'), ('up', '🔺')):
             top = sorted(cnt.get(kind, {}).items(), key=lambda kv: -kv[1])[:3]
             if top:
                 parts.append(f"{icon} " + "·".join(f"{p} {n}" for p, n in top))
@@ -1127,7 +1127,7 @@ def _rm_group_lines(groups):
         cnt = {}
         for it in items:
             cnt[it['kind']] = cnt.get(it['kind'], 0) + 1
-        label = {'down': '🔵인하', 'up': '🔴인상', 'promo': '◇프로모션변경', 'new': '🆕신규', 'gone': '삭제'}
+        label = {'down': '🔽인하', 'up': '🔺인상', 'promo': '◇프로모션변경', 'new': '🆕신규', 'gone': '삭제'}
         rows = [" · ".join(f"{label[k]} {cnt[k]}" for k in _RM_KIND_ORDER if k in cnt)]
         # [수정 20261024] 삭제는 건수만, 나머지(인하·인상·프로모션변경·신규)는 개수 제한 없이 전부 (사용자 결정)
         # [수정 20261114] 유형별 상위 RM_SHOW건만 펼치고 나머지는 접기(FOLD 표식 → 텔레그램 HTML 접는 인용)
