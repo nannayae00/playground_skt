@@ -213,6 +213,12 @@ MNO_DIRECT_PROVIDERS = {"너겟", "T다이렉트", "SKT에어", "요고"}
 # 출처: KTOA MVNO 등록 데이터 (2026.06 기준)
 # ══════════════════════════════════════════════════════════════════════════════
 PROVIDER_NETWORKS = {
+    # [v3.7] MNO 직영 온라인·플랫폼은 망이 하나로 정해짐 (11/15 점검: 망 미확인 글의 상당수)
+    "T다이렉트":    ["SKT"],
+    "SKT에어":      ["SKT"],
+    "요고":         ["KT"],
+    "너겟":         ["LGU+"],
+    "알닷":         ["LGU+"],   # LG U+ 알뜰폰 통합몰 - 수집 요금제 1,106개 전부 LGU+망 (11/15 확인)
     # ── SKT 단일망
     "SK세븐모바일":  ["SKT"],
     "알비레오모바일": ["SKT"],
@@ -1166,20 +1172,52 @@ def extract_network_from_title(title):
 
     t  = title          # 원본 (대소문자 구분 패턴)
     tl = title.lower()  # 소문자 (대소문자 무관 패턴)
+    tn = re.sub(r'\s+', '', tl)   # [v3.7] "KT 망", "유플 5G망"처럼 띄어 쓴 경우도 보도록 공백 제거본
 
     # ── LGU+ 먼저 체크 (U+ 포함, SKT/KT보다 앞에 있어야 오매칭 방지) ──
-    LGU_PATTERNS = ['lgu+망', 'u+망', 'lg u+망', 'lgu망', 'lg망']
-    if any(p in tl for p in LGU_PATTERNS):
+    LGU_PATTERNS = ['lgu+망', 'u+망', 'lg u+망', 'lgu망', 'lg망',
+                    '유플망', '유플러스망', '엘지망', '유플5g망', 'u+5g망', 'lgu+5g망', '[l]']   # [v3.7]
+    if any(p in tl or p in tn for p in LGU_PATTERNS):
         return 'LGU+'
 
     # ── SKT ──
-    SKT_PATTERNS = ['skt망', 'sk망']
-    if any(p in tl for p in SKT_PATTERNS):
+    SKT_PATTERNS = ['skt망', 'sk망', '에스케이망', 'skt5g망', '[s]']
+    if any(p in tl or p in tn for p in SKT_PATTERNS):
         return 'SKT'
 
     # ── KT (SKT 체크 후에 해야 "SKT망"이 KT로 오매칭 안 됨) ──
-    KT_PATTERNS = ['kt망']
-    if any(p in tl for p in KT_PATTERNS):
+    KT_PATTERNS = ['kt망', '케이티망', 'kt5g망', '[k]']
+    if any(p in tl or p in tn for p in KT_PATTERNS):
         return 'KT'
 
+    # [v3.7] 알닷(LG U+ 알뜰폰 통합몰) 요금제 글 → LGU+
+    if '알닷' in tl:
+        return 'LGU+'
+
+    return None
+
+
+def resolve_network(title, provider=None, ai_network=None):
+    """[v3.7] 글 하나의 통신망 결정 (메시지·DB 공통): 제목 망 표기 > 단일망 사업자 > AI 판단 >
+    알뜰폰 사업자 글인데 제목에 통신3사 이름이 하나만 나오면 그 망 ("아이즈모바일 SKT 요금제")"""
+    net = extract_network_from_title(title)
+    if net:
+        return net
+    cands = PROVIDER_NETWORKS.get(provider or '', [])
+    if len(cands) == 1:
+        return cands[0]
+    if ai_network and str(ai_network) not in ('None', 'null', ''):
+        a = str(ai_network).upper()
+        return 'LGU+' if ('LG' in a or 'U+' in a) else ('SKT' if 'SK' in a else ('KT' if 'KT' in a else None))
+    if provider not in MNO_DIRECT_PROVIDERS:   # 사업자 미상 글도 포함 ("SKT 번호변경 서비스 중단" → SKT)
+        tl = (title or '').lower()
+        hits = set()
+        if re.search(r'(?<![a-z])skt?(?![a-z])', tl):
+            hits.add('SKT')
+        if re.search(r'(?<![a-z])kt(?![a-z])', tl):   # "skt" 안의 kt는 앞 글자 s 때문에 안 걸림
+            hits.add('KT')
+        if re.search(r'lgu|u\+|유플|엘지|(?<![a-z])lg(?![a-z])', tl):
+            hits.add('LGU+')
+        if len(hits) == 1:
+            return hits.pop()
     return None

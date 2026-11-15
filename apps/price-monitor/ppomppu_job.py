@@ -65,7 +65,7 @@ import traceback
 import requests
 from datetime import datetime
 import pytz
-from core.mvno_classifier import extract_network_from_title, PROVIDER_NETWORKS, PROVIDER_NETWORKS
+from core.mvno_classifier import extract_network_from_title, resolve_network, PROVIDER_NETWORKS
 
 KOREA_TZ      = pytz.timezone('Asia/Seoul')
 
@@ -164,7 +164,7 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
             elif s >= 2: return "★☆☆"
             else:        return "☆☆☆"
         # [v2.2] 통신망 결정 우선순위: 제목센싱 > 단일망확정 > AI결과 > 미확인
-        network = extract_network_from_title(post.get('title', '')) or result.get('network') or ''
+        network = resolve_network(post.get('title', ''), provider, result.get('network')) or ''  # [v3.7] DB 저장과 같은 규칙
         if network and network not in ('None', 'null', ''):
             network_str = 'LGU+' if 'LGU' in network or 'U+' in network else network
         else:

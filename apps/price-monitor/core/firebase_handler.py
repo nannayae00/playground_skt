@@ -611,13 +611,14 @@ class FirebaseHandler:
                 filter_result = post_data.get('filter_result', {})
 
                 # network: Gemini 결과 우선, 없으면 사업자명으로 고정망 추론
-                network = filter_result.get('network')
-                if not network:
-                    try:
-                        from core.mvno_classifier import infer_network_from_provider
-                        network = infer_network_from_provider(filter_result.get('provider'))
-                    except Exception:
-                        network = None
+                # [v3.7] 메시지와 같은 규칙: 제목 망 표기 > 단일망 사업자 > AI > 제목의 통신3사 이름
+                #  (예전엔 제목에 "KT망"이 있어도 DB엔 AI 값만 저장돼 망 없음이 절반 넘었음)
+                try:
+                    from core.mvno_classifier import resolve_network
+                    network = resolve_network(post_data.get('title', ''), filter_result.get('provider'),
+                                              filter_result.get('network'))
+                except Exception:
+                    network = filter_result.get('network')
 
                 doc_ref.set({
                     'post_id':         post_id,
