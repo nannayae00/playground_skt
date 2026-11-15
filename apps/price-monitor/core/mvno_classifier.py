@@ -1230,6 +1230,14 @@ def _provider_networks(provider):
     if not provider:
         return []
     p = str(provider)
+    if ',' in p:   # 여러 사업자("유모바일, 헬모, SK7") → 망을 합쳐서, 하나로 모일 때만 단일망
+        nets, unknown = [], False
+        for part in (x.strip() for x in p.split(',') if x.strip()):
+            got = _provider_networks(part)
+            if not got:
+                unknown = True
+            nets += [n for n in got if n not in nets]
+        return [] if unknown else nets
     for key in (p, p.replace(' ', ''), normalize_provider(p) or ''):
         if key in PROVIDER_NETWORKS:
             return PROVIDER_NETWORKS[key]
