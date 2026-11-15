@@ -1197,6 +1197,27 @@ def extract_network_from_title(title):
     return None
 
 
+_PLAN_HINT_RE = re.compile(r'\d+(\.\d+)?\s*(gb|g|기가|mbps)(?![a-z])|\d[\d,]*\s*원', re.I)   # 특정 요금제를 말하는 글
+
+
+def network_status(title, provider=None, network=None):
+    """[v3.7] 망 판정 상태: 'confirmed'(망 확정) / 'unknown'(미확인 - 특정 사업자·요금제 글인데 망을 못 찾음)
+    / 'na'(분류없음 - 질문·잡담·비교정리처럼 특정 망과 무관, 또는 여러 망·사업자를 다룸)"""
+    if network and str(network) not in ('None', 'null', '', '미확인'):
+        return 'confirmed'
+    prov = str(provider or '')
+    if ',' in prov:
+        return 'na'
+    if not prov or prov in ('None', '통신사'):
+        # 사업자는 없어도 특정 요금제(GB·원)를 말하면 망이 있어야 하는 글 → 미확인
+        return 'unknown' if _PLAN_HINT_RE.search(title or '') else 'na'
+    tl = (title or '').lower()
+    nets = sum(bool(re.search(p, tl)) for p in (r'(?<![a-z])skt?(?![a-z])', r'(?<![a-z])kt(?![a-z])', r'lgu|u\+|유플|엘지'))
+    if nets >= 2:
+        return 'na'
+    return 'unknown'
+
+
 def resolve_network(title, provider=None, ai_network=None):
     """[v3.7] 글 하나의 통신망 결정 (메시지·DB 공통): 제목 망 표기 > 단일망 사업자 > AI 판단 >
     알뜰폰 사업자 글인데 제목에 통신3사 이름이 하나만 나오면 그 망 ("아이즈모바일 SKT 요금제")"""

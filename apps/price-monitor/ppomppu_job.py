@@ -65,7 +65,7 @@ import traceback
 import requests
 from datetime import datetime
 import pytz
-from core.mvno_classifier import extract_network_from_title, resolve_network, PROVIDER_NETWORKS
+from core.mvno_classifier import extract_network_from_title, resolve_network, network_status, PROVIDER_NETWORKS
 
 KOREA_TZ      = pytz.timezone('Asia/Seoul')
 
@@ -189,7 +189,12 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
             block += f" 본문: {esc(content_summary)}\n"
         # [v2.2] 통신망 표시: 제목센싱/단일망/별3개 → 항상, 나머지 → 확정시만
         needs_check = post.get('_needs_network_check', False)
-        if show_network_always or score >= 7:
+        # [v3.7] 망 없음을 '미확인'(사업자 글인데 못 찾음)과 '분류없음'(질문·잡담·비교 등 망 무관)으로 구분 - 분류없음은 줄 생략
+        if network_str == '미확인' and network_status(post.get('title', ''), provider, None) == 'na':
+            network_str = '분류없음'
+        if network_str == '분류없음':
+            pass
+        elif show_network_always or score >= 7:
             net_display = f"{network_str} ⚠️재확인필요" if needs_check and network_str == '미확인' else network_str
             block += f" 🌐 통신망: {esc(net_display)}\n"
         elif network_str != '미확인':

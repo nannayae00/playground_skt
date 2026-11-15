@@ -619,6 +619,11 @@ class FirebaseHandler:
                                               filter_result.get('network'))
                 except Exception:
                     network = filter_result.get('network')
+                try:
+                    from core.mvno_classifier import network_status
+                    net_status = network_status(post_data.get('title', ''), filter_result.get('provider'), network)
+                except Exception:
+                    net_status = None
 
                 doc_ref.set({
                     'post_id':         post_id,
@@ -631,6 +636,7 @@ class FirebaseHandler:
                     'author':          post_data.get('author', '익명'),
                     'provider':        filter_result.get('provider'),
                     'network':         network,
+                    'network_status':  net_status,   # [v3.7] confirmed / unknown(미확인) / na(분류없음)
                     'filter_method':   filter_result.get('method'),
                     'confidence':      filter_result.get('confidence', 0.0),
                     'relevance_score': filter_result.get('relevance_score', 0),
