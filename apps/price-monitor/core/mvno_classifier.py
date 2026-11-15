@@ -524,6 +524,9 @@ def normalize_provider(text, board=None):
         return None
     
     text_lower = text.lower()
+    # [v3.7] "쉐이크 모바일", "이야기 모바일"처럼 띄어 쓴 사업자명도 잡히도록 붙여 쓴 형태를 덧붙여 검사
+    if re.search(r'\s+(모바일|mobile)', text_lower):
+        text_lower = text_lower + ' ' + re.sub(r'\s+(모바일|mobile)', r'\1', text_lower)
 
     # SKT에어 관련: "SKT"+"AIR" 또는 "SKT에어" → MVNO이므로 EXCLUDE 체크 전체 스킵
     is_skt_air = ("skt" in text_lower and "air" in text_lower) or "skt에어" in text_lower or "에어바이sk" in text_lower
