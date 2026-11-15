@@ -192,15 +192,10 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
         # [v3.7] 망 없음을 '미확인'(사업자 글인데 못 찾음)과 '분류없음'(질문·잡담·비교 등 망 무관)으로 구분 - 분류없음은 줄 생략
         if network_str == '미확인' and network_status(post.get('title', ''), provider, None) == 'na':
             network_str = '분류없음'
-        if network_str == '분류없음':
-            pass
-        elif show_network_always or score >= 7:
+        # [v3.7] 확정·미확인은 항상 표시(중요도 무관), 분류없음(망 무관 글)만 생략
+        if network_str != '분류없음':
             net_display = f"{network_str} ⚠️재확인필요" if needs_check and network_str == '미확인' else network_str
             block += f" 🌐 통신망: {esc(net_display)}\n"
-        elif network_str != '미확인':
-            block += f" 🌐 통신망: {esc(network_str)}\n"
-        elif needs_check:
-            block += f" 🌐 통신망: 미확인 ⚠️재확인필요\n"
         block += f" 👁 {post.get('views', 0):,} | 💬 {post.get('comments', 0)}"
         return block
 

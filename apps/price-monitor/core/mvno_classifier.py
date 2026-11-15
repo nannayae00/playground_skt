@@ -1225,13 +1225,24 @@ def network_status(title, provider=None, network=None):
     return 'unknown'
 
 
+def _provider_networks(provider):
+    """[v3.7] 사업자 → 망 후보. AI가 "쉐이크 모바일"처럼 띄어 쓰거나 별칭으로 돌려줘도 찾도록 정규화"""
+    if not provider:
+        return []
+    p = str(provider)
+    for key in (p, p.replace(' ', ''), normalize_provider(p) or ''):
+        if key in PROVIDER_NETWORKS:
+            return PROVIDER_NETWORKS[key]
+    return []
+
+
 def resolve_network(title, provider=None, ai_network=None):
     """[v3.7] 글 하나의 통신망 결정 (메시지·DB 공통): 제목 망 표기 > 단일망 사업자 > AI 판단 >
     알뜰폰 사업자 글인데 제목에 통신3사 이름이 하나만 나오면 그 망 ("아이즈모바일 SKT 요금제")"""
     net = extract_network_from_title(title)
     if net:
         return net
-    cands = PROVIDER_NETWORKS.get(provider or '', [])
+    cands = _provider_networks(provider)
     if len(cands) == 1:
         return cands[0]
     # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나는 붙이지 않음 (2주 시험에서 오표기 확인).
