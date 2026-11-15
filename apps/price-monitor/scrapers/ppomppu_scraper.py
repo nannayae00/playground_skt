@@ -843,7 +843,13 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 # relevance_score 7점 이상 + 이미지 있는 경우만
                 current_score_check = post['filter_result'].get('relevance_score', 0)
                 image_urls = post.get('image_urls', [])
-                if current_score_check >= 7 and image_urls:
+                # [v3.7] 망을 못 찾은 사업자·요금제 글(미확인)도 사진이 있으면 판독 - 요금제 안내는 사진에 많음
+                #  (11/15 시험: 미확인 중 사진 있는 19건 → 9건 망 확인, 하루 1~2건·월 300원 안팎)
+                from core.mvno_classifier import resolve_network, network_status
+                _fr = post['filter_result']
+                _net = resolve_network(post['title'], _fr.get('provider'), _fr.get('network'))
+                need_net = (not _net) and network_status(post['title'], _fr.get('provider'), None) == 'unknown'
+                if (current_score_check >= 7 or need_net) and image_urls:
                     print(f"      🔭 Vision 분석 시작 ({len(image_urls)}장)")
                     vision_result = ai_vision_analyze(
                         title=post['title'],
