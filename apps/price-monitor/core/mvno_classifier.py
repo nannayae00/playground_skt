@@ -1211,7 +1211,9 @@ def network_status(title, provider=None, network=None):
     if network and str(network) not in ('None', 'null', '', '미확인'):
         return 'confirmed'
     prov = str(provider or '')
-    if ',' in prov or _ROUNDUP_RE.search(title or ''):
+    if ',' in prov:
+        return 'na'
+    if _ROUNDUP_RE.search(title or ''):   # 정리·비교글 (망을 못 찾은 경우)
         return 'na'
     if not prov or prov in ('None', '통신사'):
         # 사업자는 없어도 특정 요금제(GB·원)를 말하면 망이 있어야 하는 글 → 미확인
@@ -1229,13 +1231,13 @@ def resolve_network(title, provider=None, ai_network=None):
     net = extract_network_from_title(title)
     if net:
         return net
-    # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나를 붙이지 않음 (2주 시험에서 오표기 확인)
-    if _ROUNDUP_RE.search(title or ''):
-        return None
     cands = PROVIDER_NETWORKS.get(provider or '', [])
     if len(cands) == 1:
         return cands[0]
-    if ai_network and str(ai_network) not in ('None', 'null', ''):
+    # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나는 붙이지 않음 (2주 시험에서 오표기 확인).
+    #  단 제목에 통신사가 하나만 나오면("SKT 유심 100원 … 정리") 아래 규칙으로 판단
+    roundup = bool(_ROUNDUP_RE.search(title or ''))
+    if ai_network and not roundup and str(ai_network) not in ('None', 'null', ''):
         a = str(ai_network).upper()
         return 'LGU+' if ('LG' in a or 'U+' in a) else ('SKT' if 'SK' in a else ('KT' if 'KT' in a else None))
     if provider not in MNO_DIRECT_PROVIDERS:   # 사업자 미상 글도 포함 ("SKT 번호변경 서비스 중단" → SKT)
