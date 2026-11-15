@@ -1193,13 +1193,15 @@ def extract_network_from_title(title):
     if any(p in tl or p in tn for p in KT_PATTERNS):
         return 'KT'
 
-    # [v3.7] 알닷(LG U+ 알뜰폰 통합몰) 요금제 글 → LGU+
-    if '알닷' in tl:
+    # [v3.7] 알닷(LG U+ 알뜰폰 통합몰) 요금제 글 → LGU+. 단 다른 통신사 이름이 같이 있으면 그쪽 얘기일 수 있어 판단 안 함
+    #  ("프리티 SKT 이심 가입하고 알닷에서 번호 변경" = SKT)
+    if '알닷' in tl and not re.search(r'(?<![a-z])(skt?|kt)(?![a-z])|에스케이|케이티', tl):
         return 'LGU+'
 
     return None
 
 
+_ROUNDUP_RE = re.compile(r'정리|비교|모음|총정리|순위|top\s*\d|추천\s*요금제|요금제\s*추천', re.I)
 _PLAN_HINT_RE = re.compile(r'\d+(\.\d+)?\s*(gb|g|기가|mbps)(?![a-z])|\d[\d,]*\s*원', re.I)   # 특정 요금제를 말하는 글
 
 
@@ -1209,7 +1211,7 @@ def network_status(title, provider=None, network=None):
     if network and str(network) not in ('None', 'null', '', '미확인'):
         return 'confirmed'
     prov = str(provider or '')
-    if ',' in prov:
+    if ',' in prov or _ROUNDUP_RE.search(title or ''):
         return 'na'
     if not prov or prov in ('None', '통신사'):
         # 사업자는 없어도 특정 요금제(GB·원)를 말하면 망이 있어야 하는 글 → 미확인
@@ -1227,6 +1229,9 @@ def resolve_network(title, provider=None, ai_network=None):
     net = extract_network_from_title(title)
     if net:
         return net
+    # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나를 붙이지 않음 (2주 시험에서 오표기 확인)
+    if _ROUNDUP_RE.search(title or ''):
+        return None
     cands = PROVIDER_NETWORKS.get(provider or '', [])
     if len(cands) == 1:
         return cands[0]
