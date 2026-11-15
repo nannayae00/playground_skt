@@ -79,12 +79,45 @@ import re
 import json
 import os
 
+# [v3.7] 예전 SDK(google.generativeai)는 이미지에 설치돼 있지 않아 10/16 이전부터 AI 분석이 매번 조용히
+# 건너뛰어졌음(본문 요약·중요도·오탐 제거 전부 미동작). 설치돼 있는 google-genai로 교체하고,
+# 종료된 gemini-1.5-flash 대신 gemini-2.5-flash(분류·요약이라 thinking 끔 → 비용 절감)를 씀
 try:
-    import google.generativeai as genai
+    from google import genai as _genai
+    from google.genai import types as _gtypes
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    print("⚠️ google-generativeai 패키지 없음. pip install google-generativeai")
+    print("⚠️ google-genai 패키지 없음. pip install google-genai")
+
+GEMINI_MODEL = os.getenv('GEMINI_CLASSIFIER_MODEL', 'gemini-2.5-flash')
+
+
+class _GenaiModel:
+    """예전 genai.GenerativeModel(...).generate_content(...) 호출 모양을 그대로 쓰기 위한 얇은 어댑터"""
+
+    def __init__(self, api_key):
+        # JSON 모드는 v1beta에서만 지원 (v1이면 400 INVALID_ARGUMENT)
+        self._client = _genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
+
+    def generate_content(self, contents):
+        if isinstance(contents, str):
+            contents = [contents]
+        parts = []
+        for c in contents:
+            if isinstance(c, dict) and 'inline_data' in c:
+                import base64
+                d = c['inline_data']
+                parts.append(_gtypes.Part.from_bytes(data=base64.b64decode(d['data']), mime_type=d['mime_type']))
+            elif isinstance(c, dict) and 'text' in c:
+                parts.append(c['text'])
+            else:
+                parts.append(c)
+        return self._client.models.generate_content(
+            model=GEMINI_MODEL, contents=parts,
+            config=_gtypes.GenerateContentConfig(
+                response_mime_type='application/json',
+                thinking_config=_gtypes.ThinkingConfig(thinking_budget=0)))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 사업자명 별칭 매핑 (정규명: [별칭들...])
@@ -828,8 +861,7 @@ def ai_analyze_and_summarize(title, content, views=0, comments=0):
         return None
     
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = _GenaiModel(api_key)
         
         prompt = f"""다음 뽐뿌 게시글을 분석해주세요.
 
@@ -920,8 +952,7 @@ def ai_vision_analyze(title, content, image_urls, current_result=None):
     
     try:
         import requests as req
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = _GenaiModel(api_key)
         
         # 이미지 최대 3장만 분석 (비용 절감)
         target_images = image_urls[:3]
