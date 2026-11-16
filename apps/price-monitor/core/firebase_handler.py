@@ -738,6 +738,7 @@ class FirebaseHandler:
                     'posted_at': post_data.get('posted_at'),
                     'provider':  post_data.get('provider', ''),
                     'network':   post_data.get('network', ''),
+                    'network_status': post_data.get('network_status'),   # [v3.7] confirmed / unknown / na
                     'sentiment': post_data.get('sentiment', '중립'),
                     'topic':     post_data.get('topic', ''),
                     'saved_at':  datetime.now(KOREA_TZ),

@@ -386,8 +386,8 @@ def _provider_network_tag(provider: str) -> str:
     core.mvno_classifier.PROVIDER_NETWORKS(단일망 확정 데이터)를 우선 쓰고,
     없으면 이 파일의 로컬 PROVIDER_NETWORK로 보강."""
     try:
-        from core.mvno_classifier import PROVIDER_NETWORKS
-        candidates = PROVIDER_NETWORKS.get(provider, [])
+        from core.mvno_classifier import PROVIDER_NETWORKS, _provider_networks
+        candidates = _provider_networks(provider)   # [v3.7] "쉐이크 모바일"·별칭도 정규화해서 찾음
         if not candidates and provider:
             # Gemini가 축약형("시월")으로 줄 때가 많아서 부분일치도 시도
             for canonical, nets in PROVIDER_NETWORKS.items():
@@ -625,7 +625,15 @@ def save_posts_to_firebase(gallery_key, posts, clusters):
                 provider = normalize_provider(post.get('title', '')) or ''
             else:
                 provider = post.get('provider', '')
-            network = get_network(provider) if provider else ''
+            # [v3.7] 뽐뿌와 같은 망 판정: 제목 망 표기("KT망"·"유플 5G망"·알닷 등) > 단일망 사업자 > 제목의 통신3사 이름
+            #  (예전엔 사업자명으로만 정해 7일 2,493건 중 9%만 망이 있었음)
+            try:
+                from core.mvno_classifier import resolve_network, network_status
+                network = resolve_network(post.get('title', ''), provider or None, None) or ''
+                net_status = network_status(post.get('title', ''), provider or None, network or None)
+            except Exception:
+                network = get_network(provider) if provider else ''
+                net_status = None
             sentiment = idx_to_sentiment.get(i, '중립')
             topic = idx_to_topic.get(i, '')
 
@@ -639,6 +647,7 @@ def save_posts_to_firebase(gallery_key, posts, clusters):
                 'posted_at': post.get('posted_at'),
                 'provider':  provider,
                 'network':   network,
+                'network_status': net_status,
                 'sentiment': sentiment,
                 'topic':     topic,
             })
