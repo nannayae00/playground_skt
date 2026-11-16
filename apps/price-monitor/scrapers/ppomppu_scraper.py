@@ -832,12 +832,12 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 comments_pre = post.get('comments', 0)
                 pre_score = post['filter_result'].get('relevance_score', 5)
                 if views_pre >= 20000:
-                    post['filter_result']['relevance_score'] = max(pre_score, 80)
+                    post['filter_result']['relevance_score'] = max(pre_score, 8)  # [v3.7] 0-10 척도 (예전 80/70은 100점 척도라 '70/10'로 표시될 수 있었음)
                 elif views_pre >= 10000:
-                    post['filter_result']['relevance_score'] = max(pre_score, 70)
+                    post['filter_result']['relevance_score'] = max(pre_score, 7)
                 if comments_pre >= 50:
                     s = post['filter_result'].get('relevance_score', 5)
-                    post['filter_result']['relevance_score'] = min(s + 5, 100)
+                    post['filter_result']['relevance_score'] = min(s + 1, 10)
 
                 # 별3개 게시글 Vision 분석 (2026-06-02 추가)
                 # relevance_score 7점 이상 + 이미지 있는 경우만
@@ -879,7 +879,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 
                 # 조회수 20,000 이상 → 최소 80점 보장 (큰 수부터!)
                 if views >= 20000:
-                    boosted_score = max(current_score, 80)
+                    boosted_score = max(current_score, 8)
                     if boosted_score > current_score:
                         post['filter_result']['relevance_score'] = boosted_score
                         post['filter_result']['high_traffic_boost'] = True
@@ -888,7 +888,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 
                 # 조회수 10,000 이상 → 최소 70점 보장
                 elif views >= 10000:
-                    boosted_score = max(current_score, 70)
+                    boosted_score = max(current_score, 7)
                     if boosted_score > current_score:
                         post['filter_result']['relevance_score'] = boosted_score
                         post['filter_result']['high_traffic_boost'] = True
@@ -898,7 +898,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 # 댓글 50개 이상 → +5점 보너스
                 if comments >= 50:
                     current_score = post['filter_result'].get('relevance_score', 5)
-                    new_score = min(current_score + 5, 100)
+                    new_score = min(current_score + 1, 10)
                     post['filter_result']['relevance_score'] = new_score
                     post['filter_result']['high_engagement_boost'] = True
                     print(f"      💬 고댓글 보정: +5점 (댓글 {comments}개) → {new_score}점")
