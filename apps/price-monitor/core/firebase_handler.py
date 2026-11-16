@@ -681,13 +681,20 @@ class FirebaseHandler:
         if not self.db:
             return {}
         try:
-            docs = self.db.collection('ppomppu_monitor')                .document('posts').collection('all_posts')                .limit(limit).stream()
+            # [v3.7] 정렬 없이 limit(5000)만 걸면 글이 5천 건을 넘을 때 일부가 빠져 이미 알린 글이 '신규'로 다시 나갈 수 있음
+            #  → 수집 범위(최대 2일)보다 넉넉하게 최근 14일 글만 전부 읽음
+            from datetime import timedelta
+            since = datetime.now(KOREA_TZ) - timedelta(days=14)
+            docs = self.db.collection('ppomppu_monitor').document('posts').collection('all_posts') \
+                .where('posted_at', '>=', since) \
+                .select(['views', 'comments', 'last_surge_at', 'relevance_score']).stream()
             result = {}
             for doc in docs:
                 d = doc.to_dict()
                 result[doc.id] = {
-                    'views':    d.get('views', 0),
-                    'comments': d.get('comments', 0),
+                    'views':         d.get('views', 0),
+                    'comments':      d.get('comments', 0),
+                    'last_surge_at': d.get('last_surge_at'),
                 }
             print(f"✅ 기존 뽐뿌 게시글: {len(result)}개")
             return result
