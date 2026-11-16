@@ -825,7 +825,15 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                         if not final_summary.get('is_mvno') and final_summary.get('confidence', 0) > 0.75:
                             print(f"   🚫 본문AI 오탐 제거: {post['title'][:40]}")
                             post['filter_result']['_remove'] = True
-                    post['filter_result'].update(final_summary)
+                    # [v3.7] AI가 null로 준 값이 규칙으로 찾은 사업자·망을 지우지 않게 (빈 값은 건너뛰고,
+                    #  사업자명 확정 글은 규칙 사업자 유지) - 예: 'Sk퀀텀7 티다'가 T다이렉트 → 빈칸이 돼 알뜰폰 목록에 섞임
+                    keep_provider = method == 'provider_whitelist' and post['filter_result'].get('provider')
+                    for k, v in final_summary.items():
+                        if v in (None, '', 'null', 'None'):
+                            continue
+                        if k == 'provider' and keep_provider:
+                            continue
+                        post['filter_result'][k] = v
                 
                 # 고조회수 보정 먼저 실행 (Vision 조건 체크 전!)
                 views_pre = post.get('views', 0)

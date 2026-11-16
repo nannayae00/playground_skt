@@ -351,7 +351,8 @@ NON_MVNO_BOARD_STRICT = {"토스", "리브", "live", "이야기", "핀", "toss"}
 # 단독으로 쓰이면 오탐이 많은 별칭 → 동반 키워드가 있어야만 MVNO로 인정
 # 동반 키워드 없으면 게시판 무관하게 차단
 # 통신 관련 동반 키워드 공통 목록
-_TELECOM_KW = ["모바일", "알뜰", "유심", "요금", "개통", "심", "알뜰폰", "mvno",
+# [v3.7] "심" 단독은 "농심"·"안심"·"관심"에도 걸려 오탐("[토스쇼핑] 농심 안성탕면" → 토스모바일) → 유심·이심·eSIM으로 한정
+_TELECOM_KW = ["모바일", "알뜰", "유심", "이심", "esim", "요금", "개통", "알뜰폰", "mvno",
                "lte", "5g", "데이터", "통화", "문자", "번호이동", "유플러스", "skt", "kt",
                "가입", "요금제", "월정액", "평생", "회선", "번이", "신규", "공시",
                "통신사", "통신"]
@@ -374,7 +375,7 @@ WEAK_ALIASES = {
     "세븐모바일": _TELECOM_KW,          # SK세븐모바일 별칭 (7-Eleven 혼동)
     "마블링":   _TELECOM_KW,            # 마블링(고기) 혼동
     "winners":  _TELECOM_KW,            # 위너스텔 영문 별칭
-    "ktm":       ["모바일", "알뜰", "엠모바일", "kt"],  # KTM오토바이 혼동
+    "ktm":       ["모바일", "알뜰", "엠모바일", "ktm"],  # KTM오토바이 혼동 / [v3.7] 예전엔 'ktm' 안의 'kt'가 늘 걸려 사실상 단독 인정 → 그 동작 유지
     "ktm 모바일": _TELECOM_KW,  # "KTM 모바일" 공백 포함 표기
     "kt엠":      _TELECOM_KW,  # "KT엠" 줄임말
     "kg":       ["모바일"] + _TELECOM_KW,     # KG그룹/KG케미칼 등 혼동 방지
@@ -485,6 +486,14 @@ def is_safe_confirmed(provider, title):
 # 함수: 사업자명 정규화
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _kw_hit(kw, text_lower):
+    """[v3.7] 동반 키워드 검사. 짧은 영문(5g·lte·kt·skt)은 앞뒤가 영문·숫자가 아닐 때만 인정
+    ("125g"의 5g, "kt"가 들어간 다른 단어 오탐 방지)"""
+    if kw in ('5g', 'lte', 'kt', 'skt'):   # 단위·숫자에 붙어 쓰는 mbps·gb·qos는 그대로 부분일치
+        return bool(re.search(r'(?<![a-z0-9])' + re.escape(kw) + r'(?![a-z0-9])', text_lower))
+    return kw in text_lower
+
+
 def _alias_in(alias, text_lower):
     """[v3.7] 별칭 매칭. 영문은 기존처럼 앞뒤 단어경계, 한글로 끝나는 별칭은 앞 경계만 보고 뒤는 허용.
     Python re는 한글을 \\w로 봐서 "엠모바일은", "헬모가", "엠모도"처럼 조사가 붙으면 \\b가 안 생겨
@@ -589,7 +598,7 @@ def normalize_provider(text, board=None):
             for alias in aliases:
                 if alias.lower() in WEAK_ALIASES:
                     required = WEAK_ALIASES[alias.lower()]
-                    if any(kw in text_lower for kw in required):
+                    if any(_kw_hit(kw, text_lower) for kw in required):
                         return canonical
 
         # ── 별칭 체크 ────────────────────────────────────────────────
@@ -606,7 +615,7 @@ def normalize_provider(text, board=None):
                 # [v2.4] WEAK_ALIASES: 동반 키워드 체크 (게시판 무관하게 적용)
                 if alias.lower() in WEAK_ALIASES:
                     required = WEAK_ALIASES[alias.lower()]
-                    if not any(kw in text_lower for kw in required):
+                    if not any(_kw_hit(kw, text_lower) for kw in required):
                         continue  # 동반 키워드 없으면 무조건 차단
                     return canonical  # 동반 키워드 있으면 게시판 무관 통과
                 # NON_MVNO_BOARDS 게시판 필터 (WEAK_ALIASES 아닌 별칭에만 적용)
@@ -893,6 +902,7 @@ def ai_analyze_and_summarize(title, content, views=0, comments=0):
    - 7-8 : 특정 사업자의 구체적 프로모션·사은품·쌀먹 조건(금액·기간 명시), 선착순·마감 임박 정보
    - 4-6 : 사업자·요금제 사용 후기, 사업자 비교 의견, 정책 단서가 담긴 이용 문의
    - 1-3 : 개통·배송·유심·eSIM·기기 등 단순 문의, 일반 팁, 잡담, 휴대폰 구매 고민
+   - 통신3사(SKT·KT·LGU+) 직영의 기기변경·번호이동 할인은 알뜰폰 시장 영향이 작으므로 최대 5점
    - 확실하지 않으면 낮은 쪽으로 (⭐⭐⭐ 7점 이상은 시장 영향이 큰 글에만)
 
 3. **통신망 판단**
@@ -1259,7 +1269,8 @@ def resolve_network(title, provider=None, ai_network=None):
     # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나는 붙이지 않음 (2주 시험에서 오표기 확인).
     #  단 제목에 통신사가 하나만 나오면("SKT 유심 100원 … 정리") 아래 규칙으로 판단
     roundup = bool(_ROUNDUP_RE.search(title or ''))
-    if ai_network and not roundup and str(ai_network) not in ('None', 'null', ''):
+    multi_prov = ',' in str(provider or '')   # 여러 사업자 글엔 AI가 고른 망 하나를 붙이지 않음
+    if ai_network and not roundup and not multi_prov and str(ai_network) not in ('None', 'null', ''):
         a = str(ai_network).upper()
         return 'LGU+' if ('LG' in a or 'U+' in a) else ('SKT' if 'SK' in a else ('KT' if 'KT' in a else None))
     if provider not in MNO_DIRECT_PROVIDERS:   # 사업자 미상 글도 포함 ("SKT 번호변경 서비스 중단" → SKT)
