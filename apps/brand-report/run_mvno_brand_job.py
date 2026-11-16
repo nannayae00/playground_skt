@@ -1,5 +1,7 @@
 """
 [수정 이력]
+- v1.11 (2026-11-16): 07:30 재수집 확인 메시지에서 선불을 '선불 010'(신규/해지)과
+  '선불 MNP'(IN/OUT)로 나누고, 각각 망별 실사업자 수와 망 통합 사업자 수를 표시 (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -418,7 +420,7 @@ def _snapshot(target_date: str) -> dict:
     """대상일 값 스냅샷: 사업자별 MNP(IN/OUT)와 선불(망 합계·사업자×망의 신규/해지/IN/OUT)."""
     from google.cloud import firestore
     db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
-    mnp, prepaid, mnp_net = {}, {}, {}
+    mnp, prepaid, mnp_net, pp_brands = {}, {}, {}, {}
     for coll, field, idx in (("ktoa_mvno_brand_in", "total_in", 0), ("ktoa_mvno_brand_out", "total_out", 1)):
         for d in db.collection(coll).where("date", "==", target_date).stream():
             x = d.to_dict()
@@ -432,12 +434,13 @@ def _snapshot(target_date: str) -> dict:
         keys = ("reg", "term", "pin", "pout")
         for n, m in s.get("networks", {}).items():
             prepaid[n] = [m.get(k, 0) for k in keys]
-        for b in s.get("brands", {}).values():
+        pp_brands = s.get("brands", {})
+        for b in pp_brands.values():
             for n in ("S", "K", "L"):
                 if n in b:
                     prepaid[f"{b['short']}({n})"] = [b[n].get(k, 0) for k in keys]
     return {"mnp": {k: tuple(v) for k, v in mnp.items()}, "prepaid": {k: tuple(v) for k, v in prepaid.items()},
-            "mnp_net": mnp_net}
+            "mnp_net": mnp_net, "pp_brands": pp_brands}
 
 
 def _active_operator_line(snap: dict) -> str:
@@ -456,6 +459,21 @@ def _active_operator_line(snap: dict) -> str:
             merged.add(ALIASES.get(name, name))
     return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
             f"  실사업자(망 통합) : {len(merged)}개")
+
+
+def _prepaid_operator_line(pp_brands: dict, key: str, label: str) -> str:
+    """선불 사업자 수 (v1.11): 망별(S/K/L 블록 중 key>0)과 망 통합(대표명 기준, 한 망이라도 >0)."""
+    cnt = {"S": 0, "K": 0, "L": 0}
+    merged = 0
+    for b in (pp_brands or {}).values():
+        hit = False
+        for n in cnt:
+            if (b.get(n) or {}).get(key, 0) > 0:
+                cnt[n] += 1
+                hit = True
+        merged += hit
+    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 ({label}>0)\n"
+            f"  실사업자(망 통합) : {merged}개")
 
 
 def _diff_lines(before: dict, after: dict, cols: tuple, limit: int = 10) -> list[str]:
@@ -490,12 +508,17 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
     try:
         from ktoa_prepaid_scraper import run_daily
         run_daily(7, dry_run=False, notify=False)
-        after_pp = _snapshot(target_date)["prepaid"]
-        d, n = _diff_lines(before["prepaid"], after_pp, ("신규", "해지", "IN", "OUT"))
-        lines.append(f"· 선불 : {'이상 없음' if not n else f'변경 {n}건'}")
-        lines += d
+        snap_pp = _snapshot(target_date)
+        pick = lambda d, i: {k: tuple(v[j] for j in i) for k, v in d.items()}
+        n_brands = len(snap_pp["pp_brands"])
+        for title, idx, cols, key, label in (("선불 010", (0, 1), ("신규", "해지"), "reg", "신규"),
+                                             ("선불 MNP", (2, 3), ("IN", "OUT"), "pin", "IN")):
+            d, n = _diff_lines(pick(before["prepaid"], idx), pick(snap_pp["prepaid"], idx), cols)
+            lines.append(f"· {title} : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {n_brands}개)")
+            lines.append(_prepaid_operator_line(snap_pp["pp_brands"], key, label))
+            lines += d
     except Exception as e:
-        lines.append(f"· 선불 : ⚠️ 재수집 실패 ({e})")
+        lines.append(f"· 선불 010·MNP : ⚠️ 재수집 실패 ({e})")
 
     if any(l.startswith("· ") and "변경" in l for l in lines):
         lines.append("(DB는 재수집 값으로 갱신됨, 리포트는 재발송 안 함)")
