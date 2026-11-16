@@ -1,7 +1,7 @@
 """
 [수정 이력]
-- v1.11 (2026-11-16): 07:30 재수집 확인 메시지에서 선불을 '선불 010'(신규/해지)과
-  '선불 MNP'(IN/OUT)로 나누고, 각각 망별 실사업자 수와 망 통합 사업자 수를 표시 (사용자 요청).
+- v1.11 (2026-11-16): 07:30 재수집 확인 메시지에 선불(010 신규 + MNP IN 합산) 망별 실사업자 수와
+  망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시 (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -461,19 +461,25 @@ def _active_operator_line(snap: dict) -> str:
             f"  실사업자(망 통합) : {len(merged)}개")
 
 
-def _prepaid_operator_line(pp_brands: dict, key: str, label: str) -> str:
-    """선불 사업자 수 (v1.11): 망별(S/K/L 블록 중 key>0)과 망 통합(대표명 기준, 한 망이라도 >0)."""
+def _prepaid_operator_line(pp_brands: dict) -> str:
+    """선불 사업자 수 (v1.11): 010 신규 또는 MNP IN이 1건 이상인 사업자. 망별(S/K/L)과 망 통합(대표명 기준)."""
     cnt = {"S": 0, "K": 0, "L": 0}
     merged = 0
     for b in (pp_brands or {}).values():
         hit = False
         for n in cnt:
-            if (b.get(n) or {}).get(key, 0) > 0:
+            blk = b.get(n) or {}
+            if blk.get("reg", 0) > 0 or blk.get("pin", 0) > 0:
                 cnt[n] += 1
                 hit = True
         merged += hit
-    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 ({label}>0)\n"
+    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 (010 신규+MNP IN>0)\n"
             f"  실사업자(망 통합) : {merged}개")
+
+
+def _no_perf_text(target_date_obj: date) -> str:
+    """실적 0인 날 표시 (v1.11): 일요일은 '실적 없음 (일요일)', 그 밖은 '실적 없음 (KTOA 집계 0)'."""
+    return "실적 없음 (일요일)" if target_date_obj.weekday() == 6 else "실적 없음 (KTOA 집계 0)"
 
 
 def _diff_lines(before: dict, after: dict, cols: tuple, limit: int = 10) -> list[str]:
@@ -499,8 +505,12 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
     if run_scraper():
         after = _snapshot(target_date)
         d, n = _diff_lines(before["mnp"], after["mnp"], ("IN", "OUT"))
-        lines.append(f"· 사업자별 MNP : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {len(after['mnp'])}개)")
-        lines.append(_active_operator_line(after))
+        status = '이상 없음' if not n else f'변경 {n}건'
+        if sum(v[0] for v in after["mnp"].values()) == 0:
+            lines.append(f"· 사업자별 MNP : {_no_perf_text(target_date_obj)}" + ("" if not n else f", {status}"))
+        else:
+            lines.append(f"· 사업자별 MNP : {status} (사업자 {len(after['mnp'])}개)")
+            lines.append(_active_operator_line(after))
         lines += d
     else:
         lines.append("· 사업자별 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
@@ -509,16 +519,18 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
         from ktoa_prepaid_scraper import run_daily
         run_daily(7, dry_run=False, notify=False)
         snap_pp = _snapshot(target_date)
-        pick = lambda d, i: {k: tuple(v[j] for j in i) for k, v in d.items()}
-        n_brands = len(snap_pp["pp_brands"])
-        for title, idx, cols, key, label in (("선불 010", (0, 1), ("신규", "해지"), "reg", "신규"),
-                                             ("선불 MNP", (2, 3), ("IN", "OUT"), "pin", "IN")):
-            d, n = _diff_lines(pick(before["prepaid"], idx), pick(snap_pp["prepaid"], idx), cols)
-            lines.append(f"· {title} : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {n_brands}개)")
-            lines.append(_prepaid_operator_line(snap_pp["pp_brands"], key, label))
-            lines += d
+        d, n = _diff_lines(before["prepaid"], snap_pp["prepaid"], ("신규", "해지", "IN", "OUT"))
+        status = '이상 없음' if not n else f'변경 {n}건'
+        has_perf = any((b.get(k) or {}).get(m, 0) > 0
+                       for b in snap_pp["pp_brands"].values() for k in "SKL" for m in ("reg", "pin"))
+        if not has_perf:
+            lines.append(f"· 선불(010·MNP) : {_no_perf_text(target_date_obj)}" + ("" if not n else f", {status}"))
+        else:
+            lines.append(f"· 선불(010·MNP) : {status} (사업자 {len(snap_pp['pp_brands'])}개)")
+            lines.append(_prepaid_operator_line(snap_pp["pp_brands"]))
+        lines += d
     except Exception as e:
-        lines.append(f"· 선불 010·MNP : ⚠️ 재수집 실패 ({e})")
+        lines.append(f"· 선불(010·MNP) : ⚠️ 재수집 실패 ({e})")
 
     if any(l.startswith("· ") and "변경" in l for l in lines):
         lines.append("(DB는 재수집 값으로 갱신됨, 리포트는 재발송 안 함)")
