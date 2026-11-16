@@ -1,7 +1,8 @@
 """
 [수정 이력]
 - v1.11 (2026-11-16): 07:30 재수집 확인 메시지에 선불(010 신규 + MNP IN 합산) 망별 실사업자 수와
-  망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시 (사용자 요청).
+  망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시.
+  '사업자별 MNP' → '후불 MNP', '이상 없음' → '수집 완료' (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -505,26 +506,26 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
     if run_scraper():
         after = _snapshot(target_date)
         d, n = _diff_lines(before["mnp"], after["mnp"], ("IN", "OUT"))
-        status = '이상 없음' if not n else f'변경 {n}건'
+        status = '수집 완료' if not n else f'수집 완료, 변경 {n}건'
         if sum(v[0] for v in after["mnp"].values()) == 0:
-            lines.append(f"· 사업자별 MNP : {_no_perf_text(target_date_obj)}" + ("" if not n else f", {status}"))
+            lines.append(f"· 후불 MNP : {_no_perf_text(target_date_obj)}" + ("" if not n else f", 변경 {n}건"))
         else:
-            lines.append(f"· 사업자별 MNP : {status} (사업자 {len(after['mnp'])}개)")
+            lines.append(f"· 후불 MNP : {status} (사업자 {len(after['mnp'])}개)")
             lines.append(_active_operator_line(after))
         lines += d
     else:
-        lines.append("· 사업자별 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
+        lines.append("· 후불 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
 
     try:
         from ktoa_prepaid_scraper import run_daily
         run_daily(7, dry_run=False, notify=False)
         snap_pp = _snapshot(target_date)
         d, n = _diff_lines(before["prepaid"], snap_pp["prepaid"], ("신규", "해지", "IN", "OUT"))
-        status = '이상 없음' if not n else f'변경 {n}건'
+        status = '수집 완료' if not n else f'수집 완료, 변경 {n}건'
         has_perf = any((b.get(k) or {}).get(m, 0) > 0
                        for b in snap_pp["pp_brands"].values() for k in "SKL" for m in ("reg", "pin"))
         if not has_perf:
-            lines.append(f"· 선불(010·MNP) : {_no_perf_text(target_date_obj)}" + ("" if not n else f", {status}"))
+            lines.append(f"· 선불(010·MNP) : {_no_perf_text(target_date_obj)}" + ("" if not n else f", 변경 {n}건"))
         else:
             lines.append(f"· 선불(010·MNP) : {status} (사업자 {len(snap_pp['pp_brands'])}개)")
             lines.append(_prepaid_operator_line(snap_pp["pp_brands"]))
