@@ -475,7 +475,7 @@ def main():
 
         # Step 5: 신규 / 급등 / 일반 분류
         SURGE_VIEWS    = 5000  # 조회수 급증 기준
-        SURGE_COMMENTS = 5     # 댓글 급증 기준
+        SURGE_COMMENTS = 20    # 댓글 급증 기준 [v3.7] 5 → 20: 댓글 5개만 늘어도 조회 수백짜리 문의글이 '급등'으로 나가던 문제
 
         new_mvno   = []
         surge_mvno = []
