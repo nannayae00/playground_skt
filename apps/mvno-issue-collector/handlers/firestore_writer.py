@@ -8,6 +8,8 @@ handlers/firestore_writer.py  v1.0
   · 문서ID: YYMMDD_요약 형식
   · _collection 필드 제거 후 저장
   · append_to_existing: 기존 문서 detail에 추가 내용 병합
+[v1.1 / 2026-11-19]
+- get_issue / replace_issue / delete_issue_with_backup 추가 (뉴스 자동등록 수정·삭제 버튼용)
 """
 
 import os
@@ -91,4 +93,43 @@ def append_to_existing(doc_id: str, collection: str, new_record: dict) -> bool:
         return True
     except Exception as e:
         logger.error(f"append 오류: {e}", exc_info=True)
+        return False
+
+
+def get_issue(doc_id: str, collection: str = "mvno_issues") -> dict | None:
+    snap = get_db().collection(collection).document(doc_id).get()
+    return snap.to_dict() if snap.exists else None
+
+
+def replace_issue(doc_id: str, record: dict, collection: str = "mvno_issues") -> str | None:
+    """기존 문서를 수정본으로 덮어씀. 수정 전 값은 history 서브컬렉션에 남김."""
+    try:
+        ref = get_db().collection(collection).document(doc_id)
+        before = ref.get().to_dict()
+        if before:
+            ref.collection("history").add({"data": before, "saved_at": datetime.now(timezone.utc).isoformat()})
+        clean = {k: v for k, v in record.items() if k != "_collection"}
+        clean["updated_at"] = datetime.now(timezone.utc).isoformat()
+        ref.set(clean)
+        logger.info(f"덮어쓰기 완료: {collection}/{doc_id}")
+        return doc_id
+    except Exception as e:
+        logger.error(f"덮어쓰기 오류: {e}", exc_info=True)
+        return None
+
+
+def delete_issue_with_backup(doc_id: str, collection: str = "mvno_issues") -> bool:
+    try:
+        db = get_db()
+        ref = db.collection(collection).document(doc_id)
+        data = ref.get().to_dict()
+        if data is None:
+            return True
+        db.collection(f"{collection}_deleted").document(doc_id).set(
+            {**data, "_deleted_at": datetime.now(timezone.utc).isoformat()})
+        ref.delete()
+        logger.info(f"삭제 완료(백업 후): {collection}/{doc_id}")
+        return True
+    except Exception as e:
+        logger.error(f"삭제 오류: {e}", exc_info=True)
         return False

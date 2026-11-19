@@ -1,8 +1,10 @@
 """
-handlers/gemini_refiner.py  v1.0
+handlers/gemini_refiner.py  v1.1
 작성일: 2026-06-30
 
 [수정 이력]
+[v1.1 / 2026-11-19] refine_news_article 추가: 뉴스 자동등록용 기사 전용 정제
+  (본문 사실 기반 요약·불릿 상세·간결한 시사점, 발행일=event_date, pro 모델 우선)
 [v1.0 / 2026-06-30]
 - 신규 생성: Gemini를 활용한 MVNO 이슈/프로모션 정제
   · 텍스트 및 이미지(base64) 입력 지원
@@ -14,7 +16,7 @@ handlers/gemini_refiner.py  v1.0
 import os
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import google.generativeai as genai
 
@@ -60,9 +62,20 @@ air by SK telecom→AIR, 스마텔→스마텔, 토스모바일→토스
 가운데 글자를 *로 치환. (예: 장봉식→장*식, 김민→김*, 황보지훈→황보*훈)
 단, 회사명/직책명 자체는 마스킹 안함.
 
-[impact_direction 선택지 - 다중 선택 가능]
+[당사 직접 포함 여부 우선 확인 - 추가 20261010]
+기사/입력 내용에 "SK텔링크(에스케이텔링크)"나 "통신3사 자회사" 같은 묶음이 명시적으로
+나오고 그 안에 SKT계열이 포함되어 있다면, 당사는 그 기사의 "방관자"가 아니라 "당사자"임.
+이럴 때 implication의 핵심은 "그 묶음 전체에 대한 규제/정책/시장변화가 실제로 발생하면
+당사(텔링크)에 무슨 일이 생기는가"여야 함 - 그 묶음 안의 다른 세부 항목(예: 별도의 분쟁
+순위 리스트 등 당사가 빠져있는 다른 집계)에 당사가 없다는 점을 "안전하다"는 식으로 강조해
+핵심을 흐리지 말 것. 당사가 포함된 묶음 vs 포함 안 된 집계를 혼동하지 않도록 기사 원문의
+어느 명단/집계에 정확히 누가 포함되는지 하나씩 대조해서 확인.
+
+[impact_direction 선택지 - 다중 선택 가능, 그러나 최대 2개까지]
 MNO전체_위험, MNO전체_기회, SKT_위험, SKT_MVNO_기회, SKT_MVNO_위협,
 K계열_위험, K계열_기회, L계열_위험, L계열_기회, 단순_동향
+선택지를 3개 이상 체크하는 것은 금지(판단 회피로 간주됨). 영향이 혼재된 경우에도
+가장 비중 큰 방향 1~2개만 고르고, 정말 방향성이 없으면 "단순_동향" 하나만 선택.
 
 [mvno_issues JSON 구조]
 {
@@ -83,7 +96,7 @@ K계열_위험, K계열_기회, L계열_위험, L계열_기회, 단순_동향
   "impact_direction": ["위의 선택지에서 해당하는 것들"],
   "summary": "1~2줄 핵심 요약 (실명 마스킹 적용)",
   "detail": "상세 내용 (실명 마스킹 적용)",
-  "implication": "SKT MVNO 관점 영향 분석 (실명 마스킹 적용) - 아래 3가지를 반드시 순서대로 짚을 것: ①경쟁사/상대방 움직임의 전략적 의도는 무엇인가 ②SKT MVNO의 가입자·매출·포지셔닝에 구체적으로 어떤 영향을 줄 수 있는가(막연한 '모니터링 필요' 금지, 영향이 간접적/약하면 그렇다고 명시) ③우리가 비교·점검해야 할 구체적 지표나 액션은 무엇인가",
+  "implication": "SKT MVNO 관점 영향 분석 (실명 마스킹 적용) - 아래 3가지를 반드시 순서대로 짚을 것: ①경쟁사/상대방 움직임의 전략적 의도는 무엇인가 ②SKT MVNO의 가입자·매출·포지셔닝에 구체적으로 어떤 영향을 줄 수 있는가(막연한 '모니터링 필요' 금지, 당사가 기사 속 어떤 묶음/명단에 직접 포함되면 간접이 아니라 직접 영향으로 명시, 그 외 진짜 간접/약한 영향만 그렇다고 명시) ③우리가 비교·점검해야 할 구체적 지표나 액션은 무엇인가",
   "trigger_condition": "중장기/모니터링 이슈의 즉시 전환 조건 또는 null",
   "related_issues": [],
   "follow_up": "액션 아이템 또는 null",
@@ -186,3 +199,60 @@ def refine_with_edit(existing_draft: dict, edit_instruction: str) -> dict | None
     except Exception as e:
         logger.error(f"수정 정제 오류: {e}", exc_info=True)
         return None
+
+
+# ───────────────────────── 뉴스 자동등록 전용 ─────────────────────────
+# [추가 20261119] 뉴스 브리핑이 기사를 바로 mvno_issues에 등록하게 되면서 요약 품질이
+# 곧 DB 품질이 됨. 기존 refine_input은 텔레그램 자유입력용이라 기사에 쓰면
+# "기사 제목에 따르면~" 식의 빈약한 요약, 장황하고 일반론적인 시사점이 나왔음
+# (실측: 자동수집 8건 중 본문 없이 제목만으로 정제된 건 다수). 기사 전용 규칙을 덧붙이고
+# 품질 우선으로 pro 모델(gemini-3.1-pro-preview)을 먼저 쓰고 실패 시 flash로 폴백 (하루 몇 건이라 비용 미미).
+NEWS_MODELS = ("gemini-3.1-pro-preview", "gemini-2.5-flash")  # 2.5-pro는 신규 사용자 404 (2026-11-19 확인)
+KST = timezone(timedelta(hours=9))
+
+NEWS_RULES = """
+[뉴스 기사 정제 규칙 - 이 입력은 자동 수집된 언론 기사 1건입니다. 반드시 JSON 객체 1개만 반환]
+- 근거는 아래 [기사 본문]뿐입니다. 본문에 없는 사실·수치·일정·사업자명을 만들어내지 마세요.
+  추정이 필요하면 "추정"이라고 명시하세요.
+- event_date: 기사 속 사건 발생일(출시일·시행일·발표일 등)이 명확하면 그 날짜, 아니면 기사 발행일({pub_date}).
+- summary: 2문장 이내. "누가 / 무엇을 / 언제 / 핵심 수치(요금·용량·건수·금액·비율)"를 담을 것.
+  "기사에 따르면", "~라고 보도했다", "~것으로 알려졌다" 같은 전달 표현 금지. 사실을 단정적으로.
+- detail: 본문의 핵심 사실 4~7개를 "• "로 시작하는 줄로 나열 (줄바꿈 \n 구분).
+  요금제명·가격·데이터 용량·대상 고객·조건·기간·판매채널·관계자 발언 요지 등 구체 정보를 그대로 옮기고,
+  배경 설명이나 해석은 넣지 마세요. 기자 이름·저작권 문구·광고 문구는 제외.
+- implication: ①②③ 각 1~2문장, 전체 400자 이내. 기사 사실에 근거해 구체적으로.
+  "모니터링 필요", "면밀히 검토", "적극 활용" 같은 일반론만으로 끝내지 말고, 비교할 당사 상품/지표나
+  확인할 데이터(예: 해당 망 MNP 유입, 동일 가격대 당사 요금제, 외국인 가입자 비중)를 지목하세요.
+- follow_up: 팀이 바로 할 수 있는 확인/액션 1~2개 (없으면 null).
+- source.raw_input은 비워두세요(시스템이 채움). status는 "확인중".
+- [기사 본문]이 "(본문 추출 실패)"이면 제목만으로 판단한 것이므로 detail 첫 줄에
+  "• (본문 미확보, 제목 기준 작성)"을 쓰고 impact_level을 보수적으로 매기세요.
+"""
+
+
+def refine_news_article(title: str, source: str, url: str, pub_date_kst: str, content: str) -> dict | None:
+    """기사 1건 → mvno_issues 레코드(dict). 실패 시 None."""
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    prompt = (
+        SYSTEM_PROMPT.replace("{today}", today)
+        + NEWS_RULES.replace("{pub_date}", pub_date_kst or today)
+        + f"\n입력:\n[기사 제목] {title}\n[언론사] {source}\n[URL] {url}\n[발행일] {pub_date_kst}\n\n"
+        + f"[기사 본문]\n{content or '(본문 추출 실패)'}"
+    )
+    for model_name in NEWS_MODELS:
+        try:
+            resp = genai.GenerativeModel(model_name).generate_content(prompt)
+            raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                parsed = parsed[0] if parsed else None
+            if not isinstance(parsed, dict) or not parsed.get("summary"):
+                raise ValueError("summary 없음")
+            parsed["_collection"] = "mvno_issues"
+            parsed["input_date"] = today
+            parsed["refine_model"] = model_name
+            logger.info(f"뉴스 정제 완료({model_name}): {title[:40]}")
+            return parsed
+        except Exception as e:
+            logger.warning(f"뉴스 정제 실패({model_name}): {e}")
+    return None
