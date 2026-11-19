@@ -97,7 +97,8 @@ def daily_news():
     """
     from handlers.news_scraper import run_daily_news_scrape
     dry_run = request.args.get("dry_run", "").lower() == "true"
-    digest = run_daily_news_scrape(dry_run=dry_run)
+    ignore_seen = request.args.get("ignore_seen", "").lower() == "true"
+    digest = run_daily_news_scrape(dry_run=dry_run, ignore_seen=ignore_seen)
     return jsonify({"ok": True, "dry_run": dry_run, "digest": digest})
 
 

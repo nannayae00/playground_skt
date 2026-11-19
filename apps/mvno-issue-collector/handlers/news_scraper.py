@@ -1,9 +1,11 @@
 """
-handlers/news_scraper.py  v1.1
+handlers/news_scraper.py  v1.2
 작성일: 2026-10-05
 
 [수정 이력]
 [v1.1 / 2026-11-04] Google News 429 재시도·간격 추가, 브리핑 날짜 KST 표시
+[v1.2 / 2026-11-19] RSS 검색도 429 재시도·키워드 간격·건수 로그, 경쟁사 신상품 출시를
+                    광고성으로 버리던 트리아지 기준 수정, 탈락 사유 로그, dry_run+ignore_seen
 
 [개요]
 하루 1회, 알뜰폰/MVNO 관련 뉴스를 Google News RSS에서 수집해
@@ -82,15 +84,19 @@ def get_db():
 # ───────────────────────── RSS 수집 ─────────────────────────
 
 def _fetch_rss(keyword: str) -> list[dict]:
+    # [수정 20261119] RSS 검색 자체가 429를 받아 키워드가 통째로 빠지던 문제
+    # (실측: 11/17 07:45 '알뜰폰'·'알뜰폰 정책' 429 → 후보 1건). 디코딩과 같은 백오프 재시도.
     url = f"https://news.google.com/rss/search?q={quote(keyword)}&hl=ko&gl=KR&ceid=KR:ko"
-    try:
-        resp = requests.get(url, headers={"User-Agent": UA}, timeout=10)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.warning(f"RSS 수집 실패 ({keyword}): {e}")
+    resp = _request_with_backoff("GET", url, headers={"User-Agent": UA})
+    if resp is None or resp.status_code != 200:
+        logger.warning(f"RSS 수집 실패 ({keyword}): {getattr(resp, 'status_code', 'error')}")
         return []
 
     soup = BeautifulSoup(resp.text, "xml")
+    if not soup.find("rss"):
+        # 200이지만 RSS가 아닌 페이지(차단/동의 화면 등)를 받은 경우 - 조용히 0건이 되지 않게 로그
+        logger.warning(f"RSS 응답이 RSS 형식이 아님 ({keyword}): {resp.text[:120]!r}")
+        return []
     items = []
     for it in soup.find_all("item"):
         title_el = it.find("title")
@@ -126,8 +132,12 @@ def _collect_candidates(hours: int = 48) -> list[dict]:
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     candidates = []
 
-    for kw in NEWS_SEARCH_KEYWORDS:
-        for item in _fetch_rss(kw):
+    for i, kw in enumerate(NEWS_SEARCH_KEYWORDS):
+        if i:
+            time.sleep(DECODE_INTERVAL_SEC)
+        fetched = _fetch_rss(kw)
+        logger.info(f"RSS '{kw}': {len(fetched)}건")
+        for item in fetched:
             title = item["title"]
             if title in seen_titles:
                 continue
@@ -294,12 +304,17 @@ _TRIAGE_PROMPT = """당신은 SKT MVNO(알뜰폰) 팀의 뉴스 모니터링 담
 3. 각 대표 기사에 대해 판단하세요:
    - relevant: SKT MVNO 팀 업무와 실제로 관련있는 알뜰폰/MVNO 산업 뉴스인가?
      (단순 통신 일반 뉴스, 알뜰폰과 무관한 내용은 false)
-   - advertorial: 특정 사업자의 단순 홍보/판매 유도성 보도자료 기사인가?
-     (예: "~요금제 출시, 지금 가입하면 혜택" 식의 광고성 기사는 true.
-      반대로 정책/규제/시장동향/경쟁구도/실적 등 분석 가치가 있는 기사는 false)
+   - advertorial: 분석 가치 없이 판매만 유도하는 단순 홍보 기사인가?
+     (예: 이미 있는 요금제의 할인 이벤트·사은품·기념 행사 안내, "지금 가입하면 혜택" 식 기사는 true.)
+     ※ 주요 경쟁 MVNO(KT엠모바일, U+유모바일, LG헬로비전/헬로모바일, KT스카이라이프, 스마텔,
+       세종텔레콤, 프리텔레콤, 아이즈모바일 등)나 MNO·금융권·빅테크의 **신규 요금제/서비스/
+       브랜드/타깃 고객층 출시**는 보도자료 형태여도 경쟁 동향이므로 advertorial=false.
+       같은 출시를 여러 매체가 동시에 보도할수록 업계 주목도가 높다는 신호입니다.
+     정책/규제/시장동향/경쟁구도/실적 등 분석 가치가 있는 기사도 false.
    - impact_level: 제목만으로 예비 판단한 영향도 (상/중/하).
      SKT MVNO의 가입자·매출·정책대응에 영향을 줄 수 있는 규제/정책/대형 경쟁사 동향은 상,
-     개별 사업자 소식/통계는 중, 단순 홍보·사소한 소식은 하.
+     경쟁사 신규 요금제·서비스·타깃 고객층 출시, 개별 사업자 소식/통계는 중,
+     기존 상품 홍보·사소한 소식은 하.
 
 [출력]
 JSON 배열만 출력 (마크다운 코드블록 금지). 각 원소:
@@ -342,11 +357,11 @@ def _triage_titles(candidates: list[dict]) -> list[dict]:
             continue
         if idx < 0 or idx >= len(candidates):
             continue
-        if not verdict.get("relevant"):
-            continue
-        if verdict.get("advertorial"):
-            continue
-        if verdict.get("impact_level") not in ("상", "중"):
+        reason = ("무관" if not verdict.get("relevant") else
+                  "광고성" if verdict.get("advertorial") else
+                  f"영향도 {verdict.get('impact_level')}" if verdict.get("impact_level") not in ("상", "중") else None)
+        if reason:
+            logger.info(f"1차 탈락({reason}): {candidates[idx]['title']}")
             continue
         item = dict(candidates[idx])
         item["_prelim_impact"] = verdict.get("impact_level")
@@ -359,6 +374,11 @@ _CONFIRM_PROMPT = """당신은 SKT MVNO(알뜰폰) 팀의 뉴스 모니터링 �
 
 [팀 포지션]
 당사: SKT MVNO 운영사. 경쟁사: KT계열(KTM), LG계열(유모바일/헬로모바일) MVNO.
+
+[판단 기준]
+- advertorial=true는 기존 상품 할인·사은품·행사 안내처럼 분석 가치 없는 판매 유도 기사만.
+  경쟁사(MVNO·MNO·금융권·빅테크)의 신규 요금제/서비스/타깃 고객층 출시는 보도자료여도
+  경쟁 동향이므로 advertorial=false, impact_level은 최소 '중'.
 
 [기사]
 제목: {title}
@@ -435,14 +455,19 @@ def _build_compact_entry(index: int, item: dict, record: dict, dup: dict | None)
 
 # ───────────────────────── 메인 파이프라인 ─────────────────────────
 
-def run_daily_news_scrape(dry_run: bool = False) -> str:
-    """일일 뉴스 스크랩 파이프라인 실행. 반환값은 전송(또는 미전송)한 다이제스트 텍스트."""
+def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> str:
+    """일일 뉴스 스크랩 파이프라인 실행. 반환값은 전송(또는 미전송)한 다이제스트 텍스트.
+    ignore_seen은 dry_run일 때만 유효 (이미 처리된 기사로 판정 기준을 재검증하는 용도)."""
     candidates = _collect_candidates()
     logger.info(f"수집된 후보: {len(candidates)}건")
     if not candidates:
         return "📭 수집된 알뜰폰 관련 뉴스가 없습니다."
 
-    candidates = _filter_unseen(candidates)
+    if dry_run and ignore_seen:
+        for c in candidates:
+            c["_seen_doc_id"] = _title_hash(c["title"])
+    else:
+        candidates = _filter_unseen(candidates)
     logger.info(f"미전송 후보: {len(candidates)}건")
     if not candidates:
         return "📭 신규(미전송) 알뜰폰 관련 뉴스가 없습니다."
@@ -485,6 +510,8 @@ def run_daily_news_scrape(dry_run: bool = False) -> str:
         rejected = (not verdict.get("relevant") or verdict.get("advertorial")
                     or verdict.get("impact_level") not in ("상", "중"))
         if rejected:
+            logger.info(f"최종 탈락(relevant={verdict.get('relevant')}, advertorial={verdict.get('advertorial')}, "
+                        f"영향도={verdict.get('impact_level')}): {item['title']}")
             # [수정 20261006] 본문 크롤링이 (타임아웃 등 일시적 오류로) 실패해서
             # 제목만 보고 탈락한 경우는 seen 처리하지 않음 - 다음 실행에서 사이트가
             # 복구되면 본문까지 포함해 다시 평가받을 기회를 줌. 실측: metroseoul.co.kr
