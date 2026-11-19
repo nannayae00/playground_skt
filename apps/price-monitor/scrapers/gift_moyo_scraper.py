@@ -98,10 +98,14 @@ def scrape_moyo_gifts(**_kwargs) -> list:
         r = s.post(API_URL, json={}, params=params, headers=HEADERS, timeout=30)
         r.raise_for_status()
 
-        body  = r.json().get('result') or {}
+        # [수정 20261114] 모요 API 응답이 {'result': {...}} → 최상위 {'totalSize','planMetas'}로 바뀜 (두 형식 모두 지원)
+        j     = r.json()
+        body  = j.get('result') or j
         metas = body.get('planMetas', [])
         total = body.get('totalSize', 0)
         if not metas:
+            if page == 1:
+                print(f'  ⚠️ 모요 API 1페이지 결과 없음 (응답 키: {list(j.keys())[:8]})')
             break
 
         before = len(results)

@@ -196,7 +196,7 @@ def fetch_event_list(gift_only: bool = True) -> list:
     """
     events = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=_LAUNCH_ARGS)
         page = browser.new_page()
         page.goto(LIST_URL, wait_until="domcontentloaded", timeout=30000)
         page.wait_for_selector(SEL_EVENT_CARD, timeout=20000)
@@ -268,16 +268,47 @@ def fetch_event_list(gift_only: bool = True) -> list:
     return events
 
 
+# [수정 20261114] Cloud Run의 작은 /dev/shm 때문에 상세 페이지를 연달아 열면 브라우저가 응답 없이 멈춤(20번째 전후)
+#  → 헬로 스크래퍼와 같이 공유메모리 대신 /tmp 사용
+_LAUNCH_ARGS = ["--disable-dev-shm-usage", "--disable-gpu"]
+
 # ──────────────────────────────────────────
 # STEP 2: 상세 페이지 이미지 수집
 # ──────────────────────────────────────────
-def fetch_post_images(post_url: str) -> tuple:
+def _fetch_post_images_worker(post_url, q):
+    try:
+        q.put(("ok", _fetch_post_images(post_url)))
+    except Exception as e:
+        q.put(("err", f"{type(e).__name__}: {e}"))
+
+
+def fetch_post_images(post_url: str, hard_timeout: int = 90) -> tuple:
+    """[수정 20261114] 특정 상세 페이지(예: 1387)에서 브라우저가 타임아웃도 없이 멈춰 job 전체가 15분 제한에 걸림
+    → 별도 프로세스로 열고 hard_timeout초 넘으면 강제 종료 후 TimeoutError (호출부에서 이전 파싱 결과로 대체)"""
+    import multiprocessing as mp
+    ctx = mp.get_context("fork")
+    q = ctx.Queue()
+    proc = ctx.Process(target=_fetch_post_images_worker, args=(post_url, q), daemon=True)
+    proc.start()
+    try:
+        status, val = q.get(timeout=hard_timeout)
+    except Exception:
+        proc.kill()
+        proc.join(5)
+        raise TimeoutError(f"상세 페이지 {hard_timeout}초 초과")
+    proc.join(10)
+    if status == "err":
+        raise RuntimeError(val)
+    return val
+
+
+def _fetch_post_images(post_url: str) -> tuple:
     """
     상세 페이지 → (html_hash, image_urls)
     KT엠모바일은 페이지당 이미지가 여러 장(요금제 카드별 1장씩)
     """
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(headless=True, args=_LAUNCH_ARGS)
         page = browser.new_page()
         # [수정 20261011] 본문이 DOM에 붙기만 하면 진행(state=attached). 그래도 Cloud Run에서 끝내 안 열리는
         # 페이지(예: 1387)는 scrape_with_cache()에서 저장된 이전 파싱 결과로 대체함
@@ -377,7 +408,9 @@ def parse_images_with_vision(image_urls: list, db=None) -> list:
                 contents=[
                     types.Part.from_bytes(data=base64.b64decode(b64), mime_type=mime),
                     GEMINI_VISION_PROMPT,
-                ]
+                ],
+                # [수정 20261030] 이미지 금액 추출은 생각(thinking) 없이도 결과가 같아(최근 10장 중 9장 동일) 비용 절감 위해 끔
+                config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0)),
             )
             raw = (resp.text or "[]").strip()
             raw = re.sub(r"^```json\s*|^```\s*|```$", "", raw, flags=re.MULTILINE).strip()
