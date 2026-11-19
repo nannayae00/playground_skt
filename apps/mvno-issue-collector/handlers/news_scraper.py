@@ -112,6 +112,7 @@ def _fetch_rss(keyword: str) -> list[dict]:
             "title": title_el.text.strip(),
             "google_link": link_el.text.strip(),
             "source": src_el.text.strip() if src_el else "",
+            "source_url": src_el.get("url", "") if src_el else "",
             "pub_date": pub_el.text.strip() if pub_el else "",
             "keyword": keyword,
         })
@@ -255,7 +256,18 @@ def _strip_source_suffix(title: str, source: str) -> str:
     return title.rsplit(" - ", 1)[0] if " - " in title else title
 
 
-def _naver_find_article_url(title: str, source: str = "") -> str | None:
+def _domain_key(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_press(href: str, source_url: str) -> bool:
+    key = _domain_key(source_url)
+    host = _domain_key(href)
+    return bool(key) and (host == key or host.endswith("." + key))
+
+
+def _naver_find_article_url(title: str, source: str = "", source_url: str = "") -> str | None:
     query = _strip_source_suffix(title, source)
     try:
         resp = requests.get(NAVER_SEARCH_URL, params={"where": "news", "query": query},
@@ -277,10 +289,13 @@ def _naver_find_article_url(title: str, source: str = "") -> str | None:
         if len(text) < 8:
             continue
         ratio = difflib.SequenceMatcher(None, target, _norm_title(text)).ratio()
+        # 같은 보도자료라 제목이 똑같은 매체가 여러 곳 → RSS <source url>의 언론사 도메인과 같은 링크 우선
+        if ratio >= NAVER_MATCH_MIN and _same_press(href, source_url):
+            ratio += 0.1
         if ratio > best_ratio:
             best, best_ratio = href, ratio
     if best and best_ratio >= NAVER_MATCH_MIN:
-        logger.info(f"네이버 폴백 성공({best_ratio:.2f}): {best}")
+        logger.info(f"네이버 폴백 성공({min(best_ratio, 1.0):.2f}): {best}")
         return best
     logger.warning(f"네이버 폴백 실패(최고 유사도 {best_ratio:.2f}): {query}")
     return None
@@ -549,7 +564,7 @@ def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> s
         real_url = None if google_blocked else _decode_google_news_url(item["google_link"])
         if not real_url:
             google_blocked = True
-            real_url = _naver_find_article_url(item["title"], item.get("source", ""))
+            real_url = _naver_find_article_url(item["title"], item.get("source", ""), item.get("source_url", ""))
         if not real_url:
             logger.warning(f"원문 URL 찾기 실패(Google·네이버) → 제목만으로 판정: {item['title']}")
         item["url"] = real_url or item["google_link"]
