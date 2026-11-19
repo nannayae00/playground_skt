@@ -1,11 +1,13 @@
 """
-handlers/news_scraper.py  v1.2
+handlers/news_scraper.py  v1.3
 작성일: 2026-10-05
 
 [수정 이력]
 [v1.1 / 2026-11-04] Google News 429 재시도·간격 추가, 브리핑 날짜 KST 표시
 [v1.2 / 2026-11-19] RSS 검색도 429 재시도·키워드 간격·건수 로그, 경쟁사 신상품 출시를
                     광고성으로 버리던 트리아지 기준 수정, 탈락 사유 로그, dry_run+ignore_seen
+[v1.3 / 2026-11-19] 원문 URL 디코딩 실패 시 네이버 뉴스 검색으로 원문 링크 찾기(폴백),
+                    한 번 429로 막히면 그 실행에서는 Google 디코딩을 건너뜀
 
 [개요]
 하루 1회, 알뜰폰/MVNO 관련 뉴스를 Google News RSS에서 수집해
@@ -34,6 +36,7 @@ import re
 import json
 import logging
 import hashlib
+import difflib
 import time
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote, urlparse, parse_qs, urljoin
@@ -229,6 +232,58 @@ def _request_with_backoff(method: str, url: str, **kwargs) -> requests.Response 
             logger.warning(f"Google News {code} → {wait}초 후 재시도 ({attempt + 1}/{len(_RETRY_WAITS)})")
             time.sleep(wait)
     return resp
+
+
+# ───────────────────────── 네이버 뉴스 폴백 ─────────────────────────
+# [수정 20261119] Cloud Run 출구 IP에서 Google batchexecute가 재시도해도 계속 429라
+# (실측 11/19: 3회 백오프 후에도 실패) 원문 URL을 못 찾고 제목만으로 판정됨.
+# 디코딩에 실패하면 네이버 뉴스 검색(키 불필요)에서 같은 제목의 기사를 찾아 언론사 원문
+# 링크를 쓴다. 네이버 검색 결과의 클래스명은 자주 바뀌므로 특정 셀렉터에 의존하지 않고
+# "제목 텍스트가 가장 비슷한 링크"를 고른다.
+NAVER_SEARCH_URL = "https://search.naver.com/search.naver"
+NAVER_MATCH_MIN = 0.75
+
+
+def _norm_title(t: str) -> str:
+    return re.sub(r"[\W_]+", "", t).lower()
+
+
+def _strip_source_suffix(title: str, source: str) -> str:
+    # Google News 제목은 "제목 - 언론사" 형식
+    if source and title.endswith(f" - {source}"):
+        return title[: -len(source) - 3]
+    return title.rsplit(" - ", 1)[0] if " - " in title else title
+
+
+def _naver_find_article_url(title: str, source: str = "") -> str | None:
+    query = _strip_source_suffix(title, source)
+    try:
+        resp = requests.get(NAVER_SEARCH_URL, params={"where": "news", "query": query},
+                            headers={"User-Agent": UA}, timeout=10)
+        if resp.status_code != 200:
+            logger.warning(f"네이버 뉴스 검색 실패 ({resp.status_code}): {query}")
+            return None
+    except Exception as e:
+        logger.warning(f"네이버 뉴스 검색 오류: {e}")
+        return None
+
+    target = _norm_title(query)
+    best, best_ratio = None, 0.0
+    for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http") or "search.naver.com" in href:
+            continue
+        text = a.get_text(" ", strip=True).replace("새 창 열림", "")
+        if len(text) < 8:
+            continue
+        ratio = difflib.SequenceMatcher(None, target, _norm_title(text)).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = href, ratio
+    if best and best_ratio >= NAVER_MATCH_MIN:
+        logger.info(f"네이버 폴백 성공({best_ratio:.2f}): {best}")
+        return best
+    logger.warning(f"네이버 폴백 실패(최고 유사도 {best_ratio:.2f}): {query}")
+    return None
 
 
 def _decode_google_news_url(google_link: str) -> str | None:
@@ -487,12 +542,16 @@ def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> s
     seen_candidates = [c for c in candidates if c["title"] not in survivor_titles]
 
     final_items = []
+    google_blocked = False  # 한 번 막히면 이번 실행에서는 Google 디코딩 생략 (건당 26초 낭비 방지)
     for n, item in enumerate(survivors):
         if n:
             time.sleep(DECODE_INTERVAL_SEC)
-        real_url = _decode_google_news_url(item["google_link"])
+        real_url = None if google_blocked else _decode_google_news_url(item["google_link"])
         if not real_url:
-            logger.warning(f"원문 URL 디코딩 실패 → 제목만으로 판정: {item['title']}")
+            google_blocked = True
+            real_url = _naver_find_article_url(item["title"], item.get("source", ""))
+        if not real_url:
+            logger.warning(f"원문 URL 찾기 실패(Google·네이버) → 제목만으로 판정: {item['title']}")
         item["url"] = real_url or item["google_link"]
         content = _fetch_article(real_url) if real_url else None
         item["content"] = content or ""
