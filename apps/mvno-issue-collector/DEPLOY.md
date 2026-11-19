@@ -46,6 +46,12 @@ chmod +x deploy.sh
 | mvno-news-digest-evening | 18:45 | POST /daily-news (2026-11-04 추가) |
 
 이미 보낸 기사는 `scraped_news_seen`으로 걸러져 회차마다 새 기사만 전송됨.
+
+뉴스 처리 흐름 (2026-11-19~): 수집 → 제목 트리아지 → 원문 링크(Google 디코딩, 막히면 네이버 검색) →
+본문 크롤링(원문 실패 시 같은 보도의 다른 매체) → 기사 전용 정제(`refine_news_article`, gemini-3.1-pro-preview,
+실패 시 2.5-flash) → **`mvno_issues`에 바로 등록** (태그 `자동수집`, status `확인중`).
+유사 이슈가 있으면 새로 만들지 않고 기존 문서 `related_articles`에 기사 링크만 추가.
+이슈방 메시지의 ✏️수정(덮어쓰기, 이전 값은 문서의 `history` 서브컬렉션) / 🗑삭제(`mvno_issues_deleted`에 백업) 버튼.
 수동 실행: `gcloud scheduler jobs run mvno-news-digest-morning --location asia-northeast3`
 전송 없이 확인: `curl -X POST "$SERVICE_URL/daily-news?dry_run=true"`
 

@@ -1,8 +1,10 @@
 """
-handlers/gemini_refiner.py  v1.0
+handlers/gemini_refiner.py  v1.1
 작성일: 2026-06-30
 
 [수정 이력]
+[v1.1 / 2026-11-19] refine_news_article 추가: 뉴스 자동등록용 기사 전용 정제
+  (본문 사실 기반 요약·불릿 상세·간결한 시사점, 발행일=event_date, pro 모델 우선)
 [v1.0 / 2026-06-30]
 - 신규 생성: Gemini를 활용한 MVNO 이슈/프로모션 정제
   · 텍스트 및 이미지(base64) 입력 지원
@@ -14,7 +16,7 @@ handlers/gemini_refiner.py  v1.0
 import os
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import google.generativeai as genai
 
@@ -197,3 +199,60 @@ def refine_with_edit(existing_draft: dict, edit_instruction: str) -> dict | None
     except Exception as e:
         logger.error(f"수정 정제 오류: {e}", exc_info=True)
         return None
+
+
+# ───────────────────────── 뉴스 자동등록 전용 ─────────────────────────
+# [추가 20261119] 뉴스 브리핑이 기사를 바로 mvno_issues에 등록하게 되면서 요약 품질이
+# 곧 DB 품질이 됨. 기존 refine_input은 텔레그램 자유입력용이라 기사에 쓰면
+# "기사 제목에 따르면~" 식의 빈약한 요약, 장황하고 일반론적인 시사점이 나왔음
+# (실측: 자동수집 8건 중 본문 없이 제목만으로 정제된 건 다수). 기사 전용 규칙을 덧붙이고
+# 품질 우선으로 pro 모델(gemini-3.1-pro-preview)을 먼저 쓰고 실패 시 flash로 폴백 (하루 몇 건이라 비용 미미).
+NEWS_MODELS = ("gemini-3.1-pro-preview", "gemini-2.5-flash")  # 2.5-pro는 신규 사용자 404 (2026-11-19 확인)
+KST = timezone(timedelta(hours=9))
+
+NEWS_RULES = """
+[뉴스 기사 정제 규칙 - 이 입력은 자동 수집된 언론 기사 1건입니다. 반드시 JSON 객체 1개만 반환]
+- 근거는 아래 [기사 본문]뿐입니다. 본문에 없는 사실·수치·일정·사업자명을 만들어내지 마세요.
+  추정이 필요하면 "추정"이라고 명시하세요.
+- event_date: 기사 속 사건 발생일(출시일·시행일·발표일 등)이 명확하면 그 날짜, 아니면 기사 발행일({pub_date}).
+- summary: 2문장 이내. "누가 / 무엇을 / 언제 / 핵심 수치(요금·용량·건수·금액·비율)"를 담을 것.
+  "기사에 따르면", "~라고 보도했다", "~것으로 알려졌다" 같은 전달 표현 금지. 사실을 단정적으로.
+- detail: 본문의 핵심 사실 4~7개를 "• "로 시작하는 줄로 나열 (줄바꿈 \n 구분).
+  요금제명·가격·데이터 용량·대상 고객·조건·기간·판매채널·관계자 발언 요지 등 구체 정보를 그대로 옮기고,
+  배경 설명이나 해석은 넣지 마세요. 기자 이름·저작권 문구·광고 문구는 제외.
+- implication: ①②③ 각 1~2문장, 전체 400자 이내. 기사 사실에 근거해 구체적으로.
+  "모니터링 필요", "면밀히 검토", "적극 활용" 같은 일반론만으로 끝내지 말고, 비교할 당사 상품/지표나
+  확인할 데이터(예: 해당 망 MNP 유입, 동일 가격대 당사 요금제, 외국인 가입자 비중)를 지목하세요.
+- follow_up: 팀이 바로 할 수 있는 확인/액션 1~2개 (없으면 null).
+- source.raw_input은 비워두세요(시스템이 채움). status는 "확인중".
+- [기사 본문]이 "(본문 추출 실패)"이면 제목만으로 판단한 것이므로 detail 첫 줄에
+  "• (본문 미확보, 제목 기준 작성)"을 쓰고 impact_level을 보수적으로 매기세요.
+"""
+
+
+def refine_news_article(title: str, source: str, url: str, pub_date_kst: str, content: str) -> dict | None:
+    """기사 1건 → mvno_issues 레코드(dict). 실패 시 None."""
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    prompt = (
+        SYSTEM_PROMPT.replace("{today}", today)
+        + NEWS_RULES.replace("{pub_date}", pub_date_kst or today)
+        + f"\n입력:\n[기사 제목] {title}\n[언론사] {source}\n[URL] {url}\n[발행일] {pub_date_kst}\n\n"
+        + f"[기사 본문]\n{content or '(본문 추출 실패)'}"
+    )
+    for model_name in NEWS_MODELS:
+        try:
+            resp = genai.GenerativeModel(model_name).generate_content(prompt)
+            raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                parsed = parsed[0] if parsed else None
+            if not isinstance(parsed, dict) or not parsed.get("summary"):
+                raise ValueError("summary 없음")
+            parsed["_collection"] = "mvno_issues"
+            parsed["input_date"] = today
+            parsed["refine_model"] = model_name
+            logger.info(f"뉴스 정제 완료({model_name}): {title[:40]}")
+            return parsed
+        except Exception as e:
+            logger.warning(f"뉴스 정제 실패({model_name}): {e}")
+    return None

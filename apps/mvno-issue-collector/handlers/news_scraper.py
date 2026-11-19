@@ -1,5 +1,5 @@
 """
-handlers/news_scraper.py  v1.3
+handlers/news_scraper.py  v1.4
 작성일: 2026-10-05
 
 [수정 이력]
@@ -8,6 +8,9 @@ handlers/news_scraper.py  v1.3
                     광고성으로 버리던 트리아지 기준 수정, 탈락 사유 로그, dry_run+ignore_seen
 [v1.3 / 2026-11-19] 원문 URL 디코딩 실패 시 네이버 뉴스 검색으로 원문 링크 찾기(폴백),
                     한 번 429로 막히면 그 실행에서는 Google 디코딩을 건너뜀
+[v1.4 / 2026-11-19] 확인 버튼 없이 바로 mvno_issues에 자동 등록 + 결과 메시지에 수정/삭제 버튼.
+                    유사 이슈가 있으면 새로 만들지 않고 기존 이슈 related_articles에 링크 추가.
+                    기사 전용 정제(refine_news_article)로 요약 품질 개선
 
 [개요]
 하루 1회, 알뜰폰/MVNO 관련 뉴스를 Google News RSS에서 수집해
@@ -47,9 +50,10 @@ from google.cloud import firestore
 import google.generativeai as genai
 
 from handlers.input_handler import _fetch_article
-from handlers.gemini_refiner import refine_input
+from handlers.gemini_refiner import refine_input, refine_news_article
 from handlers.duplicate_checker import check_duplicate
 from handlers.news_drafts import save_draft
+from handlers.firestore_writer import save_issue
 
 logger = logging.getLogger(__name__)
 
@@ -268,19 +272,26 @@ def _same_press(href: str, source_url: str) -> bool:
 
 
 def _naver_find_article_url(title: str, source: str = "", source_url: str = "") -> str | None:
+    cands = _naver_candidates(title, source, source_url)
+    return cands[0] if cands else None
+
+
+def _naver_candidates(title: str, source: str = "", source_url: str = "") -> list[str]:
+    """네이버 뉴스 검색에서 제목이 같은(유사도 기준 이상) 기사 링크들을 점수순으로 반환.
+    첫 번째가 같은 언론사 우선 매칭. 나머지는 같은 보도를 실은 다른 매체 (본문 대체용)."""
     query = _strip_source_suffix(title, source)
     try:
         resp = requests.get(NAVER_SEARCH_URL, params={"where": "news", "query": query},
                             headers={"User-Agent": UA}, timeout=10)
         if resp.status_code != 200:
             logger.warning(f"네이버 뉴스 검색 실패 ({resp.status_code}): {query}")
-            return None
+            return []
     except Exception as e:
         logger.warning(f"네이버 뉴스 검색 오류: {e}")
-        return None
+        return []
 
     target = _norm_title(query)
-    best, best_ratio = None, 0.0
+    scored: dict[str, float] = {}
     for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
         href = a["href"]
         if not href.startswith("http") or "search.naver.com" in href:
@@ -292,13 +303,15 @@ def _naver_find_article_url(title: str, source: str = "", source_url: str = "") 
         # 같은 보도자료라 제목이 똑같은 매체가 여러 곳 → RSS <source url>의 언론사 도메인과 같은 링크 우선
         if ratio >= NAVER_MATCH_MIN and _same_press(href, source_url):
             ratio += 0.1
-        if ratio > best_ratio:
-            best, best_ratio = href, ratio
-    if best and best_ratio >= NAVER_MATCH_MIN:
-        logger.info(f"네이버 폴백 성공({min(best_ratio, 1.0):.2f}): {best}")
-        return best
-    logger.warning(f"네이버 폴백 실패(최고 유사도 {best_ratio:.2f}): {query}")
-    return None
+        if ratio > scored.get(href, 0.0):
+            scored[href] = ratio
+    ranked = [h for h, r in sorted(scored.items(), key=lambda x: -x[1]) if r >= NAVER_MATCH_MIN]
+    if ranked:
+        logger.info(f"네이버 폴백 성공({min(scored[ranked[0]], 1.0):.2f}, 후보 {len(ranked)}건): {ranked[0]}")
+    else:
+        best = max(scored.values(), default=0.0)
+        logger.warning(f"네이버 폴백 실패(최고 유사도 {best:.2f}): {query}")
+    return ranked
 
 
 def _decode_google_news_url(google_link: str) -> str | None:
@@ -481,25 +494,56 @@ def _make_draft_id(item: dict) -> str:
     return "n" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:11]
 
 
+def _pub_date_kst(pub_date: str) -> str:
+    dt = _parse_pubdate(pub_date)
+    return dt.astimezone(KST).strftime("%Y-%m-%d") if dt else ""
+
+
 def _build_issue_draft(item: dict) -> dict | None:
-    """기사 내용을 gemini_refiner.refine_input()에 통과시켜, 수동으로 링크를 붙여넣었을 때와
-    동일한 형식의 mvno_issues 구조화 draft를 생성. source는 자동수집 정보로 덮어씀."""
-    raw_input = (
-        f"[기사 제목: {item['title']}]\n[출처: {item.get('source','')}]\n[URL: {item.get('url','')}]\n\n"
-        f"{item.get('content') or '(본문 추출 실패)'}"
-    )
-    result = refine_input(raw_input)
-    if not result:
-        return None
-    record = result[0] if isinstance(result, list) else result
+    """기사 → mvno_issues 레코드. 기사 전용 정제를 먼저 쓰고, 실패하면 기존 refine_input으로 폴백.
+    source는 자동수집 정보로 덮어씀."""
+    content = item.get("content") or ""
+    record = refine_news_article(item["title"], item.get("source", ""), item.get("url", ""),
+                                 _pub_date_kst(item.get("pub_date", "")), content)
+    if not record:
+        raw_input = (
+            f"[기사 제목: {item['title']}]\n[출처: {item.get('source','')}]\n[URL: {item.get('url','')}]\n\n"
+            f"{content or '(본문 추출 실패)'}"
+        )
+        result = refine_input(raw_input)
+        if not result:
+            return None
+        record = result[0] if isinstance(result, list) else result
+    record["_collection"] = "mvno_issues"  # 뉴스는 항상 이슈 DB
     record["source"] = {
         "type": "기사URL",
         "origin": item.get("source", ""),
         "ref": item.get("url", ""),
-        "raw_input": item.get("content", "")[:2000],
+        "title": item["title"],
+        "published_at": _format_pub_date(item.get("pub_date", "")),
+        "raw_input": content[:4000],
     }
-    record["tags"] = list(set((record.get("tags") or []) + ["자동수집"]))
+    tags = set(record.get("tags") or []) | {"자동수집"}
+    if not content:
+        tags.add("본문미확보")
+    record["tags"] = sorted(tags)
+    record.setdefault("status", "확인중")
     return record
+
+
+def _link_to_existing(dup_id: str, item: dict) -> bool:
+    """유사 이슈가 이미 있으면 새 문서를 만들지 않고 기존 문서에 기사 링크만 추가 (내용은 건드리지 않음)."""
+    try:
+        get_db().collection("mvno_issues").document(dup_id).update({
+            "related_articles": firestore.ArrayUnion([{
+                "title": item["title"], "url": item.get("url", ""), "source": item.get("source", ""),
+                "added_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+            }]),
+        })
+        return True
+    except Exception as e:
+        logger.error(f"기존 이슈 링크 추가 실패 ({dup_id}): {e}")
+        return False
 
 
 def _format_pub_date(pub_date: str) -> str:
@@ -508,6 +552,35 @@ def _format_pub_date(pub_date: str) -> str:
         return "-"
     kst = dt.astimezone(KST)
     return kst.strftime("%m/%d %H:%M")
+
+
+def _build_registered_entry(index: int, e: dict) -> str:
+    item, record = e["item"], e["record"]
+    mark = "🔴" if record.get("impact_level", item["impact_level"]) == "상" else "🟡"
+    title_link = f'<a href="{item["url"]}">{_html(item["title"])}</a>'
+    lines = [
+        f"{index}. {mark} <b>{title_link}</b>",
+        f"   🏷 {record.get('category','-')} | 📡 {record.get('network','-')} | 📅 {_format_pub_date(item.get('pub_date',''))}",
+        f"   📝 {_html(record.get('summary', ''))}",
+    ]
+    impl = (record.get("implication") or "").strip()
+    if impl:
+        # 메시지엔 ②(당사 영향)를 우선 노출, 없으면 첫 문단
+        parts = re.split(r"(?=[①②③])", impl)
+        first = next((p for p in parts if p.startswith("②")), parts[0] if parts[0].strip() else (parts[1] if len(parts) > 1 else impl)).strip()
+        lines.append(f"   💡 {_html(first[:220])}{'…' if len(first) > 220 else ''}")
+    if e["dup"]:
+        state = "추가함" if e["linked"] else "추가 안 됨"
+        lines.append(f"   🔗 유사 이슈 있음 → 기존 이슈에 기사 링크 {state}: {_html(e['dup']['id'])}")
+    elif e["doc_id"]:
+        lines.append(f"   🆔 {_html(e['doc_id'])}")
+    if "본문미확보" in (record.get("tags") or []):
+        lines.append("   ⚠️ 본문 미확보 - 제목 기준 작성")
+    return "\n".join(lines)
+
+
+def _html(t: str) -> str:
+    return (t or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _build_compact_entry(index: int, item: dict, record: dict, dup: dict | None) -> str:
@@ -569,6 +642,19 @@ def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> s
             logger.warning(f"원문 URL 찾기 실패(Google·네이버) → 제목만으로 판정: {item['title']}")
         item["url"] = real_url or item["google_link"]
         content = _fetch_article(real_url) if real_url else None
+        if not content or len(content) < 300:
+            # [수정 20261119] 원문 사이트에서 본문을 못 읽으면(차단·JS 렌더링 등) 같은 보도를 실은
+            # 다른 매체 기사에서 본문을 가져옴. 링크는 원래 언론사 것을 유지.
+            for alt in _naver_candidates(item["title"], item.get("source", ""), item.get("source_url", ""))[:4]:
+                if alt == real_url:
+                    continue
+                alt_content = _fetch_article(alt)
+                if alt_content and len(alt_content) >= 300:
+                    logger.info(f"본문 대체 확보: {alt}")
+                    content = alt_content
+                    if not real_url:
+                        item["url"] = alt
+                    break
         item["content"] = content or ""
         content_fetch_failed = not content
 
@@ -608,62 +694,65 @@ def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> s
 
     final_items.sort(key=lambda x: 0 if x["impact_level"] == "상" else 1)
 
-    # [수정 20261104] UTC 날짜를 쓰면 07:45 KST 실행 시 전날 날짜가 찍혀 KST로 변경
+    # [수정 20261119] 확인 버튼을 거치지 않고 바로 mvno_issues에 등록 (팀 요청).
+    # 결과 메시지에 기사별 ✏️수정 / 🗑삭제 버튼을 달아 잘못 들어간 건 바로 고칠 수 있게 함.
+    # 콜백데이터 64바이트 제한 때문에 문서ID(한글) 대신 짧은 키를 news_drafts에 매핑해 둠.
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    header = f"📰 <b>알뜰폰 뉴스 브리핑</b> ({today}) - 영향도 높은 신규 기사 {len(final_items)}건"
-
     entries = []
     for it in final_items:
         record = _build_issue_draft(it)
         if not record:
+            logger.error(f"이슈 정제 실패, 건너뜀: {it['title']}")
             continue
-        entries.append({
-            "item": it,
-            "record": record,
-            "duplicate": check_duplicate(record),
-            "draft_id": _make_draft_id(it),
-        })
+        if dry_run:
+            logger.info("[dry_run 정제결과] " + json.dumps({k: record.get(k) for k in
+                        ("event_date", "summary", "detail", "implication", "follow_up", "impact_level", "refine_model")},
+                        ensure_ascii=False))
+        dup = check_duplicate(record)
+        key = _make_draft_id(it)
+        doc_id, linked = None, False
+        if not dry_run:
+            if dup:
+                linked = _link_to_existing(dup["id"], it)
+            else:
+                doc_id = save_issue(record, "mvno_issues")
+                if doc_id:
+                    save_draft(key, {"doc_id": doc_id})
+        entries.append({"item": it, "record": record, "dup": dup, "doc_id": doc_id, "linked": linked, "key": key})
 
     if not entries:
-        return "📭 영향도 높은 신규 알뜰폰 뉴스가 없습니다 (draft 생성 실패)."
+        return "📭 영향도 높은 신규 알뜰폰 뉴스가 없습니다 (정제 실패)."
 
-    # [수정 20261005] 기사 여러 건을 메시지 1개로 모아서 보여주고, 번호 버튼으로 선택.
-    # session.py(chat당 세션 슬롯 1개)를 바로 쓰면 여러 draft가 동시에 떠 있는 상태에서
-    # 세션이 덮어써지는 충돌이 생기므로, 기사별로 news_drafts에 독립 저장해두고 버튼의
-    # 콜백데이터에 draft_id를 직접 심음.
-    # [수정 20261006] 번호 버튼 클릭 시 바로 저장하지 않고, 먼저 등록될 내용(카테고리/
-    # 요약/시사점 등)을 수동입력 때와 동일한 _build_preview로 보여준 뒤 ✅등록/✏️수정/
-    # ❌취소를 고르게 함 ("맘에 안들면 수정" 요구). 이 미리보기 단계부터는 기사 1건만
-    # 다루므로 session.py로 넘겨서 기존 수정/등록 플로우(edit_handler 등)를 그대로 재사용.
-    MAX_ENTRIES_PER_MESSAGE = 8  # Telegram 메시지 4096자 제한 안에서 안전하게
+    new_cnt = sum(1 for e in entries if not e["dup"])
+    header = f"📰 <b>알뜰폰 뉴스 브리핑</b> ({today}) - 이슈 DB 신규 등록 {new_cnt}건"
+    if len(entries) > new_cnt:
+        header += f", 기존 이슈에 기사 추가 {len(entries) - new_cnt}건"
+
+    MAX_ENTRIES_PER_MESSAGE = 6
     shown = entries[:MAX_ENTRIES_PER_MESSAGE]
-    omitted = len(entries) - len(shown)
-
-    body = "\n\n".join(
-        _build_compact_entry(i, e["item"], e["record"], e["duplicate"])
-        for i, e in enumerate(shown, start=1)
-    )
+    body = "\n\n".join(_build_registered_entry(i, e) for i, e in enumerate(shown, start=1))
     text = f"{header}\n\n{body}"
-    if omitted > 0:
-        text += f"\n\n(영향도 낮은 {omitted}건 생략됨)"
-    text += "\n\n👇 등록 전 내용을 확인할 기사 번호를 선택하세요"
+    if len(entries) > len(shown):
+        text += f"\n\n(외 {len(entries) - len(shown)}건 등록됨 - /summary 또는 DB에서 확인)"
+    if len(text) > 4000:
+        text = text[:3990] + "…"
 
-    buttons, row = [], []
+    buttons = []
     for i, e in enumerate(shown, start=1):
-        row.append({"text": f"{i}번 확인", "callback_data": f"newsreg:preview:{e['draft_id']}"})
-        if len(row) == 4:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
+        if e["doc_id"]:
+            buttons.append([
+                {"text": f"✏️ {i}번 수정", "callback_data": f"newsdoc:edit:{e['key']}"},
+                {"text": f"🗑 {i}번 삭제", "callback_data": f"newsdoc:del:{e['key']}"},
+            ])
 
     if not dry_run:
-        from handlers.telegram import send_message_with_buttons
+        from handlers.telegram import send_message_with_buttons, send_message
         if CHAT_ID:
-            for e in shown:
-                save_draft(e["draft_id"], e["record"], e["duplicate"])
-            send_message_with_buttons(CHAT_ID, text, buttons)
-            logger.info(f"뉴스 다이제스트 전송 완료: {len(shown)}건 (전체 {len(entries)}건 중)")
+            if buttons:
+                send_message_with_buttons(CHAT_ID, text, buttons)
+            else:
+                send_message(CHAT_ID, text)
+            logger.info(f"뉴스 자동등록 완료: 신규 {new_cnt}건, 기존연결 {len(entries) - new_cnt}건")
         else:
             logger.error("TELEGRAM_CHAT_ID 환경변수 없음")
 
