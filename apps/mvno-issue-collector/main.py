@@ -102,6 +102,18 @@ def daily_news():
     return jsonify({"ok": True, "dry_run": dry_run, "digest": digest})
 
 
+@app.route("/news-backfill", methods=["POST", "GET"])
+def news_backfill():
+    """[추가 20261119] 과거 뉴스 백필(평가용). 시간 예산만큼 진행 후 상태 반환, 반복 호출로 재개.
+    결과는 news_backfill* 컬렉션에만 저장 (mvno_issues/텔레그램 미사용)."""
+    from handlers.news_backfill import run_backfill_step
+    run_id = request.args.get("run", "bf_1y")
+    max_refine = request.args.get("max_refine")
+    state = run_backfill_step(run_id, request.args.get("start"), request.args.get("end"),
+                              int(max_refine) if max_refine else None)
+    return jsonify({"ok": True, "state": state})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)
