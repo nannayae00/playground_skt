@@ -159,11 +159,11 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
         content_summary = result.get('content_summary', '')
 
         def star_rating(s):
-            # [v3.7] ⭐ 이모지 개수로 통일 (11/19 피드백: ★ 글자는 눈에 안 띔): 9-10 ⭐⭐⭐ / 7-8 ⭐⭐ / 4-6 ⭐ / 0-3 없음
+            # [v3.7] 9점 이상만 금별 ⭐⭐⭐로 강조, 나머지는 ★ 글자 (사용자 결정 11/19)
             if s >= 9:   return "⭐⭐⭐"
-            elif s >= 7: return "⭐⭐"
-            elif s >= 4: return "⭐"
-            else:        return "·"
+            elif s >= 7: return "★★☆"
+            elif s >= 4: return "★☆☆"
+            else:        return "☆☆☆"
         # [v2.2] 통신망 결정 우선순위: 제목센싱 > 단일망확정 > AI결과 > 미확인
         network = resolve_network(post.get('title', ''), provider, result.get('network')) or ''  # [v3.7] DB 저장과 같은 규칙
         if network and network not in ('None', 'null', ''):
