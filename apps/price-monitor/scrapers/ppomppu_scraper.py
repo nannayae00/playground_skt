@@ -560,6 +560,28 @@ def extract_network_from_content(content: str) -> str:
 # MVNO 필터링 (2단계 처리)
 # ══════════════════════════════════════════════════════════════════════════════
 
+_QUESTION_RE = re.compile(r'\?|다면\s*$|나요|까요|가요|되나|하나요|있나|없나|문의|질문|궁금|어떤가|어때|ㅠ+$')
+_NEWS_RE = re.compile(r'조기\s*종료|종료|마감|출시|인상|인하|중단|변경|연장|오픈|떴|떳|나왔|신규\s*요금제|역대')
+
+
+def _adjust_relevance(title, score, views, comments):
+    """[v3.7] AI 중요도 보정
+    - 질문글(…나요?/문의)은 소식(종료·출시·인상 등)이 아니면 최대 6점
+    - 반응 가점: 조회 1,500+ 또는 댓글 15+ → +1, 조회 5,000+ → +2 (최대 10)"""
+    try:
+        score = int(round(float(score or 0)))
+    except (TypeError, ValueError):
+        score = 5
+    t = title or ''
+    if _QUESTION_RE.search(t) and not _NEWS_RE.search(t):
+        score = min(score, 6)
+    if views >= 5000:
+        score += 2
+    elif views >= 1500 or comments >= 15:
+        score += 1
+    return max(0, min(score, 10))
+
+
 def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     """
     MVNO + 통신사 핫글 필터링
@@ -835,6 +857,12 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                             continue
                         post['filter_result'][k] = v
                 
+                # [v3.7] AI 점수 보정: 질문글 상한 6 + 반응 많은 글 가점 (11/19 피드백 - 조회 0~50 질문글이 7점,
+                #  조회 1,561 후기가 5점으로 체감과 반대였음)
+                post['filter_result']['relevance_score'] = _adjust_relevance(
+                    post['title'], post['filter_result'].get('relevance_score', 5),
+                    post.get('views', 0), post.get('comments', 0))
+
                 # 고조회수 보정 먼저 실행 (Vision 조건 체크 전!)
                 views_pre = post.get('views', 0)
                 comments_pre = post.get('comments', 0)
