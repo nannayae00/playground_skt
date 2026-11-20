@@ -239,7 +239,8 @@ def _parse_card(card_el):
     final_price                  = _price(price_raw)
     discount_months, base_price  = _after(after_raw)
     if base_price == 0: base_price = final_price
-    if final_price == 0:
+    # [수정 20261120] '월 0원' 프로모션 요금제는 정상 (예전엔 0원이면 파싱 실패로 버려 회당 약 20개 누락)
+    if final_price == 0 and not re.search(r'(^|\D)0\s*원', price_raw):
         print(f"⚠️ 파싱 실패 (price=0) id={plan_id} price_raw={price_raw!r}")
         return None
 
@@ -274,6 +275,99 @@ def _parse_card(card_el):
         'subscribers':        subscribers,
         'scraped_at':         datetime.utcnow().isoformat(),
     }
+
+
+_API_URL = 'https://api.moyoplan.com/core/api/v2/moyo/plan-search/ranking'
+_MNO_NET = {'LGU': 'LG U+망', 'KT': 'KT망', 'SKT': 'SKT망'}
+
+
+def _num_txt(v):
+    return f"{v:g}" if isinstance(v, (int, float)) else str(v)
+
+
+def _payback(gifts):
+    """사은품 문구에서 매달 페이백 금액·개월 (평생이면 개월 None). 없으면 (0, None)"""
+    for g in gifts:
+        t = (g.get('title') or '') + ' ' + (g.get('subTitle') or '')
+        mm = re.search(r'매\s*(?:달|월)\s*([\d,.]+)\s*(천|만)?\s*원\s*(?:씩\s*)?페이백', t)
+        if not mm:
+            continue
+        v = float(mm.group(1).replace(',', ''))
+        amt = int(v * (1000 if mm.group(2) == '천' else 10000 if mm.group(2) == '만' else 1))
+        if '평생' in t:
+            return amt, None
+        mo = re.search(r'(\d+)\s*개월', t)
+        return amt, (int(mo.group(1)) if mo else None)
+    return 0, None
+
+
+def _meta_to_card(m):
+    """모요 API planMeta → 웹 카드 텍스트와 같은 형식 (월 11GB + 매일 2GB + 3Mbps | 통화 무제한 | …)"""
+    basic, daily, qos = m.get('basicData') or 0, m.get('dailyData') or 0, m.get('qos') or 0
+    if basic >= 9999:
+        data = '무제한'
+    else:
+        segs = []
+        if basic:
+            segs.append(f"월 {int(round(basic * 1000))}MB" if basic < 1 else f"월 {_num_txt(basic)}GB")
+        if daily:
+            segs.append(f"매일 {_num_txt(daily)}GB")
+        if qos >= 1000:
+            segs.append(f"{_num_txt(qos / 1000)}Mbps")
+        elif qos > 0:
+            segs.append(f"{_num_txt(qos)}Kbps")
+        if not basic and not daily:
+            segs.insert(0, '데이터 제공안함')
+        data = ' + '.join(segs)
+    voice, msg = m.get('voice') or 0, m.get('message') or 0
+    voice_raw = '통화 무제한' if voice >= 9999 else (f"통화 {int(voice):,}분" if voice else '통화 제공안함')
+    sms_raw = '문자 무제한' if msg >= 9999 else (f"문자 {int(msg):,}건" if msg else '문자 제공안함')
+    fee, orig, months = int(m.get('discountFee') or 0), int(m.get('originalFee') or 0), int(m.get('discountPeriod') or 0)
+    # 웹은 '페이백 포함 요금'으로 보여줌 → 사은품 문구의 "매달 N천원 페이백 (M개월/평생)"을 반영
+    pb, pb_months = _payback(m.get('giftGroupList') or [])
+    if pb:
+        if pb_months is None:            # 평생
+            fee, orig = max(fee - pb, 0), max(orig - pb, 0)
+        else:
+            fee = max(fee - pb, 0)
+            if not months or months == pb_months:
+                months = pb_months
+    after = f"{months}개월 이후 {orig:,}원" if months and orig and orig != fee else ''
+    parts = [m.get('name') or '', data, voice_raw, sms_raw, _MNO_NET.get(m.get('mno'), m.get('mno') or ''),
+             m.get('network') or 'LTE', f"월 {fee:,}원", after]
+    return {'_id': str(m.get('id')), '_alt': m.get('mobilePlanOperatorBrandName') or '기타/확인불가',
+            '_text': '|'.join(p for p in parts if p)}
+
+
+def _supplement_from_api(all_plans):
+    import requests
+    seen = {str(p.get('plan_id')) for p in all_plans}
+    headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.moyoplan.com/', 'Content-Type': 'application/json'}
+    added, page = 0, 1
+    while True:
+        r = requests.post(_API_URL, json={}, params={'sorting': 'recommend_v2', 'page': page, 'size': 100},
+                          headers=headers, timeout=30)
+        r.raise_for_status()
+        j = r.json()
+        body = j.get('result') or j
+        metas = body.get('planMetas', [])
+        if not metas:
+            break
+        for m in metas:
+            pid = str(m.get('id'))
+            if pid in seen or m.get('isDeleted'):
+                continue
+            plan = _parse_card(_meta_to_card(m))
+            if plan:
+                plan['rs_source'] = 'rules' if plan['is_rs'] else 'none'
+                plan['source'] = 'api'
+                all_plans.append(plan)
+                seen.add(pid)
+                added += 1
+        if page * 100 >= (body.get('totalSize') or 0):
+            break
+        page += 1
+    return added
 
 
 def _page_url(page_num):
@@ -443,6 +537,17 @@ class MoyoScraper:
                     continue
 
             await browser.close()
+
+        # [추가 20261120] 웹 목록이 일부 사업자(아이즈모바일·모빙 등)를 페이지 넘김에서 안 보여줘 2,039개 중 약 350개 누락
+        #  → 모요 랭킹 API 전체 목록에서 웹에 없던 요금제를 웹 카드와 같은 형식으로 만들어 같은 파서로 추가
+        try:
+            added = _supplement_from_api(all_plans)
+            msg = f"➕ 모요 API 보충: {added}개 (웹 목록 미노출분)"
+            print(msg)
+            if self.progress_callback:
+                self.progress_callback(msg)
+        except Exception as e:
+            print(f"⚠️ 모요 API 보충 실패 (웹 수집분만 사용): {e}")
 
         total     = len(all_plans)
         rs_tot    = sum(1 for p in all_plans if p.get('is_rs'))
