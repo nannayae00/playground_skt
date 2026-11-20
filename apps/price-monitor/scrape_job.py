@@ -887,24 +887,52 @@ NET_SHORT = {'SKT': 'S', 'KT': 'K', 'LGU+': 'L'}
 _PROVIDER_ALIAS = {
     'A모바일': '에이모바일', 'KCT': '티플러스', '케이티엠모바일': 'KT엠모바일',
     '케이티스카이라이프': 'KT스카이라이프', '헬로모바일': 'LG헬로모바일', '고고팩토리': '고고모바일',
+    # [v3.7] 허브는 회사명으로 표기하는 곳이 있음 (11/20 팀 요청으로 사업자명 통일 점검)
+    '유니컴즈': '모빙', '큰사람커넥트': '이야기모바일', '에스원 안심모바일': '안심모바일',
 }
 
 
-def _canon_provider(name):
+def canonical_provider_name(name):
+    """[v3.7] 사이트별 사업자 표기 → 모요 기준 정식 사업자명 (괄호 부가설명·망 표기·회사명·깨진 로고 파일명 정리)
+    예: '프리티 (LGU+망)'·'프리티 (SKT, KT망)' → '프리티', 'KCT (티플러스)' → '티플러스'"""
     import urllib.parse
     n = urllib.parse.unquote(name or '').strip()
     n = re.sub(r'_국문_bi$', '', n)
     n = re.sub(r'\s*\(.*?\)\s*', '', n).strip()
-    return shorten(_PROVIDER_ALIAS.get(n, n))
+    return _PROVIDER_ALIAS.get(n, n)
+
+
+def normalize_plan_providers(plans):
+    """[v3.7] 수집 직후 사업자명을 통일해 저장·엑셀·비교가 모두 같은 이름을 쓰게 함 (원래 표기는 provider_raw)"""
+    for p in plans or []:
+        raw = p.get('provider') or ''
+        c = canonical_provider_name(raw)
+        if c and c != raw:
+            p.setdefault('provider_raw', raw)
+            p['provider'] = c
+    return plans
+
+
+def _canon_counts(counts):
+    out = {}
+    for k, v in (counts or {}).items():
+        ck = canonical_provider_name(k) or k
+        out[ck] = out.get(ck, 0) + (v or 0)
+    return out
+
+
+def _canon_provider(name):
+    return shorten(canonical_provider_name(name))
 
 
 def detect_provider_changes(source_label, prev_counts, curr_plans):
     """직전 수집 대비 사업자별 요금제 수 급변 감지 → [{'source','provider','prev','curr','kind'}]"""
     if not prev_counts:
         return []
+    prev_counts = _canon_counts(prev_counts)   # [v3.7] 이름 통일 전 기록과 비교해도 이탈/입점 오탐이 안 나게
     curr = {}
     for p in curr_plans or []:
-        prov = (p.get('provider') or '').strip() or '(미상)'
+        prov = canonical_provider_name((p.get('provider') or '').strip()) or '(미상)'
         curr[prov] = curr.get(prov, 0) + 1
     out = []
     for prov in sorted(set(prev_counts) | set(curr)):
@@ -967,7 +995,7 @@ def _disp_provider(canon):
 
 def _rm_index(site, plans):
     gen, sub, _ = split_by_provider_type(plans or [])
-    return {(site, p.get('provider'), p.get('name'), p.get('network')): p for p in gen + sub
+    return {(site, canonical_provider_name(p.get('provider')), p.get('name'), p.get('network')): p for p in gen + sub
             if not p.get('is_rs') and (p.get('final_price') or 0) > 0}
 
 
@@ -2709,6 +2737,7 @@ def main():
         try:
             aldot_scraper = AldotScraper(progress_callback=progress)
             aldot_plans, _ = aldot_scraper.scrape()
+            aldot_plans = normalize_plan_providers(aldot_plans)   # [v3.7] 사업자명 통일
             aldot_plans = comparator.tag_plans_with_lowest(aldot_plans)
             prev_aldot_latest = db.get_latest_data('aldot')  # [수정 20261022] 저장 전 = 직전 수집 (RM 비교·사업자 수 공용)
             prev_aldot_counts = FirebaseHandler._provider_counts((prev_aldot_latest or {}).get('plans', [])) if prev_aldot_latest else None
@@ -2729,6 +2758,7 @@ def main():
         try:
             hub_scraper = MvnohubScraper(progress_callback=progress)
             mvnohub_plans, _ = hub_scraper.scrape()
+            mvnohub_plans = normalize_plan_providers(mvnohub_plans)   # [v3.7] 사업자명 통일 (프리티 (LGU+망) → 프리티 등)
             mvnohub_plans = comparator.tag_plans_with_lowest(mvnohub_plans)
             prev_hub_latest = db.get_latest_data('mvnohub')  # [수정 20261022]
             prev_hub_counts = FirebaseHandler._provider_counts((prev_hub_latest or {}).get('plans', [])) if prev_hub_latest else None
