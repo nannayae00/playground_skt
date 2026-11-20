@@ -611,13 +611,19 @@ class FirebaseHandler:
                 filter_result = post_data.get('filter_result', {})
 
                 # network: Gemini 결과 우선, 없으면 사업자명으로 고정망 추론
-                network = filter_result.get('network')
-                if not network:
-                    try:
-                        from core.mvno_classifier import infer_network_from_provider
-                        network = infer_network_from_provider(filter_result.get('provider'))
-                    except Exception:
-                        network = None
+                # [v3.7] 메시지와 같은 규칙: 제목 망 표기 > 단일망 사업자 > AI > 제목의 통신3사 이름
+                #  (예전엔 제목에 "KT망"이 있어도 DB엔 AI 값만 저장돼 망 없음이 절반 넘었음)
+                try:
+                    from core.mvno_classifier import resolve_network
+                    network = resolve_network(post_data.get('title', ''), filter_result.get('provider'),
+                                              filter_result.get('network'))
+                except Exception:
+                    network = filter_result.get('network')
+                try:
+                    from core.mvno_classifier import network_status
+                    net_status = network_status(post_data.get('title', ''), filter_result.get('provider'), network)
+                except Exception:
+                    net_status = None
 
                 doc_ref.set({
                     'post_id':         post_id,
@@ -630,6 +636,7 @@ class FirebaseHandler:
                     'author':          post_data.get('author', '익명'),
                     'provider':        filter_result.get('provider'),
                     'network':         network,
+                    'network_status':  net_status,   # [v3.7] confirmed / unknown(미확인) / na(분류없음)
                     'filter_method':   filter_result.get('method'),
                     'confidence':      filter_result.get('confidence', 0.0),
                     'relevance_score': filter_result.get('relevance_score', 0),
@@ -674,13 +681,20 @@ class FirebaseHandler:
         if not self.db:
             return {}
         try:
-            docs = self.db.collection('ppomppu_monitor')                .document('posts').collection('all_posts')                .limit(limit).stream()
+            # [v3.7] 정렬 없이 limit(5000)만 걸면 글이 5천 건을 넘을 때 일부가 빠져 이미 알린 글이 '신규'로 다시 나갈 수 있음
+            #  → 수집 범위(최대 2일)보다 넉넉하게 최근 14일 글만 전부 읽음
+            from datetime import timedelta
+            since = datetime.now(KOREA_TZ) - timedelta(days=14)
+            docs = self.db.collection('ppomppu_monitor').document('posts').collection('all_posts') \
+                .where('posted_at', '>=', since) \
+                .select(['views', 'comments', 'last_surge_at', 'relevance_score']).stream()
             result = {}
             for doc in docs:
                 d = doc.to_dict()
                 result[doc.id] = {
-                    'views':    d.get('views', 0),
-                    'comments': d.get('comments', 0),
+                    'views':         d.get('views', 0),
+                    'comments':      d.get('comments', 0),
+                    'last_surge_at': d.get('last_surge_at'),
                 }
             print(f"✅ 기존 뽐뿌 게시글: {len(result)}개")
             return result
@@ -731,6 +745,7 @@ class FirebaseHandler:
                     'posted_at': post_data.get('posted_at'),
                     'provider':  post_data.get('provider', ''),
                     'network':   post_data.get('network', ''),
+                    'network_status': post_data.get('network_status'),   # [v3.7] confirmed / unknown / na
                     'sentiment': post_data.get('sentiment', '중립'),
                     'topic':     post_data.get('topic', ''),
                     'saved_at':  datetime.now(KOREA_TZ),

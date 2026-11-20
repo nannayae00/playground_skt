@@ -65,6 +65,33 @@ BASE_URL = "https://m.ppomppu.co.kr/new/bbs_list.php"
 POP_URL = "https://m.ppomppu.co.kr/new/pop_bbs.php"  # 인기/Hot 게시판
 
 # 크롤링할 게시판 목록
+MISSED_WATCH_BOARDS = {'phone', 'phone_consult'}   # [v3.7] 놓친 인기글 감시 대상 (통신 게시판)
+MISSED_WATCH_VIEWS = 1000
+# 요금·통신 관련 단어가 있는 글만 (기기 후기·잡담 제외, 지난 2주 기준 하루 약 3건)
+MISSED_WATCH_HINT = re.compile(r'요금|유심|이심|esim|개통|번이|번호이동|mbps|\d+\s*g(b)?\b|통신|회선|프모|프로모션|사은품|네페|네이버페이|해지|선착순|체감가|평생|데이터|무제한|qos|셀프', re.I)
+
+
+def _only_unalerted(posts):
+    """이미 알린 글은 빼고, 이번에 알릴 글을 기록 (Firestore ppomppu_monitor/missed_alerts, 최근 500건)"""
+    if not posts:
+        return posts
+    try:
+        from google.cloud import firestore
+        ref = firestore.Client(project='mvno-484509', database='mvno-data') \
+            .collection('ppomppu_monitor').document('missed_alerts')
+        snap = ref.get()
+        prev_ids = (snap.to_dict() or {}).get('ids', []) if snap.exists else []
+        done = set(prev_ids)
+        key = lambda p: str(p.get('post_id') or p.get('id') or p.get('url') or p['title'][:40])
+        fresh = [p for p in posts if key(p) not in done]
+        if fresh:
+            ref.set({'ids': (prev_ids + [key(p) for p in fresh])[-500:]})  # 오래된 것부터 밀어냄
+        return fresh
+    except Exception as e:
+        print(f"⚠️ 놓친 인기글 중복 확인 실패 (그대로 알림): {e}")
+        return posts
+
+
 BOARDS = [
     # 🔥 핵심 게시판 (MVNO 글 집중)
     "phone",          # 휴대폰 포럼 ⭐⭐⭐
@@ -533,6 +560,28 @@ def extract_network_from_content(content: str) -> str:
 # MVNO 필터링 (2단계 처리)
 # ══════════════════════════════════════════════════════════════════════════════
 
+_QUESTION_RE = re.compile(r'\?|다면\s*$|나요|까요|가요|되나|하나요|있나|없나|문의|질문|궁금|어떤가|어때|ㅠ+$')
+_NEWS_RE = re.compile(r'조기\s*종료|종료|마감|출시|인상|인하|중단|변경|연장|오픈|떴|떳|나왔|신규\s*요금제|역대')
+
+
+def _adjust_relevance(title, score, views, comments):
+    """[v3.7] AI 중요도 보정
+    - 질문글(…나요?/문의)은 소식(종료·출시·인상 등)이 아니면 최대 6점
+    - 반응 가점: 조회 1,500+ 또는 댓글 15+ → +1, 조회 5,000+ → +2 (최대 10)"""
+    try:
+        score = int(round(float(score or 0)))
+    except (TypeError, ValueError):
+        score = 5
+    t = title or ''
+    if _QUESTION_RE.search(t) and not _NEWS_RE.search(t):
+        score = min(score, 6)
+    if views >= 5000:
+        score += 2
+    elif views >= 1500 or comments >= 15:
+        score += 1
+    return max(0, min(score, 10))
+
+
 def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     """
     MVNO + 통신사 핫글 필터링
@@ -579,6 +628,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     keyword_only = [] # 키워드 패턴만 → AI 정제 필요
     mno_high_traffic = []
     mno_candidates = []   # AI 검증 전 MNO 후보
+    missed_popular = []   # [v3.7] 통신 게시판인데 탈락한 인기글 (규칙 누락 감시용)
 
     for post in posts:
         board = post.get('board', '')
@@ -617,6 +667,8 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
         if not mno_result:
             views = post.get('views', 0)
             print(f"[탈락:룰베이스] [{board}] 👁{views:,} {post['title'][:60]}")
+            if board in MISSED_WATCH_BOARDS and views >= MISSED_WATCH_VIEWS and MISSED_WATCH_HINT.search(post['title']):
+                missed_popular.append(post)
         if mno_result:
             # [v3.0] mno_candidates 강화: 통신 키워드 필수
             TELECOM_REQUIRED = ['요금제', '유심', '번호이동', '개통', '알뜰', '통신', '데이터', 
@@ -644,6 +696,16 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     if not confirmed and not keyword_only and not mno_candidates:
         return []
 
+    # [v3.7] 놓친 인기글 감시: 휴대폰포럼 등에서 조회수 높은데 룰베이스 탈락한 글을 로그방에 알림
+    #  (11/14 점검에서 "엠모·헬모·시월·알닷" 등 줄임말 글 수십 건이 2주간 누락된 것을 뒤늦게 발견 → 새 은어가 생기면 바로 보이게)
+    missed_popular = _only_unalerted(missed_popular)
+    if missed_popular:
+        missed_popular.sort(key=lambda p: -p.get('views', 0))
+        lines = [f"👀 놓친 인기글 후보 {len(missed_popular)}개 (룰베이스 탈락, 조회 {MISSED_WATCH_VIEWS:,}+)"]
+        lines += [f"· [{p.get('board')}] 👁{p.get('views', 0):,} {p['title'][:50]}" for p in missed_popular[:10]]
+        lines.append("※ 알뜰폰 글이면 분류 규칙(별칭·키워드)에 추가 필요")
+        tg("\n".join(lines))
+
     # 3단계: 스카이라이프 인터넷/TV 제외 (모바일 요금제만)
     INTERNET_EXCLUDE = ['인터넷', 'TV', '셋톱박스', 'IPTV', '와이파이', 'wifi', 'internet']
     confirmed_filtered = []
@@ -670,7 +732,13 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
     pre_ai_blocked = 0
     confirmed_ambiguous_filtered = []
     keyword_only_filtered = []
+    # [v3.7] 뽐뿌게시판(핫딜)에서 사업자명이 잡히고 데이터(GB)·요금(원) 표기가 있는 글은 요금제 특가글이라 AI 검증으로 보냄
+    #  (11/14 "[프리티] 300분, 데이터 15GB+1mbps(월7,700원/평생)"이 여기서 차단돼 누락)
+    PLAN_DEAL_RE = re.compile(r'\d+(\.\d+)?\s*(gb|g)\b.*\d[\d,]*\s*원|\d[\d,]*\s*원.*\d+(\.\d+)?\s*(gb|g)\b', re.I)
     for post in confirmed_ambiguous:
+        if post.get('board') == 'ppomppu' and PLAN_DEAL_RE.search(post['title']):
+            confirmed_ambiguous_filtered.append(post)
+            continue
         if post.get('board') in NON_MVNO_BOARDS:
             print(f"   🚫 AI전 차단(confirmed_ambiguous): [{post.get('board')}] {post['title'][:40]}")
             pre_ai_blocked += 1
@@ -779,25 +847,45 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                         if not final_summary.get('is_mvno') and final_summary.get('confidence', 0) > 0.75:
                             print(f"   🚫 본문AI 오탐 제거: {post['title'][:40]}")
                             post['filter_result']['_remove'] = True
-                    post['filter_result'].update(final_summary)
+                    # [v3.7] AI가 null로 준 값이 규칙으로 찾은 사업자·망을 지우지 않게 (빈 값은 건너뛰고,
+                    #  사업자명 확정 글은 규칙 사업자 유지) - 예: 'Sk퀀텀7 티다'가 T다이렉트 → 빈칸이 돼 알뜰폰 목록에 섞임
+                    keep_provider = method == 'provider_whitelist' and post['filter_result'].get('provider')
+                    for k, v in final_summary.items():
+                        if v in (None, '', 'null', 'None'):
+                            continue
+                        if k == 'provider' and keep_provider:
+                            continue
+                        post['filter_result'][k] = v
                 
+                # [v3.7] AI 점수 보정: 질문글 상한 6 + 반응 많은 글 가점 (11/19 피드백 - 조회 0~50 질문글이 7점,
+                #  조회 1,561 후기가 5점으로 체감과 반대였음)
+                post['filter_result']['relevance_score'] = _adjust_relevance(
+                    post['title'], post['filter_result'].get('relevance_score', 5),
+                    post.get('views', 0), post.get('comments', 0))
+
                 # 고조회수 보정 먼저 실행 (Vision 조건 체크 전!)
                 views_pre = post.get('views', 0)
                 comments_pre = post.get('comments', 0)
                 pre_score = post['filter_result'].get('relevance_score', 5)
                 if views_pre >= 20000:
-                    post['filter_result']['relevance_score'] = max(pre_score, 80)
+                    post['filter_result']['relevance_score'] = max(pre_score, 8)  # [v3.7] 0-10 척도 (예전 80/70은 100점 척도라 '70/10'로 표시될 수 있었음)
                 elif views_pre >= 10000:
-                    post['filter_result']['relevance_score'] = max(pre_score, 70)
+                    post['filter_result']['relevance_score'] = max(pre_score, 7)
                 if comments_pre >= 50:
                     s = post['filter_result'].get('relevance_score', 5)
-                    post['filter_result']['relevance_score'] = min(s + 5, 100)
+                    post['filter_result']['relevance_score'] = min(s + 1, 10)
 
                 # 별3개 게시글 Vision 분석 (2026-06-02 추가)
                 # relevance_score 7점 이상 + 이미지 있는 경우만
                 current_score_check = post['filter_result'].get('relevance_score', 0)
                 image_urls = post.get('image_urls', [])
-                if current_score_check >= 7 and image_urls:
+                # [v3.7] 망을 못 찾은 사업자·요금제 글(미확인)도 사진이 있으면 판독 - 요금제 안내는 사진에 많음
+                #  (11/15 시험: 미확인 중 사진 있는 19건 → 9건 망 확인, 하루 1~2건·월 300원 안팎)
+                from core.mvno_classifier import resolve_network, network_status
+                _fr = post['filter_result']
+                _net = resolve_network(post['title'], _fr.get('provider'), _fr.get('network'))
+                need_net = (not _net) and network_status(post['title'], _fr.get('provider'), None) == 'unknown'
+                if (current_score_check >= 7 or need_net) and image_urls:
                     print(f"      🔭 Vision 분석 시작 ({len(image_urls)}장)")
                     vision_result = ai_vision_analyze(
                         title=post['title'],
@@ -827,7 +915,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 
                 # 조회수 20,000 이상 → 최소 80점 보장 (큰 수부터!)
                 if views >= 20000:
-                    boosted_score = max(current_score, 80)
+                    boosted_score = max(current_score, 8)
                     if boosted_score > current_score:
                         post['filter_result']['relevance_score'] = boosted_score
                         post['filter_result']['high_traffic_boost'] = True
@@ -836,7 +924,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 
                 # 조회수 10,000 이상 → 최소 70점 보장
                 elif views >= 10000:
-                    boosted_score = max(current_score, 70)
+                    boosted_score = max(current_score, 7)
                     if boosted_score > current_score:
                         post['filter_result']['relevance_score'] = boosted_score
                         post['filter_result']['high_traffic_boost'] = True
@@ -846,7 +934,7 @@ def filter_mvno_posts(posts, use_ai=True, top_n=None, progress_telegram=None):
                 # 댓글 50개 이상 → +5점 보너스
                 if comments >= 50:
                     current_score = post['filter_result'].get('relevance_score', 5)
-                    new_score = min(current_score + 5, 100)
+                    new_score = min(current_score + 1, 10)
                     post['filter_result']['relevance_score'] = new_score
                     post['filter_result']['high_engagement_boost'] = True
                     print(f"      💬 고댓글 보정: +5점 (댓글 {comments}개) → {new_score}점")

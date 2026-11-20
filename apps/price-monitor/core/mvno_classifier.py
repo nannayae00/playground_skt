@@ -79,12 +79,45 @@ import re
 import json
 import os
 
+# [v3.7] 예전 SDK(google.generativeai)는 이미지에 설치돼 있지 않아 10/16 이전부터 AI 분석이 매번 조용히
+# 건너뛰어졌음(본문 요약·중요도·오탐 제거 전부 미동작). 설치돼 있는 google-genai로 교체하고,
+# 종료된 gemini-1.5-flash 대신 gemini-2.5-flash(분류·요약이라 thinking 끔 → 비용 절감)를 씀
 try:
-    import google.generativeai as genai
+    from google import genai as _genai
+    from google.genai import types as _gtypes
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    print("⚠️ google-generativeai 패키지 없음. pip install google-generativeai")
+    print("⚠️ google-genai 패키지 없음. pip install google-genai")
+
+GEMINI_MODEL = os.getenv('GEMINI_CLASSIFIER_MODEL', 'gemini-2.5-flash')
+
+
+class _GenaiModel:
+    """예전 genai.GenerativeModel(...).generate_content(...) 호출 모양을 그대로 쓰기 위한 얇은 어댑터"""
+
+    def __init__(self, api_key):
+        # JSON 모드는 v1beta에서만 지원 (v1이면 400 INVALID_ARGUMENT)
+        self._client = _genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
+
+    def generate_content(self, contents):
+        if isinstance(contents, str):
+            contents = [contents]
+        parts = []
+        for c in contents:
+            if isinstance(c, dict) and 'inline_data' in c:
+                import base64
+                d = c['inline_data']
+                parts.append(_gtypes.Part.from_bytes(data=base64.b64decode(d['data']), mime_type=d['mime_type']))
+            elif isinstance(c, dict) and 'text' in c:
+                parts.append(c['text'])
+            else:
+                parts.append(c)
+        return self._client.models.generate_content(
+            model=GEMINI_MODEL, contents=parts,
+            config=_gtypes.GenerateContentConfig(
+                response_mime_type='application/json',
+                thinking_config=_gtypes.ThinkingConfig(thinking_budget=0)))
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 사업자명 별칭 매핑 (정규명: [별칭들...])
@@ -92,9 +125,9 @@ except ImportError:
 
 MVNO_PROVIDER_ALIASES = {
     # ── 3사 공통 (13개) ──────────────────────────────────────────
-    "헬로모바일":    ["헬로모바일", "헬로 모바일", "LG헬로모바일", "헬로유심", "헬로"],  # 단독은 WEAK_ALIASES 동반 키워드 필수
+    "헬로모바일":    ["헬로모바일", "헬로 모바일", "LG헬로모바일", "헬로유심", "헬로", "헬모"],  # [v3.7] "헬모"  # 단독은 WEAK_ALIASES 동반 키워드 필수
     "토스모바일":    ["토스모바일", "toss모바일", "토스심", "토스", "toss"],  # 단독은 WEAK_ALIASES 동반 키워드 필수
-    "아이즈모바일":  ["아이즈모바일", "아이즈비전"],               # "아이즈" 단독은 AMBIGUOUS
+    "아이즈모바일":  ["아이즈모바일", "아이즈비전", "아이즈"],     # "아이즈" 단독은 AMBIGUOUS → [v3.7] WEAK(요금 키워드 동반 시 인정)
     "모빙":         ["모빙", "mobing"],
     "스마텔":       ["스마텔", "smartel"],
     "이야기모바일":  ["이야기모바일", "이야기"],                    # 단독은 WEAK_ALIASES 동반 키워드 필수
@@ -133,7 +166,7 @@ MVNO_PROVIDER_ALIASES = {
     "요고":         ["요고모바일", "요고 모바일", "kt요고", "kt 요고"],
 
     # ── KT 단독 ──────────────────────────────────────────────────
-    "KT엠모바일":   ["KT엠모바일", "KT엠", "엠모바일", "KTM모바일", "KTM 모바일", "ktm"],
+    "KT엠모바일":   ["KT엠모바일", "KT엠", "엠모바일", "KTM모바일", "KTM 모바일", "ktm", "kt m모바일", "kt m 모바일", "m모바일", "엠모"],  # [v3.7] 커뮤니티 줄임말 "엠모"
     "이지모바일":   ["이지모바일"],                                # "이지" 단독은 AMBIGUOUS
     "드림모바일":   ["드림모바일"],
     "쉐이크모바일": ["쉐이크모바일"],                              # "쉐이크" 단독은 AMBIGUOUS
@@ -147,7 +180,7 @@ MVNO_PROVIDER_ALIASES = {
     "퍼스트모바일": ["퍼스트모바일"],
 
     # ── LGU+ 단독 ────────────────────────────────────────────────
-    "U+유모바일":   ["유모바일", "U+유모바일", "유플러스알뜰", "유플러스유모바일"],
+    "U+유모바일":   ["유모바일", "U+유모바일", "유플러스알뜰", "유플러스유모바일", "유모비", "유모"],  # [v3.7] "유모"는 WEAK(동반 키워드·유모차 제외)
     "시월모바일":   ["시월모바일", "시월"],                          # "시월" 단독은 WEAK_ALIASES로 동반키워드 체크
     "슈가모바일":   ["슈가모바일"],                                # "슈가" 단독은 AMBIGUOUS
     "찬스모바일":   ["찬스모바일"],                                # "찬스" 단독은 AMBIGUOUS
@@ -180,6 +213,12 @@ MNO_DIRECT_PROVIDERS = {"너겟", "T다이렉트", "SKT에어", "요고"}
 # 출처: KTOA MVNO 등록 데이터 (2026.06 기준)
 # ══════════════════════════════════════════════════════════════════════════════
 PROVIDER_NETWORKS = {
+    # [v3.7] MNO 직영 온라인·플랫폼은 망이 하나로 정해짐 (11/15 점검: 망 미확인 글의 상당수)
+    "T다이렉트":    ["SKT"],
+    "SKT에어":      ["SKT"],
+    "요고":         ["KT"],
+    "너겟":         ["LGU+"],
+    "알닷":         ["LGU+"],   # LG U+ 알뜰폰 통합몰 - 수집 요금제 1,106개 전부 LGU+망 (11/15 확인)
     # ── SKT 단일망
     "SK세븐모바일":  ["SKT"],
     "알비레오모바일": ["SKT"],
@@ -312,7 +351,8 @@ NON_MVNO_BOARD_STRICT = {"토스", "리브", "live", "이야기", "핀", "toss"}
 # 단독으로 쓰이면 오탐이 많은 별칭 → 동반 키워드가 있어야만 MVNO로 인정
 # 동반 키워드 없으면 게시판 무관하게 차단
 # 통신 관련 동반 키워드 공통 목록
-_TELECOM_KW = ["모바일", "알뜰", "유심", "요금", "개통", "심", "알뜰폰", "mvno",
+# [v3.7] "심" 단독은 "농심"·"안심"·"관심"에도 걸려 오탐("[토스쇼핑] 농심 안성탕면" → 토스모바일) → 유심·이심·eSIM으로 한정
+_TELECOM_KW = ["모바일", "알뜰", "유심", "이심", "esim", "요금", "개통", "알뜰폰", "mvno",
                "lte", "5g", "데이터", "통화", "문자", "번호이동", "유플러스", "skt", "kt",
                "가입", "요금제", "월정액", "평생", "회선", "번이", "신규", "공시",
                "통신사", "통신"]
@@ -325,6 +365,9 @@ WEAK_ALIASES = {
     "live":     _TELECOM_KW + ["리브", "liiv"],
     "리브":     _TELECOM_KW + ["엠", "liiv"],
     "헬로":     _TELECOM_KW,
+    # [v3.7] 요금제 표기(GB·Mbps·QoS·무제한)도 동반 키워드로 인정: "180G + 10mbps 시월", "아이즈 150g 5mbps"
+    "아이즈":   _TELECOM_KW + ["mbps", "qos", "무제한", "gb", "150g", "5m"],
+    "유모":     _TELECOM_KW + ["타임딜", "네페", "네이버페이", "쌀먹", "프로모션", "해지", "사은품"],  # [v3.7]
 
     # ── 🟡 중간: 혼동 가능, 동반 키워드 권장 ──
     "핀":       ["다이렉트"] + _TELECOM_KW,
@@ -332,7 +375,7 @@ WEAK_ALIASES = {
     "세븐모바일": _TELECOM_KW,          # SK세븐모바일 별칭 (7-Eleven 혼동)
     "마블링":   _TELECOM_KW,            # 마블링(고기) 혼동
     "winners":  _TELECOM_KW,            # 위너스텔 영문 별칭
-    "ktm":       ["모바일", "알뜰", "엠모바일", "kt"],  # KTM오토바이 혼동
+    "ktm":       ["모바일", "알뜰", "엠모바일", "ktm"],  # KTM오토바이 혼동 / [v3.7] 예전엔 'ktm' 안의 'kt'가 늘 걸려 사실상 단독 인정 → 그 동작 유지
     "ktm 모바일": _TELECOM_KW,  # "KTM 모바일" 공백 포함 표기
     "kt엠":      _TELECOM_KW,  # "KT엠" 줄임말
     "kg":       ["모바일"] + _TELECOM_KW,     # KG그룹/KG케미칼 등 혼동 방지
@@ -342,7 +385,7 @@ WEAK_ALIASES = {
     "인스":     _TELECOM_KW,
     "찬스":     _TELECOM_KW,
     "슈가":     _TELECOM_KW,
-    "시월":     _TELECOM_KW,
+    "시월":     _TELECOM_KW + ["mbps", "qos", "무제한", "gb", "10m", "5m"],  # [v3.7] 요금제 표기도 동반 키워드
     "이지":     _TELECOM_KW,
     "쉐이크":   _TELECOM_KW,
     "snow":     _TELECOM_KW + ["man"],
@@ -443,6 +486,39 @@ def is_safe_confirmed(provider, title):
 # 함수: 사업자명 정규화
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _kw_hit(kw, text_lower):
+    """[v3.7] 동반 키워드 검사. 짧은 영문(5g·lte·kt·skt)은 앞뒤가 영문·숫자가 아닐 때만 인정
+    ("125g"의 5g, "kt"가 들어간 다른 단어 오탐 방지)"""
+    if kw in ('5g', 'lte', 'kt', 'skt'):   # 단위·숫자에 붙어 쓰는 mbps·gb·qos는 그대로 부분일치
+        return bool(re.search(r'(?<![a-z0-9])' + re.escape(kw) + r'(?![a-z0-9])', text_lower))
+    return kw in text_lower
+
+
+def _alias_in(alias, text_lower):
+    """[v3.7] 별칭 매칭. 영문은 기존처럼 앞뒤 단어경계, 한글로 끝나는 별칭은 앞 경계만 보고 뒤는 허용.
+    Python re는 한글을 \\w로 봐서 "엠모바일은", "헬모가", "엠모도"처럼 조사가 붙으면 \\b가 안 생겨
+    매칭이 전부 실패했음 (11/14 점검: 2주간 휴대폰포럼 알뜰폰 글 다수 누락)"""
+    if re.search(r'[가-힣]$', alias):
+        if alias == '유모' and '유모차' in text_lower:
+            return False
+        return bool(re.search(r'(?<![가-힣a-z0-9])' + re.escape(alias), text_lower))
+    return bool(re.search(r'\b' + re.escape(alias) + r'\b', text_lower))
+
+
+def _has_strong_mvno_alias(text_lower):
+    """[v3.7] 오탐 위험이 낮은(애매·약한 별칭이 아닌) 알뜰폰 사업자명이 있는지"""
+    for canonical, aliases in MVNO_PROVIDER_ALIASES.items():
+        if canonical in MNO_DIRECT_PROVIDERS:
+            continue
+        for a in [canonical] + aliases:
+            al = a.lower()
+            if a in AMBIGUOUS_ALIASES or al in WEAK_ALIASES or len(al) <= 2 and not re.search(r'[가-힣]', al):
+                continue
+            if _alias_in(al, text_lower):
+                return True
+    return False
+
+
 def normalize_provider(text, board=None):
     """
     텍스트에서 사업자명 감지 및 정규화
@@ -457,6 +533,9 @@ def normalize_provider(text, board=None):
         return None
     
     text_lower = text.lower()
+    # [v3.7] "쉐이크 모바일", "이야기 모바일"처럼 띄어 쓴 사업자명도 잡히도록 붙여 쓴 형태를 덧붙여 검사
+    if re.search(r'\s+(모바일|mobile)', text_lower):
+        text_lower = text_lower + ' ' + re.sub(r'\s+(모바일|mobile)', r'\1', text_lower)
 
     # SKT에어 관련: "SKT"+"AIR" 또는 "SKT에어" → MVNO이므로 EXCLUDE 체크 전체 스킵
     is_skt_air = ("skt" in text_lower and "air" in text_lower) or "skt에어" in text_lower or "에어바이sk" in text_lower
@@ -485,8 +564,8 @@ def normalize_provider(text, board=None):
             and not any(bl in text_lower for bl in YOGO_BLOCKLIST):
         return "요고"
 
-    if not is_skt_air:
-        # 제외 사업자 체크 (3대 통신사)
+    if not is_skt_air and not _has_strong_mvno_alias(text_lower):
+        # 제외 사업자 체크 (3대 통신사) - [v3.7] 확실한 알뜰폰 사업자명이 함께 있으면 망 언급으로 보고 건너뜀
         for excluded in EXCLUDE_PROVIDERS:
             if excluded.lower() in text_lower:
                 # 단, "KT엠모바일"처럼 알뜰폰인 경우는 제외하지 않음
@@ -519,7 +598,7 @@ def normalize_provider(text, board=None):
             for alias in aliases:
                 if alias.lower() in WEAK_ALIASES:
                     required = WEAK_ALIASES[alias.lower()]
-                    if any(kw in text_lower for kw in required):
+                    if any(_kw_hit(kw, text_lower) for kw in required):
                         return canonical
 
         # ── 별칭 체크 ────────────────────────────────────────────────
@@ -531,12 +610,12 @@ def normalize_provider(text, board=None):
             if alias.lower() in WEAK_ALIASES:
                 matched = alias.lower() in text_lower
             else:
-                matched = bool(re.search(r'\b' + re.escape(alias.lower()) + r'\b', text_lower))
+                matched = _alias_in(alias.lower(), text_lower)
             if matched:
                 # [v2.4] WEAK_ALIASES: 동반 키워드 체크 (게시판 무관하게 적용)
                 if alias.lower() in WEAK_ALIASES:
                     required = WEAK_ALIASES[alias.lower()]
-                    if not any(kw in text_lower for kw in required):
+                    if not any(_kw_hit(kw, text_lower) for kw in required):
                         continue  # 동반 키워드 없으면 무조건 차단
                     return canonical  # 동반 키워드 있으면 게시판 무관 통과
                 # NON_MVNO_BOARDS 게시판 필터 (WEAK_ALIASES 아닌 별칭에만 적용)
@@ -618,6 +697,10 @@ def check_keywords(title, content='', board=None):
     # "알뜰"이 제목에 부분 포함되는지 추가로 검사 (일반 게시판/2개매칭 로직은 그대로 유지).
     ALDDAL_PATTERNS = {r'\b알뜰폰\b', r'\b알뜰\b'}
     has_alddal = any(kw in ALDDAL_PATTERNS for kw in matched_keywords) or '알뜰' in title
+    # [v3.7] 알뜰폰 비교 플랫폼(알닷·모요)·알뜰폰 은어(쌀먹)도 휴대폰포럼에선 알뜰폰 글로 봄
+    mvno_slang = [w for w in ('알닷', '모요', '쌀먹') if w in title]
+    if board == 'phone' and mvno_slang and not has_alddal:
+        return {'is_mvno': True, 'method': 'keyword_pattern', 'keywords': mvno_slang, 'confidence': 0.6}
     if board == 'phone' and has_alddal:
         if '알뜰' in title and not any(kw in ALDDAL_PATTERNS for kw in matched_keywords):
             matched_keywords = matched_keywords + ['알뜰(복합어)']
@@ -796,8 +879,7 @@ def ai_analyze_and_summarize(title, content, views=0, comments=0):
         return None
     
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = _GenaiModel(api_key)
         
         prompt = f"""다음 뽐뿌 게시글을 분석해주세요.
 
@@ -814,10 +896,14 @@ def ai_analyze_and_summarize(title, content, views=0, comments=0):
    - 유심, 알뜰폰, MVNO 키워드?
    - ❌ 제외: 3대 통신사(SKT, KT, LG U+) 직영, 에어콘/가전제품
 
-2. **중요도 점수 (0-10점)**
-   - 조회수, 댓글 수 고려
-   - 실질적 정보 가치 (프로모션, 정책 변경, 가격 정보)
-   - 역대가/최저가/신규출시 등 시장 영향력 높은 경우 8점 이상
+2. **중요도 점수 (0-10점) = 알뜰폰 시장 영향도** (조회수·댓글은 코드에서 따로 반영하므로 내용만 보고 판단)
+   - 9-10: 신규 요금제 출시·가격 인하/인상, 금액이 명시된 대형 프로모션(역대가·최저가·평생 할인 등),
+           사업자 정책 변경(개통 중단, 요금제 종료·조기마감, 혜택 축소), 장애·대규모 이슈
+   - 7-8 : 특정 사업자의 구체적 프로모션·사은품·쌀먹 조건(금액·기간 명시), 선착순·마감 임박 정보
+   - 4-6 : 사업자·요금제 사용 후기, 사업자 비교 의견, 정책 단서가 담긴 이용 문의
+   - 1-3 : 개통·배송·유심·eSIM·기기 등 단순 문의, 일반 팁, 잡담, 휴대폰 구매 고민
+   - 통신3사(SKT·KT·LGU+) 직영의 기기변경·번호이동 할인은 알뜰폰 시장 영향이 작으므로 최대 5점
+   - 확실하지 않으면 낮은 쪽으로 (⭐⭐⭐ 7점 이상은 시장 영향이 큰 글에만)
 
 3. **통신망 판단**
    - 본문/URL에서 SKT/KT/LGU+ 망 파악
@@ -888,8 +974,7 @@ def ai_vision_analyze(title, content, image_urls, current_result=None):
     
     try:
         import requests as req
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = _GenaiModel(api_key)
         
         # 이미지 최대 3장만 분석 (비용 절감)
         target_images = image_urls[:3]
@@ -1103,20 +1188,100 @@ def extract_network_from_title(title):
 
     t  = title          # 원본 (대소문자 구분 패턴)
     tl = title.lower()  # 소문자 (대소문자 무관 패턴)
+    tn = re.sub(r'\s+', '', tl)   # [v3.7] "KT 망", "유플 5G망"처럼 띄어 쓴 경우도 보도록 공백 제거본
 
     # ── LGU+ 먼저 체크 (U+ 포함, SKT/KT보다 앞에 있어야 오매칭 방지) ──
-    LGU_PATTERNS = ['lgu+망', 'u+망', 'lg u+망', 'lgu망', 'lg망']
-    if any(p in tl for p in LGU_PATTERNS):
+    LGU_PATTERNS = ['lgu+망', 'u+망', 'lg u+망', 'lgu망', 'lg망',
+                    '유플망', '유플러스망', '엘지망', '유플5g망', 'u+5g망', 'lgu+5g망', '[l]']   # [v3.7]
+    if any(p in tl or p in tn for p in LGU_PATTERNS):
         return 'LGU+'
 
     # ── SKT ──
-    SKT_PATTERNS = ['skt망', 'sk망']
-    if any(p in tl for p in SKT_PATTERNS):
+    SKT_PATTERNS = ['skt망', 'sk망', '에스케이망', 'skt5g망', '[s]']
+    if any(p in tl or p in tn for p in SKT_PATTERNS):
         return 'SKT'
 
     # ── KT (SKT 체크 후에 해야 "SKT망"이 KT로 오매칭 안 됨) ──
-    KT_PATTERNS = ['kt망']
-    if any(p in tl for p in KT_PATTERNS):
+    KT_PATTERNS = ['kt망', '케이티망', 'kt5g망', '[k]']
+    if any(p in tl or p in tn for p in KT_PATTERNS):
         return 'KT'
 
+    # [v3.7] 알닷(LG U+ 알뜰폰 통합몰) 요금제 글 → LGU+. 단 다른 통신사 이름이 같이 있으면 그쪽 얘기일 수 있어 판단 안 함
+    #  ("프리티 SKT 이심 가입하고 알닷에서 번호 변경" = SKT)
+    if '알닷' in tl and not re.search(r'(?<![a-z])(skt?|kt)(?![a-z])|에스케이|케이티', tl):
+        return 'LGU+'
+
+    return None
+
+
+_ROUNDUP_RE = re.compile(r'정리|비교|모음|총정리|순위|top\s*\d|추천\s*요금제|요금제\s*추천', re.I)
+_PLAN_HINT_RE = re.compile(r'\d+(\.\d+)?\s*(gb|g|기가|mbps)(?![a-z])|\d[\d,]*\s*원', re.I)   # 특정 요금제를 말하는 글
+
+
+def network_status(title, provider=None, network=None):
+    """[v3.7] 망 판정 상태: 'confirmed'(망 확정) / 'unknown'(미확인 - 특정 사업자·요금제 글인데 망을 못 찾음)
+    / 'na'(분류없음 - 질문·잡담·비교정리처럼 특정 망과 무관, 또는 여러 망·사업자를 다룸)"""
+    if network and str(network) not in ('None', 'null', '', '미확인'):
+        return 'confirmed'
+    prov = str(provider or '')
+    if ',' in prov:
+        return 'na'
+    if _ROUNDUP_RE.search(title or ''):   # 정리·비교글 (망을 못 찾은 경우)
+        return 'na'
+    if not prov or prov in ('None', '통신사'):
+        # 사업자는 없어도 특정 요금제(GB·원)를 말하면 망이 있어야 하는 글 → 미확인
+        return 'unknown' if _PLAN_HINT_RE.search(title or '') else 'na'
+    tl = (title or '').lower()
+    nets = sum(bool(re.search(p, tl)) for p in (r'(?<![a-z])skt?(?![a-z])', r'(?<![a-z])kt(?![a-z])', r'lgu|u\+|유플|엘지'))
+    if nets >= 2:
+        return 'na'
+    return 'unknown'
+
+
+def _provider_networks(provider):
+    """[v3.7] 사업자 → 망 후보. AI가 "쉐이크 모바일"처럼 띄어 쓰거나 별칭으로 돌려줘도 찾도록 정규화"""
+    if not provider:
+        return []
+    p = str(provider)
+    if ',' in p:   # 여러 사업자("유모바일, 헬모, SK7") → 망을 합쳐서, 하나로 모일 때만 단일망
+        nets, unknown = [], False
+        for part in (x.strip() for x in p.split(',') if x.strip()):
+            got = _provider_networks(part)
+            if not got:
+                unknown = True
+            nets += [n for n in got if n not in nets]
+        return [] if unknown else nets
+    for key in (p, p.replace(' ', ''), normalize_provider(p) or ''):
+        if key in PROVIDER_NETWORKS:
+            return PROVIDER_NETWORKS[key]
+    return []
+
+
+def resolve_network(title, provider=None, ai_network=None):
+    """[v3.7] 글 하나의 통신망 결정 (메시지·DB 공통): 제목 망 표기 > 단일망 사업자 > AI 판단 >
+    알뜰폰 사업자 글인데 제목에 통신3사 이름이 하나만 나오면 그 망 ("아이즈모바일 SKT 요금제")"""
+    net = extract_network_from_title(title)
+    if net:
+        return net
+    cands = _provider_networks(provider)
+    if len(cands) == 1:
+        return cands[0]
+    # [v3.7] 정리·비교글은 여러 망을 다루므로 AI가 고른 망 하나는 붙이지 않음 (2주 시험에서 오표기 확인).
+    #  단 제목에 통신사가 하나만 나오면("SKT 유심 100원 … 정리") 아래 규칙으로 판단
+    roundup = bool(_ROUNDUP_RE.search(title or ''))
+    multi_prov = ',' in str(provider or '')   # 여러 사업자 글엔 AI가 고른 망 하나를 붙이지 않음
+    if ai_network and not roundup and not multi_prov and str(ai_network) not in ('None', 'null', ''):
+        a = str(ai_network).upper()
+        return 'LGU+' if ('LG' in a or 'U+' in a) else ('SKT' if 'SK' in a else ('KT' if 'KT' in a else None))
+    if provider not in MNO_DIRECT_PROVIDERS:   # 사업자 미상 글도 포함 ("SKT 번호변경 서비스 중단" → SKT)
+        tl = (title or '').lower()
+        hits = set()
+        if re.search(r'(?<![a-z])skt?(?![a-z])', tl):
+            hits.add('SKT')
+        if re.search(r'(?<![a-z])kt(?![a-z])', tl):   # "skt" 안의 kt는 앞 글자 s 때문에 안 걸림
+            hits.add('KT')
+        if re.search(r'lgu|u\+|유플|엘지|(?<![a-z])lg(?![a-z])', tl):
+            hits.add('LGU+')
+        if len(hits) == 1:
+            return hits.pop()
     return None

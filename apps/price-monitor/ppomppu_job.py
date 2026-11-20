@@ -63,9 +63,9 @@ import re
 import html
 import traceback
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
-from core.mvno_classifier import extract_network_from_title, PROVIDER_NETWORKS, PROVIDER_NETWORKS
+from core.mvno_classifier import extract_network_from_title, resolve_network, network_status, PROVIDER_NETWORKS
 
 KOREA_TZ      = pytz.timezone('Asia/Seoul')
 
@@ -159,12 +159,13 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
         content_summary = result.get('content_summary', '')
 
         def star_rating(s):
-            if s >= 7:   return "⭐⭐⭐"
-            elif s >= 4: return "★★☆"
-            elif s >= 2: return "★☆☆"
+            # [v3.7] 9점 이상만 금별 ⭐⭐⭐로 강조, 나머지는 ★ 글자 (사용자 결정 11/19)
+            if s >= 9:   return "⭐⭐⭐"
+            elif s >= 7: return "★★☆"
+            elif s >= 4: return "★☆☆"
             else:        return "☆☆☆"
         # [v2.2] 통신망 결정 우선순위: 제목센싱 > 단일망확정 > AI결과 > 미확인
-        network = extract_network_from_title(post.get('title', '')) or result.get('network') or ''
+        network = resolve_network(post.get('title', ''), provider, result.get('network')) or ''  # [v3.7] DB 저장과 같은 규칙
         if network and network not in ('None', 'null', ''):
             network_str = 'LGU+' if 'LGU' in network or 'U+' in network else network
         else:
@@ -189,14 +190,16 @@ def send_ppomppu_summary(mvno_list, mno_list, days=2, label=""):
             block += f" 본문: {esc(content_summary)}\n"
         # [v2.2] 통신망 표시: 제목센싱/단일망/별3개 → 항상, 나머지 → 확정시만
         needs_check = post.get('_needs_network_check', False)
-        if show_network_always or score >= 7:
+        # [v3.7] 망 없음을 '미확인'(사업자 글인데 못 찾음)과 '분류없음'(질문·잡담·비교 등 망 무관)으로 구분 - 분류없음은 줄 생략
+        if network_str == '미확인' and network_status(post.get('title', ''), provider, None) == 'na':
+            network_str = '분류없음'
+        # [v3.7] 확정·미확인은 항상 표시(중요도 무관), 분류없음(망 무관 글)만 생략
+        if network_str != '분류없음':
             net_display = f"{network_str} ⚠️재확인필요" if needs_check and network_str == '미확인' else network_str
             block += f" 🌐 통신망: {esc(net_display)}\n"
-        elif network_str != '미확인':
-            block += f" 🌐 통신망: {esc(network_str)}\n"
-        elif needs_check:
-            block += f" 🌐 통신망: 미확인 ⚠️재확인필요\n"
         block += f" 👁 {post.get('views', 0):,} | 💬 {post.get('comments', 0)}"
+        if post.get('_surge', {}).get('reason'):   # [v3.7] 왜 급등인지 표시
+            block += f"\n 🔺 {esc(post['_surge']['reason'])} (직전 수집 대비)"
         return block
 
     def send_chunked(header, blocks, max_len=3800):
@@ -411,6 +414,36 @@ def save_community_context(mvno_posts, source="ppomppu", date_str=None):
         import traceback as _tb; log(_tb.format_exc()[-300:])
 
 
+def _surge_reason(post, prev, view_diff, cmt_diff):
+    """[v3.7] 급등 판정 (직전 수집 대비). 해당하면 사유 문자열, 아니면 None
+    - 조회 급증: +5,000 이상, 또는 +2,000 이상이면서 직전의 2배 이상(빠르게 뜨는 중간 규모 글)
+    - 댓글 급증: +20 이상, 또는 +10 이상이면서 직전의 2배 이상·조회 1,000 이상(논쟁 중인 글)
+    - 단순 문의(중요도 3 이하)는 조회 +10,000 이상만
+    - 같은 글은 24시간 안에 다시 급등으로 알리지 않음
+    (11/16 '알뜰 sk망 무제한 어느 통신사가 좋나요?'(조회 444)가 댓글 +5만으로 급등 발송된 문제)"""
+    last = prev.get('last_surge_at')
+    if last is not None:
+        try:
+            if datetime.now(KOREA_TZ) - last < timedelta(hours=24):
+                return None
+        except Exception:
+            pass
+    views, cmts = post.get('views', 0), post.get('comments', 0)
+    pv, pc = prev.get('views', 0) or 0, prev.get('comments', 0) or 0
+    score = post.get('filter_result', {}).get('relevance_score', 5) or 0
+    if score <= 3:
+        return f"조회 +{view_diff:,}" if view_diff >= 10000 else None
+    if view_diff >= 5000:
+        return f"조회 +{view_diff:,}"
+    if view_diff >= 2000 and views >= 2 * max(pv, 1):
+        return f"조회 +{view_diff:,} (2배↑)"
+    if cmt_diff >= 20:
+        return f"댓글 +{cmt_diff}"
+    if cmt_diff >= 10 and cmts >= 2 * max(pc, 1) and views >= 1000:
+        return f"댓글 +{cmt_diff} (2배↑)"
+    return None
+
+
 def main():
     log("🚀 뽐뿌 Job 시작")
     send_log("🔍 뽐뿌 MVNO 모니터링 시작...")
@@ -474,7 +507,7 @@ def main():
 
         # Step 5: 신규 / 급등 / 일반 분류
         SURGE_VIEWS    = 5000  # 조회수 급증 기준
-        SURGE_COMMENTS = 5     # 댓글 급증 기준
+        SURGE_COMMENTS = 20    # 댓글 급증 기준 [v3.7] 5 → 20: 댓글 5개만 늘어도 조회 수백짜리 문의글이 '급등'으로 나가던 문제
 
         new_mvno   = []
         surge_mvno = []
@@ -496,8 +529,9 @@ def main():
                 prev       = existing_posts.get(pid, {})
                 view_diff  = post.get('views', 0)    - prev.get('views', 0)
                 cmt_diff   = post.get('comments', 0) - prev.get('comments', 0)
-                if view_diff >= SURGE_VIEWS or cmt_diff >= SURGE_COMMENTS:
-                    post['_surge'] = {'views_diff': view_diff, 'comments_diff': cmt_diff}
+                reason = _surge_reason(post, prev, view_diff, cmt_diff)
+                if reason:
+                    post['_surge'] = {'views_diff': view_diff, 'comments_diff': cmt_diff, 'reason': reason}
                     # 급등 승격 시 망 미확인 글 → 재확인 플래그
                     fr = post.get('filter_result', {})
                     title_network = extract_network_from_title(post.get('title', ''))
@@ -516,6 +550,12 @@ def main():
                     saved_count += 1
             for post in (surge_mvno + surge_mno):
                 firebase.save_ppomppu_post(post)  # 조회수/댓글 업데이트
+                try:   # [v3.7] 같은 글을 24시간 안에 다시 급등으로 알리지 않도록 기록
+                    firebase.db.collection('ppomppu_monitor').document('posts').collection('all_posts') \
+                        .document(str(post.get('post_id') or post.get('id'))).update({
+                            'last_surge_at': datetime.now(KOREA_TZ), 'last_surge': post.get('_surge', {})})
+                except Exception as e:
+                    log(f"⚠️ 급등 기록 실패: {e}")
             send_log(
                 f"💾 신규저장 {saved_count}개 | "
                 f"급등: MVNO {len(surge_mvno)}개 + MNO {len(surge_mno)}개"

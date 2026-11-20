@@ -662,6 +662,18 @@ def process_new_article(source: dict, article: dict) -> dict:
             except Exception:
                 pass
 
+    # [추가 20261114] 요약본 이미지가 없어(예: 비전이 정책표를 ZIP으로만 올림) 7G/11G를 못 뽑았으면
+    # 원문 아카이브(첨부 엑셀 파싱)를 먼저 돌려 그 결과로 채움
+    archive_res = None
+    if mode == 'image_summary' and not any(
+            isinstance(v, dict) and (v.get('seven') or v.get('eleven')) for v in prices_by_label.values()):
+        archive_res = _run_archive(source, article)
+        rows = (archive_res or {}).get('_plan_rows') or []
+        if rows:
+            import offline_policy_archive as opa
+            prices_by_label = opa.summary_prices_from_plans(rows, source['row_order'])
+            print(f'[{source["msg_prefix"]}] 요약본 이미지 없음 → 첨부 엑셀로 7G/11G 산출: {len(rows)}행')
+
     write_date = datetime.fromtimestamp(article['write_ts_ms'] / 1000, tz=KST)
     round_no = _extract_round_no(article['subject'])
     highlights = extract_highlights(source, detail['body_text'])
@@ -712,8 +724,14 @@ def process_new_article(source: dict, article: dict) -> dict:
     db.collection(source['firestore_collection']).document(doc_id).set(record)
     set_last_seen_article_id(source, article_id)
 
-    # [추가 20261024] 분석용 원문 아카이브 (엑셀·이미지 원본 GCS 보관 + 전 요금제·본문 조건 파싱 →
-    # offline_policy_rounds). 메시지·위 레코드와 별개라 실패해도 알림 흐름엔 영향 없음
+    if archive_res is None:
+        _run_archive(source, article)
+    return record
+
+
+def _run_archive(source: dict, article: dict):
+    """[추가 20261024] 분석용 원문 아카이브 (엑셀·이미지 원본 GCS 보관 + 전 요금제·본문 조건 파싱 →
+    offline_policy_rounds). 실패해도 알림 흐름엔 영향 없음. 반환: archive_article 결과 또는 None"""
     try:
         import offline_policy_archive as opa
         source_key = next(k for k, v in SOURCES.items() if v is source)
@@ -723,10 +741,11 @@ def process_new_article(source: dict, article: dict) -> dict:
         finally:
             driver.quit()
         opa.recompute_effective_periods(source_key)
-        print(f'[archive] {res}')
+        print(f'[archive] { {k: v for k, v in res.items() if k != "_plan_rows"} }')
+        return res
     except Exception as e:
         print(f'[archive] 실패 (메시지 발송과 무관): {e}')
-    return record
+        return None
 
 
 def _get_secret_json(secret_name: str) -> dict:

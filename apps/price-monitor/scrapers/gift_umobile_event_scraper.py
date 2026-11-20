@@ -334,7 +334,9 @@ def parse_images_with_vision(image_urls: list) -> list:
                 contents=[
                     types.Part.from_bytes(data=base64.b64decode(b64), mime_type=mime),
                     GEMINI_VISION_PROMPT,
-                ]
+                ],
+                # [수정 20261030] 이미지 금액 추출은 생각(thinking) 없이 처리 (비용 절감, KT엠 비교 기준)
+                config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0)),
             )
             raw = (resp.text or "[]").strip()
             raw = re.sub(r"^```json\s*|^```\s*|```$", "", raw, flags=re.MULTILINE).strip()
@@ -416,7 +418,8 @@ def parse_text_with_gemini(text: str) -> list:
         resp = client.models.generate_content(
             model=model_name,
             contents=[GEMINI_TEXT_PROMPT + text],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            config=types.GenerateContentConfig(response_mime_type="application/json",
+                                               thinking_config=types.ThinkingConfig(thinking_budget=0)),
         )
         items = json.loads((resp.text or "[]").strip())
     except Exception as e:
