@@ -927,10 +927,13 @@ def _canon_provider(name):
     return shorten(canonical_provider_name(name))
 
 
-def detect_provider_changes(source_label, prev_counts, curr_plans):
+def detect_provider_changes(source_label, prev_counts, curr_plans, prev_plans=None):
     """직전 수집 대비 사업자별 요금제 수 급변 감지 → [{'source','provider','prev','curr','kind'}]"""
     if not prev_counts:
         return []
+    # [v3.7] 모요 API 보충 도입 직후 1회: 직전 수집에 API분이 없었으면 API분은 빼고 비교 (아이즈·모빙 '입점' 오탐 방지)
+    if prev_plans is not None and not any(q.get('source') == 'api' for q in prev_plans):
+        curr_plans = [p for p in (curr_plans or []) if p.get('source') != 'api']
     prev_counts = _canon_counts(prev_counts)   # [v3.7] 이름 통일 전 기록과 비교해도 이탈/입점 오탐이 안 나게
     curr = {}
     for p in curr_plans or []:
@@ -1025,6 +1028,8 @@ def compute_rm_groups(pairs, recent=None):
         if not prev or not curr:
             continue
         a, b = _rm_index(site, prev), _rm_index(site, curr)
+        # [v3.7] 모요 API 보충(웹 미노출분) 도입 직후 1회: 직전 수집에 API분이 없으면 API로 처음 잡힌 요금제는 '신규'로 안 봄
+        api_first = site == 'moyo' and not any(q.get('source') == 'api' for q in prev)
         recent_keys = set()
         for rp in (recent or {}).get(site, []):
             recent_keys |= set(_rm_index(site, rp))
@@ -1042,7 +1047,7 @@ def compute_rm_groups(pairs, recent=None):
             q = a.get(k)
             prov, data = _disp_provider(_canon_provider(p.get('provider'))), _compact_data(p.get('data', ''))
             if q is None:
-                if k in recent_keys:
+                if k in recent_keys or (api_first and p.get('source') == 'api'):
                     continue
                 _add(k[3], {'kind': 'new', 'prov': prov, 'data': data, 'before': '', 'after': _sale_price_txt(p), 'diff': 0})
                 continue
@@ -2852,7 +2857,7 @@ def main():
         for _p in prev_plans:
             _k = (_p.get('provider') or '').strip() or '(미상)'
             prev_moyo_counts[_k] = prev_moyo_counts.get(_k, 0) + 1
-        provider_changes = (detect_provider_changes('모요', prev_moyo_counts, plans)
+        provider_changes = (detect_provider_changes('모요', prev_moyo_counts, plans, prev_plans)
                             + (detect_provider_changes('알닷', prev_aldot_counts, aldot_plans) if aldot_plans else [])
                             + (detect_provider_changes('허브', prev_hub_counts, mvnohub_plans) if mvnohub_plans else []))
         alert_msg = build_provider_alert(provider_changes, moyo_checked_at)
