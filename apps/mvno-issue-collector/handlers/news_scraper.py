@@ -1,0 +1,759 @@
+"""
+handlers/news_scraper.py  v1.4
+작성일: 2026-10-05
+
+[수정 이력]
+[v1.1 / 2026-11-04] Google News 429 재시도·간격 추가, 브리핑 날짜 KST 표시
+[v1.2 / 2026-11-19] RSS 검색도 429 재시도·키워드 간격·건수 로그, 경쟁사 신상품 출시를
+                    광고성으로 버리던 트리아지 기준 수정, 탈락 사유 로그, dry_run+ignore_seen
+[v1.3 / 2026-11-19] 원문 URL 디코딩 실패 시 네이버 뉴스 검색으로 원문 링크 찾기(폴백),
+                    한 번 429로 막히면 그 실행에서는 Google 디코딩을 건너뜀
+[v1.4 / 2026-11-19] 확인 버튼 없이 바로 mvno_issues에 자동 등록 + 결과 메시지에 수정/삭제 버튼.
+                    유사 이슈가 있으면 새로 만들지 않고 기존 이슈 related_articles에 링크 추가.
+                    기사 전용 정제(refine_news_article)로 요약 품질 개선
+
+[개요]
+하루 1회, 알뜰폰/MVNO 관련 뉴스를 Google News RSS에서 수집해
+- 중복/동일 토픽 묶음(Gemini 클러스터링)
+- 광고성/보도자료성 기사 제외
+- 영향도(상/중) 높은 기사만
+선별하여 이슈방(TELEGRAM_CHAT_ID)에 다이제스트로 전송한다.
+
+검색 키워드는 기존 price-monitor(ppomppu/dcinside 통합 수집기)의
+core/mvno_classifier.py에 쓰이는 MVNO_KEYWORDS/_TELECOM_KW/MVNO_PROVIDERS
+분류체계를 참고해 구성 (알뜰폰/MVNO 핵심어 + 정책/요금제 축 포함).
+
+[동작 단계]
+1. RSS 수집: 키워드별 Google News RSS 검색 → (title, source, pubDate, google_link)
+2. 1차 필터: 최근 48시간 이내 + 이미 보낸(Firestore scraped_news_seen) 기사 제외
+3. 2차 Gemini 트리아지 (제목만, 배치 1회): 동일 토픽 클러스터링 → 대표기사 1건 선정
+   + 광고성 여부 + 예비 영향도 판단
+4. 생존 기사만 Google News 리다이렉트 디코딩 → 원문 URL → 본문 크롤링
+   (input_handler._fetch_article 재사용)
+5. 3차 Gemini 확인 (본문 포함, 배치 1회): 최종 영향도/광고성 재확인 + 1~2줄 시사점
+6. 영향도 상/중 & 비광고성만 채택 → Firestore에 seen 기록 → 다이제스트 전송
+"""
+
+import os
+import re
+import json
+import logging
+import hashlib
+import difflib
+import time
+from datetime import datetime, timezone, timedelta
+from urllib.parse import quote, urlparse, parse_qs, urljoin
+
+import requests
+from bs4 import BeautifulSoup
+from google.cloud import firestore
+import google.generativeai as genai
+
+from handlers.input_handler import _fetch_article
+from handlers.gemini_refiner import refine_input, refine_news_article
+from handlers.duplicate_checker import check_duplicate
+from handlers.news_drafts import save_draft
+from handlers.firestore_writer import save_issue
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ID = os.environ.get("GCP_PROJECT", "mvno-484509")
+DATABASE = "mvno-data"
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+SEEN_COLLECTION = "scraped_news_seen"
+SEEN_TTL_DAYS = 14
+KST = timezone(timedelta(hours=9))
+
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# [키워드 - 20261005] price-monitor/core/mvno_classifier.py의
+# MVNO_KEYWORDS(\b알뜰폰\b, \bMVNO\b 등) + _TELECOM_KW(요금제/도매대가류 정책어) 체계를
+# "검색어" 용도로 압축. 분류기처럼 수십개 사업자명까지 쓰지 않는 이유는 Google News가
+# "알뜰폰"/"MVNO" 두 핵심어만으로도 사업자 개별 뉴스를 충분히 끌어오기 때문(실측 확인:
+# "알뜰폰" 검색 결과에 KT Japan 'tt mobile' 등 사업자발 뉴스도 자연히 포함됨).
+NEWS_SEARCH_KEYWORDS = [
+    "알뜰폰",
+    "MVNO",
+    "알뜰폰 요금제",
+    "알뜰폰 정책",
+]
+
+_db = None
+
+
+def get_db():
+    global _db
+    if _db is None:
+        _db = firestore.Client(project=PROJECT_ID, database=DATABASE)
+    return _db
+
+
+# ───────────────────────── RSS 수집 ─────────────────────────
+
+def _fetch_rss(keyword: str) -> list[dict]:
+    # [수정 20261119] RSS 검색 자체가 429를 받아 키워드가 통째로 빠지던 문제
+    # (실측: 11/17 07:45 '알뜰폰'·'알뜰폰 정책' 429 → 후보 1건). 디코딩과 같은 백오프 재시도.
+    url = f"https://news.google.com/rss/search?q={quote(keyword)}&hl=ko&gl=KR&ceid=KR:ko"
+    resp = _request_with_backoff("GET", url, headers={"User-Agent": UA})
+    if resp is None or resp.status_code != 200:
+        logger.warning(f"RSS 수집 실패 ({keyword}): {getattr(resp, 'status_code', 'error')}")
+        return []
+
+    soup = BeautifulSoup(resp.text, "xml")
+    if not soup.find("rss"):
+        # 200이지만 RSS가 아닌 페이지(차단/동의 화면 등)를 받은 경우 - 조용히 0건이 되지 않게 로그
+        logger.warning(f"RSS 응답이 RSS 형식이 아님 ({keyword}): {resp.text[:120]!r}")
+        return []
+    items = []
+    for it in soup.find_all("item"):
+        title_el = it.find("title")
+        link_el = it.find("link")
+        pub_el = it.find("pubDate")
+        src_el = it.find("source")
+        if not (title_el and link_el):
+            continue
+        items.append({
+            "title": title_el.text.strip(),
+            "google_link": link_el.text.strip(),
+            "source": src_el.text.strip() if src_el else "",
+            "source_url": src_el.get("url", "") if src_el else "",
+            "pub_date": pub_el.text.strip() if pub_el else "",
+            "keyword": keyword,
+        })
+    return items
+
+
+def _parse_pubdate(pub_date: str) -> datetime | None:
+    # RFC822 포맷: "Mon, 05 Oct 2026 03:00:00 GMT"
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(pub_date)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _collect_candidates(hours: int = 48) -> list[dict]:
+    seen_titles = set()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    candidates = []
+
+    for i, kw in enumerate(NEWS_SEARCH_KEYWORDS):
+        if i:
+            time.sleep(DECODE_INTERVAL_SEC)
+        fetched = _fetch_rss(kw)
+        logger.info(f"RSS '{kw}': {len(fetched)}건")
+        for item in fetched:
+            title = item["title"]
+            if title in seen_titles:
+                continue
+            pub_dt = _parse_pubdate(item["pub_date"])
+            if pub_dt and pub_dt < cutoff:
+                continue
+            seen_titles.add(title)
+            candidates.append(item)
+
+    return candidates
+
+
+# ───────────────────────── seen 체크 (Firestore) ─────────────────────────
+
+def _title_hash(title: str) -> str:
+    normalized = re.sub(r"\s+", "", title)
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def _filter_unseen(candidates: list[dict]) -> list[dict]:
+    db = get_db()
+    unseen = []
+    for c in candidates:
+        doc_id = _title_hash(c["title"])
+        if db.collection(SEEN_COLLECTION).document(doc_id).get().exists:
+            continue
+        c["_seen_doc_id"] = doc_id
+        unseen.append(c)
+    return unseen
+
+
+def _mark_seen(items: list[dict]):
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    batch = db.batch()
+    for item in items:
+        ref = db.collection(SEEN_COLLECTION).document(item["_seen_doc_id"])
+        batch.set(ref, {
+            "title": item["title"],
+            "source": item.get("source", ""),
+            "seen_at": now.isoformat(),
+        })
+    batch.commit()
+
+
+# ───────────────────────── Google News 리다이렉트 디코딩 ─────────────────────────
+
+_SG = re.compile(r'data-n-a-sg="([^"]+)"')
+_TS = re.compile(r'data-n-a-ts="([^"]+)"')
+_BATCHEXECUTE_URL = "https://news.google.com/_/DotsSplashUi/data/batchexecute"
+_GARTURLREQ_CTX = [
+    ["X", "X", ["X", "X"], None, None, 1, 1, "KR:ko", None, 1, None, None, None, None, None, 0, 1],
+    "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0,
+]
+
+
+def _article_id(google_link: str) -> str | None:
+    try:
+        url = urlparse(google_link)
+        path = url.path.split("/")
+        if url.hostname == "news.google.com" and len(path) > 1 and path[-2] in ("articles", "read"):
+            return path[-1] or None
+    except Exception:
+        return None
+    return None
+
+
+# [수정 20261104] 운영(Cloud Run)에서 batchexecute가 간헐적으로 429(Too Many Requests,
+# google.com/sorry)를 받아 원문 URL 디코딩이 실패 → 본문 없이 제목만으로 판정되고 브리핑
+# 링크도 news.google.com 리다이렉트로 남았음 (실측: 2026-11-04 07:45 실행 2건 모두 429).
+# 429/503은 잠깐 쉬었다가 재시도하고, 기사 사이에도 간격을 둬서 연속 호출을 줄임.
+_RETRY_STATUS = (429, 503)
+_RETRY_WAITS = (3, 8, 15)  # 초. 최악 26초/건, 생존 기사는 보통 몇 건이라 540s 타임아웃 안쪽
+DECODE_INTERVAL_SEC = 2
+
+
+def _request_with_backoff(method: str, url: str, **kwargs) -> requests.Response | None:
+    for attempt in range(len(_RETRY_WAITS) + 1):
+        try:
+            resp = requests.request(method, url, timeout=10, **kwargs)
+        except Exception as e:
+            logger.warning(f"요청 실패 ({method} {url[:60]}): {e}")
+            resp = None
+        if resp is not None and resp.status_code not in _RETRY_STATUS:
+            return resp
+        if attempt < len(_RETRY_WAITS):
+            wait = _RETRY_WAITS[attempt]
+            code = resp.status_code if resp is not None else "error"
+            logger.warning(f"Google News {code} → {wait}초 후 재시도 ({attempt + 1}/{len(_RETRY_WAITS)})")
+            time.sleep(wait)
+    return resp
+
+
+# ───────────────────────── 네이버 뉴스 폴백 ─────────────────────────
+# [수정 20261119] Cloud Run 출구 IP에서 Google batchexecute가 재시도해도 계속 429라
+# (실측 11/19: 3회 백오프 후에도 실패) 원문 URL을 못 찾고 제목만으로 판정됨.
+# 디코딩에 실패하면 네이버 뉴스 검색(키 불필요)에서 같은 제목의 기사를 찾아 언론사 원문
+# 링크를 쓴다. 네이버 검색 결과의 클래스명은 자주 바뀌므로 특정 셀렉터에 의존하지 않고
+# "제목 텍스트가 가장 비슷한 링크"를 고른다.
+NAVER_SEARCH_URL = "https://search.naver.com/search.naver"
+NAVER_MATCH_MIN = 0.75
+
+
+def _norm_title(t: str) -> str:
+    return re.sub(r"[\W_]+", "", t).lower()
+
+
+def _strip_source_suffix(title: str, source: str) -> str:
+    # Google News 제목은 "제목 - 언론사" 형식
+    if source and title.endswith(f" - {source}"):
+        return title[: -len(source) - 3]
+    return title.rsplit(" - ", 1)[0] if " - " in title else title
+
+
+def _domain_key(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_press(href: str, source_url: str) -> bool:
+    key = _domain_key(source_url)
+    host = _domain_key(href)
+    return bool(key) and (host == key or host.endswith("." + key))
+
+
+def _naver_find_article_url(title: str, source: str = "", source_url: str = "") -> str | None:
+    cands = _naver_candidates(title, source, source_url)
+    return cands[0] if cands else None
+
+
+def _naver_candidates(title: str, source: str = "", source_url: str = "") -> list[str]:
+    """네이버 뉴스 검색에서 제목이 같은(유사도 기준 이상) 기사 링크들을 점수순으로 반환.
+    첫 번째가 같은 언론사 우선 매칭. 나머지는 같은 보도를 실은 다른 매체 (본문 대체용)."""
+    query = _strip_source_suffix(title, source)
+    try:
+        resp = requests.get(NAVER_SEARCH_URL, params={"where": "news", "query": query},
+                            headers={"User-Agent": UA}, timeout=10)
+        if resp.status_code != 200:
+            logger.warning(f"네이버 뉴스 검색 실패 ({resp.status_code}): {query}")
+            return []
+    except Exception as e:
+        logger.warning(f"네이버 뉴스 검색 오류: {e}")
+        return []
+
+    target = _norm_title(query)
+    scored: dict[str, float] = {}
+    for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http") or "search.naver.com" in href:
+            continue
+        text = a.get_text(" ", strip=True).replace("새 창 열림", "")
+        if len(text) < 8:
+            continue
+        ratio = difflib.SequenceMatcher(None, target, _norm_title(text)).ratio()
+        # 같은 보도자료라 제목이 똑같은 매체가 여러 곳 → RSS <source url>의 언론사 도메인과 같은 링크 우선
+        if ratio >= NAVER_MATCH_MIN and _same_press(href, source_url):
+            ratio += 0.1
+        if ratio > scored.get(href, 0.0):
+            scored[href] = ratio
+    ranked = [h for h, r in sorted(scored.items(), key=lambda x: -x[1]) if r >= NAVER_MATCH_MIN]
+    if ranked:
+        logger.info(f"네이버 폴백 성공({min(scored[ranked[0]], 1.0):.2f}, 후보 {len(ranked)}건): {ranked[0]}")
+    else:
+        best = max(scored.values(), default=0.0)
+        logger.warning(f"네이버 폴백 실패(최고 유사도 {best:.2f}): {query}")
+    return ranked
+
+
+def _decode_google_news_url(google_link: str) -> str | None:
+    """Google News RSS의 리다이렉트 링크를 실제 기사 URL로 디코딩."""
+    art_id = _article_id(google_link)
+    if not art_id:
+        return None
+
+    page_url = f"https://news.google.com/rss/articles/{art_id}?hl=ko&gl=KR&ceid=KR:ko"
+    resp = _request_with_backoff("GET", page_url, headers={"User-Agent": UA})
+    if resp is None or resp.status_code != 200:
+        logger.warning(f"Google News 페이지 조회 실패: {getattr(resp, 'status_code', 'error')}")
+        return None
+
+    sg_m = _SG.search(resp.text)
+    ts_m = _TS.search(resp.text)
+    if not (sg_m and ts_m):
+        return None
+
+    inner = ["garturlreq", _GARTURLREQ_CTX, art_id,
+             int(ts_m.group(1)) if ts_m.group(1).isdigit() else ts_m.group(1), sg_m.group(1)]
+    envelope = [["Fbv4je", json.dumps(inner, separators=(",", ":")), None, "0"]]
+    body = f"f.req={quote(json.dumps([envelope], separators=(',', ':')))}"
+
+    try:
+        r2 = _request_with_backoff(
+            "POST", _BATCHEXECUTE_URL,
+            headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", "User-Agent": UA},
+            data=body,
+        )
+        if r2 is None:
+            raise RuntimeError("응답 없음")
+        r2.raise_for_status()
+    except Exception as e:
+        logger.warning(f"batchexecute 요청 실패: {e}")
+        return None
+
+    text = r2.text
+    if "\n\n" in text:
+        text = text.split("\n\n", 1)[1]
+    try:
+        rows = json.loads(text.lstrip())
+    except Exception as e:
+        logger.warning(f"batchexecute 응답 파싱 실패: {e}")
+        return None
+
+    for row in rows:
+        if not (isinstance(row, list) and len(row) >= 3):
+            continue
+        if row[0] == "wrb.fr" or (len(row) > 1 and row[1] == "Fbv4je"):
+            payload = row[2]
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    continue
+            if isinstance(payload, list) and payload and payload[0] == "garturlres":
+                return payload[1]
+    return None
+
+
+# ───────────────────────── Gemini 트리아지 ─────────────────────────
+
+_TRIAGE_PROMPT = """당신은 SKT MVNO(알뜰폰) 팀의 뉴스 모니터링 담당자입니다.
+아래는 오늘 수집된 알뜰폰/MVNO 관련 뉴스 제목 목록입니다 (번호, 제목, 출처, 키워드).
+
+[작업]
+1. 같은 사건/이슈를 다루는 기사들을 하나의 클러스터로 묶으세요 (여러 언론사가 동일 사건을
+   보도하는 경우가 많습니다. 예: 여러 매체가 같은 신제품 출시를 각자 보도).
+2. 각 클러스터마다 대표 기사 1건만 선택하세요 (가능하면 통신/IT 전문지나 주요 언론사:
+   연합뉴스, 뉴시스, 전자신문(etnews), 지디넷코리아, 디지털데일리 등을 우선. 없으면 가장
+   상세해 보이는 제목을 선택).
+3. 각 대표 기사에 대해 판단하세요:
+   - relevant: SKT MVNO 팀 업무와 실제로 관련있는 알뜰폰/MVNO 산업 뉴스인가?
+     (단순 통신 일반 뉴스, 알뜰폰과 무관한 내용은 false)
+   - advertorial: 분석 가치 없이 판매만 유도하는 단순 홍보 기사인가?
+     (예: 이미 있는 요금제의 할인 이벤트·사은품·기념 행사 안내, "지금 가입하면 혜택" 식 기사는 true.)
+     ※ 주요 경쟁 MVNO(KT엠모바일, U+유모바일, LG헬로비전/헬로모바일, KT스카이라이프, 스마텔,
+       세종텔레콤, 프리텔레콤, 아이즈모바일 등)나 MNO·금융권·빅테크의 **신규 요금제/서비스/
+       브랜드/타깃 고객층 출시**는 보도자료 형태여도 경쟁 동향이므로 advertorial=false.
+       같은 출시를 여러 매체가 동시에 보도할수록 업계 주목도가 높다는 신호입니다.
+     정책/규제/시장동향/경쟁구도/실적 등 분석 가치가 있는 기사도 false.
+   - impact_level: 제목만으로 예비 판단한 영향도 (상/중/하).
+     SKT MVNO의 가입자·매출·정책대응에 영향을 줄 수 있는 규제/정책/대형 경쟁사 동향은 상,
+     경쟁사 신규 요금제·서비스·타깃 고객층 출시, 개별 사업자 소식/통계는 중,
+     기존 상품 홍보·사소한 소식은 하.
+
+[출력]
+JSON 배열만 출력 (마크다운 코드블록 금지). 각 원소:
+{{"index": 대표기사의 원래 번호, "relevant": true/false, "advertorial": true/false, "impact_level": "상|중|하"}}
+relevant=false 이거나 advertorial=true 이거나 impact_level="하" 인 클러스터도 모두 포함해서 반환하세요
+(이후 단계에서 필터링합니다). 클러스터에 속하지 않고 대표로 뽑히지 않은 번호는 출력하지 마세요.
+
+[뉴스 목록]
+{items}
+"""
+
+
+def _gemini_json(prompt: str) -> list | dict | None:
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        raw = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(raw)
+    except Exception as e:
+        logger.error(f"Gemini 트리아지 오류: {e}", exc_info=True)
+        return None
+
+
+def _triage_titles(candidates: list[dict]) -> list[dict]:
+    lines = []
+    for i, c in enumerate(candidates):
+        lines.append(f"{i}. {c['title']} | 출처: {c.get('source','')} | 검색어: {c.get('keyword','')}")
+    prompt = _TRIAGE_PROMPT.format(items="\n".join(lines))
+
+    result = _gemini_json(prompt)
+    if not isinstance(result, list):
+        logger.warning("Gemini 트리아지 응답이 리스트가 아님, 전체 스킵")
+        return []
+
+    survivors = []
+    for verdict in result:
+        try:
+            idx = int(verdict.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if idx < 0 or idx >= len(candidates):
+            continue
+        reason = ("무관" if not verdict.get("relevant") else
+                  "광고성" if verdict.get("advertorial") else
+                  f"영향도 {verdict.get('impact_level')}" if verdict.get("impact_level") not in ("상", "중") else None)
+        if reason:
+            logger.info(f"1차 탈락({reason}): {candidates[idx]['title']}")
+            continue
+        item = dict(candidates[idx])
+        item["_prelim_impact"] = verdict.get("impact_level")
+        survivors.append(item)
+    return survivors
+
+
+_CONFIRM_PROMPT = """당신은 SKT MVNO(알뜰폰) 팀의 뉴스 모니터링 담당자입니다.
+아래 기사의 제목과 본문 일부를 보고 최종 판단해주세요.
+
+[팀 포지션]
+당사: SKT MVNO 운영사. 경쟁사: KT계열(KTM), LG계열(유모바일/헬로모바일) MVNO.
+
+[판단 기준]
+- advertorial=true는 기존 상품 할인·사은품·행사 안내처럼 분석 가치 없는 판매 유도 기사만.
+  경쟁사(MVNO·MNO·금융권·빅테크)의 신규 요금제/서비스/타깃 고객층 출시는 보도자료여도
+  경쟁 동향이므로 advertorial=false, impact_level은 최소 '중'.
+
+[기사]
+제목: {title}
+출처: {source}
+본문:
+{content}
+
+[출력] JSON만 (마크다운 코드블록 금지):
+{{
+  "relevant": true/false,
+  "advertorial": true/false,
+  "impact_level": "상|중|하",
+  "one_line": "SKT MVNO 관점에서 이 기사가 왜 중요한지 1문장 (막연한 '모니터링 필요' 금지, 구체적으로)"
+}}
+"""
+
+
+def _confirm_with_content(item: dict) -> dict | None:
+    content = item.get("content", "")[:2500]
+    prompt = _CONFIRM_PROMPT.format(
+        title=item["title"], source=item.get("source", ""), content=content or "(본문 추출 실패, 제목만으로 판단)"
+    )
+    return _gemini_json(prompt)
+
+
+# ───────────────────────── 등록 draft 생성 ─────────────────────────
+
+def _make_draft_id(item: dict) -> str:
+    raw = (item.get("url") or item["google_link"]) + item["title"]
+    return "n" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:11]
+
+
+def _pub_date_kst(pub_date: str) -> str:
+    dt = _parse_pubdate(pub_date)
+    return dt.astimezone(KST).strftime("%Y-%m-%d") if dt else ""
+
+
+def _build_issue_draft(item: dict) -> dict | None:
+    """기사 → mvno_issues 레코드. 기사 전용 정제를 먼저 쓰고, 실패하면 기존 refine_input으로 폴백.
+    source는 자동수집 정보로 덮어씀."""
+    content = item.get("content") or ""
+    record = refine_news_article(item["title"], item.get("source", ""), item.get("url", ""),
+                                 _pub_date_kst(item.get("pub_date", "")), content)
+    if not record:
+        raw_input = (
+            f"[기사 제목: {item['title']}]\n[출처: {item.get('source','')}]\n[URL: {item.get('url','')}]\n\n"
+            f"{content or '(본문 추출 실패)'}"
+        )
+        result = refine_input(raw_input)
+        if not result:
+            return None
+        record = result[0] if isinstance(result, list) else result
+    record["_collection"] = "mvno_issues"  # 뉴스는 항상 이슈 DB
+    record["source"] = {
+        "type": "기사URL",
+        "origin": item.get("source", ""),
+        "ref": item.get("url", ""),
+        "title": item["title"],
+        "published_at": _format_pub_date(item.get("pub_date", "")),
+        "raw_input": content[:4000],
+    }
+    tags = set(record.get("tags") or []) | {"자동수집"}
+    if not content:
+        tags.add("본문미확보")
+    record["tags"] = sorted(tags)
+    record.setdefault("status", "확인중")
+    return record
+
+
+def _link_to_existing(dup_id: str, item: dict) -> bool:
+    """유사 이슈가 이미 있으면 새 문서를 만들지 않고 기존 문서에 기사 링크만 추가 (내용은 건드리지 않음)."""
+    try:
+        get_db().collection("mvno_issues").document(dup_id).update({
+            "related_articles": firestore.ArrayUnion([{
+                "title": item["title"], "url": item.get("url", ""), "source": item.get("source", ""),
+                "added_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+            }]),
+        })
+        return True
+    except Exception as e:
+        logger.error(f"기존 이슈 링크 추가 실패 ({dup_id}): {e}")
+        return False
+
+
+def _format_pub_date(pub_date: str) -> str:
+    dt = _parse_pubdate(pub_date)
+    if not dt:
+        return "-"
+    kst = dt.astimezone(KST)
+    return kst.strftime("%m/%d %H:%M")
+
+
+def _build_registered_entry(index: int, e: dict) -> str:
+    item, record = e["item"], e["record"]
+    mark = "🔴" if record.get("impact_level", item["impact_level"]) == "상" else "🟡"
+    title_link = f'<a href="{item["url"]}">{_html(item["title"])}</a>'
+    lines = [
+        f"{index}. {mark} <b>{title_link}</b>",
+        f"   🏷 {record.get('category','-')} | 📡 {record.get('network','-')} | 📅 {_format_pub_date(item.get('pub_date',''))}",
+        f"   📝 {_html(record.get('summary', ''))}",
+    ]
+    impl = (record.get("implication") or "").strip()
+    if impl:
+        # 메시지엔 ②(당사 영향)를 우선 노출, 없으면 첫 문단
+        parts = re.split(r"(?=[①②③])", impl)
+        first = next((p for p in parts if p.startswith("②")), parts[0] if parts[0].strip() else (parts[1] if len(parts) > 1 else impl)).strip()
+        lines.append(f"   💡 {_html(first[:220])}{'…' if len(first) > 220 else ''}")
+    if e["dup"]:
+        state = "추가함" if e["linked"] else "추가 안 됨"
+        lines.append(f"   🔗 유사 이슈 있음 → 기존 이슈에 기사 링크 {state}: {_html(e['dup']['id'])}")
+    elif e["doc_id"]:
+        lines.append(f"   🆔 {_html(e['doc_id'])}")
+    if "본문미확보" in (record.get("tags") or []):
+        lines.append("   ⚠️ 본문 미확보 - 제목 기준 작성")
+    return "\n".join(lines)
+
+
+def _html(t: str) -> str:
+    return (t or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _build_compact_entry(index: int, item: dict, record: dict, dup: dict | None) -> str:
+    mark = "🔴" if item["impact_level"] == "상" else "🟡"
+    title_link = f'<a href="{item["url"]}">{item["title"]}</a>'
+    lines = [
+        f"{index}. {mark} <b>{title_link}</b>",
+        f"   🏷 {record.get('category','-')} | 📡 {record.get('network','-')} | 출처: {item.get('source','')} | 📅 {_format_pub_date(item.get('pub_date',''))}",
+        f"   💬 {item['one_line']}",
+    ]
+    if dup:
+        lines.append(f"   ⚠️ 유사 이슈 있음: {dup['id']}")
+    return "\n".join(lines)
+
+
+# ───────────────────────── 메인 파이프라인 ─────────────────────────
+
+def run_daily_news_scrape(dry_run: bool = False, ignore_seen: bool = False) -> str:
+    """일일 뉴스 스크랩 파이프라인 실행. 반환값은 전송(또는 미전송)한 다이제스트 텍스트.
+    ignore_seen은 dry_run일 때만 유효 (이미 처리된 기사로 판정 기준을 재검증하는 용도)."""
+    candidates = _collect_candidates()
+    logger.info(f"수집된 후보: {len(candidates)}건")
+    if not candidates:
+        return "📭 수집된 알뜰폰 관련 뉴스가 없습니다."
+
+    if dry_run and ignore_seen:
+        for c in candidates:
+            c["_seen_doc_id"] = _title_hash(c["title"])
+    else:
+        candidates = _filter_unseen(candidates)
+    logger.info(f"미전송 후보: {len(candidates)}건")
+    if not candidates:
+        return "📭 신규(미전송) 알뜰폰 관련 뉴스가 없습니다."
+
+    survivors = _triage_titles(candidates)
+    logger.info(f"1차 트리아지 생존: {len(survivors)}건")
+    if not survivors:
+        if not dry_run:
+            _mark_seen(candidates)
+        return "📭 영향도 높은 신규 알뜰폰 뉴스가 없습니다 (광고성/저영향 기사 제외됨)."
+
+    # 1차 트리아지에서 제목만으로 걸러진 건들은 그대로 seen 처리 (제목은 안 바뀌므로
+    # 재평가해도 같은 결과). survivors는 _triage_titles에서 dict(...)로 복사된 새
+    # 객체라 title로만 원본 candidates와 매칭 가능 (title은 _collect_candidates에서
+    # 이미 중복 제거되어 유일함).
+    survivor_titles = {s["title"] for s in survivors}
+    seen_candidates = [c for c in candidates if c["title"] not in survivor_titles]
+
+    final_items = []
+    google_blocked = False  # 한 번 막히면 이번 실행에서는 Google 디코딩 생략 (건당 26초 낭비 방지)
+    for n, item in enumerate(survivors):
+        if n:
+            time.sleep(DECODE_INTERVAL_SEC)
+        real_url = None if google_blocked else _decode_google_news_url(item["google_link"])
+        if not real_url:
+            google_blocked = True
+            real_url = _naver_find_article_url(item["title"], item.get("source", ""), item.get("source_url", ""))
+        if not real_url:
+            logger.warning(f"원문 URL 찾기 실패(Google·네이버) → 제목만으로 판정: {item['title']}")
+        item["url"] = real_url or item["google_link"]
+        content = _fetch_article(real_url) if real_url else None
+        if not content or len(content) < 300:
+            # [수정 20261119] 원문 사이트에서 본문을 못 읽으면(차단·JS 렌더링 등) 같은 보도를 실은
+            # 다른 매체 기사에서 본문을 가져옴. 링크는 원래 언론사 것을 유지.
+            for alt in _naver_candidates(item["title"], item.get("source", ""), item.get("source_url", ""))[:4]:
+                if alt == real_url:
+                    continue
+                alt_content = _fetch_article(alt)
+                if alt_content and len(alt_content) >= 300:
+                    logger.info(f"본문 대체 확보: {alt}")
+                    content = alt_content
+                    if not real_url:
+                        item["url"] = alt
+                    break
+        item["content"] = content or ""
+        content_fetch_failed = not content
+
+        verdict = _confirm_with_content(item)
+        if not verdict:
+            # Gemini 확인 실패 시 1차 트리아지 결과로 대체 (보수적으로 포함)
+            item["impact_level"] = item.get("_prelim_impact", "중")
+            item["one_line"] = item["title"]
+            final_items.append(item)
+            seen_candidates.append(item)
+            continue
+
+        rejected = (not verdict.get("relevant") or verdict.get("advertorial")
+                    or verdict.get("impact_level") not in ("상", "중"))
+        if rejected:
+            logger.info(f"최종 탈락(relevant={verdict.get('relevant')}, advertorial={verdict.get('advertorial')}, "
+                        f"영향도={verdict.get('impact_level')}): {item['title']}")
+            # [수정 20261006] 본문 크롤링이 (타임아웃 등 일시적 오류로) 실패해서
+            # 제목만 보고 탈락한 경우는 seen 처리하지 않음 - 다음 실행에서 사이트가
+            # 복구되면 본문까지 포함해 다시 평가받을 기회를 줌. 실측: metroseoul.co.kr
+            # 접속 타임아웃으로 탈락한 기사가 영구 seen 처리되어 다시 뜨지 않았음.
+            # 본문을 실제로 읽고 탈락시킨 경우는 근거가 있는 판단이므로 그대로 seen.
+            if not content_fetch_failed:
+                seen_candidates.append(item)
+            continue
+
+        item["impact_level"] = verdict["impact_level"]
+        item["one_line"] = verdict.get("one_line", item["title"])
+        final_items.append(item)
+        seen_candidates.append(item)
+
+    if not dry_run:
+        _mark_seen(seen_candidates)
+
+    if not final_items:
+        return "📭 영향도 높은 신규 알뜰폰 뉴스가 없습니다 (최종 확인 단계에서 제외됨)."
+
+    final_items.sort(key=lambda x: 0 if x["impact_level"] == "상" else 1)
+
+    # [수정 20261119] 확인 버튼을 거치지 않고 바로 mvno_issues에 등록 (팀 요청).
+    # 결과 메시지에 기사별 ✏️수정 / 🗑삭제 버튼을 달아 잘못 들어간 건 바로 고칠 수 있게 함.
+    # 콜백데이터 64바이트 제한 때문에 문서ID(한글) 대신 짧은 키를 news_drafts에 매핑해 둠.
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    entries = []
+    for it in final_items:
+        record = _build_issue_draft(it)
+        if not record:
+            logger.error(f"이슈 정제 실패, 건너뜀: {it['title']}")
+            continue
+        if dry_run:
+            logger.info("[dry_run 정제결과] " + json.dumps({k: record.get(k) for k in
+                        ("event_date", "summary", "detail", "implication", "follow_up", "impact_level", "refine_model")},
+                        ensure_ascii=False))
+        dup = check_duplicate(record)
+        key = _make_draft_id(it)
+        doc_id, linked = None, False
+        if not dry_run:
+            if dup:
+                linked = _link_to_existing(dup["id"], it)
+            else:
+                doc_id = save_issue(record, "mvno_issues")
+                if doc_id:
+                    save_draft(key, {"doc_id": doc_id})
+        entries.append({"item": it, "record": record, "dup": dup, "doc_id": doc_id, "linked": linked, "key": key})
+
+    if not entries:
+        return "📭 영향도 높은 신규 알뜰폰 뉴스가 없습니다 (정제 실패)."
+
+    new_cnt = sum(1 for e in entries if not e["dup"])
+    header = f"📰 <b>알뜰폰 뉴스 브리핑</b> ({today}) - 이슈 DB 신규 등록 {new_cnt}건"
+    if len(entries) > new_cnt:
+        header += f", 기존 이슈에 기사 추가 {len(entries) - new_cnt}건"
+
+    MAX_ENTRIES_PER_MESSAGE = 6
+    shown = entries[:MAX_ENTRIES_PER_MESSAGE]
+    body = "\n\n".join(_build_registered_entry(i, e) for i, e in enumerate(shown, start=1))
+    text = f"{header}\n\n{body}"
+    if len(entries) > len(shown):
+        text += f"\n\n(외 {len(entries) - len(shown)}건 등록됨 - /summary 또는 DB에서 확인)"
+    if len(text) > 4000:
+        text = text[:3990] + "…"
+
+    buttons = []
+    for i, e in enumerate(shown, start=1):
+        if e["doc_id"]:
+            buttons.append([
+                {"text": f"✏️ {i}번 수정", "callback_data": f"newsdoc:edit:{e['key']}"},
+                {"text": f"🗑 {i}번 삭제", "callback_data": f"newsdoc:del:{e['key']}"},
+            ])
+
+    if not dry_run:
+        from handlers.telegram import send_message_with_buttons, send_message
+        if CHAT_ID:
+            if buttons:
+                send_message_with_buttons(CHAT_ID, text, buttons)
+            else:
+                send_message(CHAT_ID, text)
+            logger.info(f"뉴스 자동등록 완료: 신규 {new_cnt}건, 기존연결 {len(entries) - new_cnt}건")
+        else:
+            logger.error("TELEGRAM_CHAT_ID 환경변수 없음")
+
+    return text

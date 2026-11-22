@@ -85,6 +85,35 @@ def daily_report():
     return jsonify({"ok": True})
 
 
+@app.route("/daily-news", methods=["POST", "GET"])
+def daily_news():
+    """알뜰폰 뉴스 스크랩 → 영향도 높은 신규 기사만 이슈방 전송 (Cloud Scheduler 일 1회 호출)
+
+    [수정 20261005] 백그라운드 스레드로 돌리면 HTTP 응답이 즉시 끝난 뒤 Cloud Run이
+    CPU를 스로틀링해서 스레드가 수 분간 멈춰버림(실측: 트리아지 이후 멈췄다가 /health
+    핑을 보내야 재개됨). RSS 수집→Gemini 트리아지→본문크롤링→Gemini 확인까지 전체
+    파이프라인이 수 분 걸리므로, 요청 안에서 동기로 끝까지 실행하고 응답으로 완료를
+    알림 (Cloud Scheduler 쪽 attempt-deadline / Cloud Run --timeout도 맞춰 늘려둠).
+    """
+    from handlers.news_scraper import run_daily_news_scrape
+    dry_run = request.args.get("dry_run", "").lower() == "true"
+    ignore_seen = request.args.get("ignore_seen", "").lower() == "true"
+    digest = run_daily_news_scrape(dry_run=dry_run, ignore_seen=ignore_seen)
+    return jsonify({"ok": True, "dry_run": dry_run, "digest": digest})
+
+
+@app.route("/news-backfill", methods=["POST", "GET"])
+def news_backfill():
+    """[추가 20261119] 과거 뉴스 백필(평가용). 시간 예산만큼 진행 후 상태 반환, 반복 호출로 재개.
+    결과는 news_backfill* 컬렉션에만 저장 (mvno_issues/텔레그램 미사용)."""
+    from handlers.news_backfill import run_backfill_step
+    run_id = request.args.get("run", "bf_1y")
+    max_refine = request.args.get("max_refine")
+    state = run_backfill_step(run_id, request.args.get("start"), request.args.get("end"),
+                              int(max_refine) if max_refine else None)
+    return jsonify({"ok": True, "state": state})
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)

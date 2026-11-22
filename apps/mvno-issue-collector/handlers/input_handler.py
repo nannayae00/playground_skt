@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 URL_PATTERN = re.compile(r'https?://[^\s]+')
 
 
+def _looks_like_body(text: str) -> bool:
+    """메뉴/카테고리 나열(짧은 줄 다수)이 아니라 문장형 본문인지 대략 판별."""
+    lines = [l for l in text.split("\n") if l.strip()]
+    if not lines:
+        return False
+    long_chars = sum(len(l) for l in lines if len(l) >= 25)
+    return long_chars >= 0.5 * sum(len(l) for l in lines)
+
+
 def _fetch_article(url: str) -> str | None:
     """기사 URL에서 본문 텍스트 추출"""
     try:
@@ -54,8 +63,16 @@ def _fetch_article(url: str) -> str | None:
         #     셀렉터로 넘어가 기자정보/저작권 박스를 줍게 됨(실무자 보고 증상과
         #     정확히 일치, 실제 URL로 재현 확인함). <p> 기반 추출이 너무 짧으면
         #     해당 요소의 전체 텍스트(get_text)로 폴백하도록 수정.
+        # [수정 20261119] 국내 언론사 CMS의 본문 전용 영역을 먼저 시도. 기존 범용 셀렉터만으로는
+        # 이데일리 등에서 본문 대신 메뉴 텍스트(짧은 줄 나열)를 집어오는 문제가 있었음.
         content = ""
-        for selector in ["article", "main", "[class*='article']", "[class*='content']", "[class*='news']"]:
+        selectors = [
+            "#dic_area", "#articleBodyContents", "#article-view-content-div", "[itemprop='articleBody']",
+            "#articleBody", ".news_body", ".article_body", ".article-body", "#article_body", ".view_con",
+            "#news_body_area", ".article_txt", "#newsEndContents", ".article_content", ".article_view",
+            "article", "main", "[class*='article']", "[class*='content']", "[class*='news']",
+        ]
+        for selector in selectors:
             el = soup.select_one(selector)
             if el:
                 paragraphs = el.find_all("p")
@@ -64,9 +81,11 @@ def _fetch_article(url: str) -> str | None:
                     raw = el.get_text(separator="\n", strip=True)
                     if len(raw) > len(candidate):
                         candidate = raw
+                if not _looks_like_body(candidate):
+                    continue
                 if len(candidate) > len(content):
                     content = candidate
-                if len(content) > 200:
+                if len(content) > 600:  # 충분히 긴 본문을 찾으면 중단 (짧으면 다음 셀렉터와 비교해 가장 긴 것)
                     break
 
         if not content:

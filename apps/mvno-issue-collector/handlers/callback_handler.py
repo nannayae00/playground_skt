@@ -1,17 +1,30 @@
 """
-handlers/callback_handler.py  v1.1
+handlers/callback_handler.py  v1.4
 작성일: 2026-06-30
 
 [수정 이력]
 [v1.0 / 2026-06-30] 신규 생성
 [v1.1 / 2026-07-02] 504 타임아웃 수정: 콜백 즉시 응답 후 저장은 백그라운드 스레드 처리
+[v1.2 / 2026-10-05] newsreg: 콜백 추가 (news_scraper 뉴스 다이제스트의 기사별 등록 버튼).
+                     session.py는 chat당 세션 슬롯이 1개뿐이라 그대로 쓰면 여러 기사를
+                     동시에 보낼 때 세션 충돌이 생기므로, news_drafts 컬렉션에 기사별로
+                     독립 저장된 draft를 콜백데이터의 draft_id로 직접 조회하는 별도 경로.
+[v1.3 / 2026-10-06] newsreg:preview 추가 - 번호 버튼 클릭 시 바로 저장하지 않고 등록될
+                     내용을 미리 보여준 뒤 수정 가능하게 함. 이 시점부터는 기사 1건만
+                     다루므로 session.py에 올려서 기존 confirm/edit/cancel 플로우를
+                     그대로 재사용 (중복 구현 없이 edit_handler 등 기존 코드 재사용).
+[v1.4 / 2026-11-19] newsdoc: 콜백 추가 - 뉴스가 바로 mvno_issues에 자동 등록되면서 결과
+                     메시지의 ✏️수정 / 🗑삭제 버튼 처리. 수정은 기존 edit 플로우를 재사용하되
+                     ✅등록 시 새 문서를 만들지 않고 해당 문서를 덮어씀(replace_doc_id).
+                     삭제는 한 번 더 확인 후 mvno_issues_deleted에 백업하고 삭제.
 """
 
 import logging
 import threading
 from handlers.telegram import answer_callback, send_message, send_message_with_buttons
 from handlers.session import get_session, save_session
-from handlers.firestore_writer import save_issue
+from handlers.firestore_writer import save_issue, replace_issue, delete_issue_with_backup, get_issue
+from handlers.news_drafts import get_draft, delete_draft
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +37,13 @@ def handle_callback(callback_query: dict):
     # 텔레그램에 즉시 응답 (5초 내 필수)
     answer_callback(query_id)
 
+    if data.startswith("newsreg:"):
+        _handle_news_callback(chat_id, data)
+        return
+    if data.startswith("newsdoc:"):
+        _handle_newsdoc_callback(chat_id, data)
+        return
+
     session = get_session(chat_id)
     if not session:
         send_message(chat_id, "⏰ 세션이 만료되었습니다. 다시 입력해주세요.")
@@ -35,11 +55,12 @@ def handle_callback(callback_query: dict):
     # ✅ 등록 → 백그라운드 저장
     if data.startswith("confirm:"):
         target_collection = data.split(":")[1]
+        replace_doc_id = session.get("replace_doc_id")
         save_session(chat_id, None)
         send_message(chat_id, "⏳ 저장 중...")
         threading.Thread(
             target=_save_and_notify,
-            args=(chat_id, draft, target_collection),
+            args=(chat_id, draft, target_collection, replace_doc_id),
             daemon=True
         ).start()
 
@@ -82,9 +103,47 @@ def handle_callback(callback_query: dict):
             ).start()
 
 
-def _save_and_notify(chat_id: str, draft: dict, collection: str):
+def _handle_news_callback(chat_id: str, data: str):
     try:
-        doc_id = save_issue(draft, collection)
+        _, action, draft_id = data.split(":", 2)
+    except ValueError:
+        return
+
+    draft = get_draft(draft_id)
+    if not draft:
+        send_message(chat_id, "⏰ 이미 처리되었거나 만료된 기사입니다.")
+        return
+
+    record = draft.get("record", {})
+    dup = draft.get("duplicate")
+
+    if action == "preview":
+        # 다이제스트의 "N번 확인" 버튼. 이 draft를 session으로 넘기고 수동입력 플로우와
+        # 동일한 미리보기+버튼(✅등록/🔄분류변경/✏️수정/❌취소/➕기존에추가)을 재사용.
+        delete_draft(draft_id)
+        collection = record.get("_collection", "mvno_issues")
+        save_session(chat_id, {
+            "status": "awaiting_confirmation",
+            "draft": record,
+            "collection": collection,
+            "duplicate": dup,
+        })
+
+        from handlers.input_handler import _build_preview, _build_buttons
+        preview = _build_preview(record)
+        dup_notice = ""
+        if dup:
+            dup_notice = f"\n\n⚠️ <b>유사 이슈가 있습니다:</b>\n{dup['id']}\n{dup['summary']}\n기존 항목에 추가하려면 '추가'를 눌러주세요."
+        buttons = _build_buttons(collection, bool(dup))
+        send_message_with_buttons(chat_id, preview + dup_notice, buttons)
+
+
+def _save_and_notify(chat_id: str, draft: dict, collection: str, replace_doc_id: str | None = None):
+    try:
+        if replace_doc_id and collection == "mvno_issues":
+            doc_id = replace_issue(replace_doc_id, draft)
+        else:
+            doc_id = save_issue(draft, collection)
         if doc_id:
             send_message(chat_id, f"✅ <b>저장 완료!</b>\n📁 {collection}\n🆔 {doc_id}")
         else:
@@ -105,3 +164,43 @@ def _append_and_notify(chat_id: str, dup: dict, new_record: dict):
     except Exception as e:
         logger.error(f"백그라운드 추가 오류: {e}", exc_info=True)
         send_message(chat_id, "❌ 추가 중 오류가 발생했습니다.")
+
+def _handle_newsdoc_callback(chat_id: str, data: str):
+    """자동 등록된 뉴스 이슈의 ✏️수정 / 🗑삭제 버튼."""
+    try:
+        _, action, key = data.split(":", 2)
+    except ValueError:
+        return
+    mapping = get_draft(key) or {}
+    doc_id = (mapping.get("record") or {}).get("doc_id")
+    if not doc_id:
+        send_message(chat_id, "⏰ 이미 처리되었거나 만료된 항목입니다.")
+        return
+    record = get_issue(doc_id)
+    if record is None:
+        send_message(chat_id, f"⚠️ 이미 삭제된 이슈입니다: {doc_id}")
+        return
+
+    if action == "edit":
+        record = {k: v for k, v in record.items() if k not in ("updated_at",)}
+        record["_collection"] = "mvno_issues"
+        save_session(chat_id, {
+            "status": "awaiting_edit",
+            "draft": record,
+            "collection": "mvno_issues",
+            "duplicate": None,
+            "replace_doc_id": doc_id,
+        })
+        send_message(chat_id, f"✏️ <b>{doc_id}</b>\n수정할 내용을 자유롭게 입력해주세요.\n"
+                              "예) '요약을 더 짧게, 영향도 하로, 망은 L망'\n(수정 후 ✅등록을 누르면 이 이슈에 덮어씁니다)")
+    elif action == "del":
+        send_message_with_buttons(
+            chat_id, f"🗑 이 이슈를 삭제할까요?\n🆔 {doc_id}\n📝 {record.get('summary', '')}",
+            [[{"text": "🗑 삭제", "callback_data": f"newsdoc:delok:{key}"},
+              {"text": "↩️ 그대로 두기", "callback_data": "cancel"}]])
+    elif action == "delok":
+        if delete_issue_with_backup(doc_id):
+            delete_draft(key)
+            send_message(chat_id, f"🗑 삭제 완료 (백업: mvno_issues_deleted)\n🆔 {doc_id}")
+        else:
+            send_message(chat_id, "❌ 삭제 중 오류가 발생했습니다.")
