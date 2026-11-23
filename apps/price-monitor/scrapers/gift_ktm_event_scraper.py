@@ -369,7 +369,7 @@ def parse_images_with_vision(image_urls: list, db=None) -> list:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY 환경변수 없음")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))  # [수정 20261123] SDK 3.x가 v1로 호출 → thinking_config 400 오류(11/16~), v1beta 고정
     model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 
     img_cache_col = db.collection("ktm_image_cache") if db is not None else None
