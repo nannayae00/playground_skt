@@ -3,7 +3,8 @@
 - v1.11 (2026-11-16): 07:30 재수집 확인 메시지에 선불(010 신규 + MNP IN 합산) 망별 실사업자 수와
   망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시.
   '사업자별 MNP' → '후불 MNP', '이상 없음' → '수집 완료', 후불·선불 블록 사이 빈 줄,
-  망 통합 아래에 3사망/2사망/단독 사업자 수, 단독은 SM/KM/LM 내역과 SM 단독 사업자 약칭 (사용자 요청).
+  망 통합 아래에 3사망/2사망/단독 사업자 수, 단독은 SM/KM/LM 내역과 SM 단독 사업자 약칭.
+  하루 실적 5건 이하인 망은 실적 없음으로 봄(ACTIVE_MIN) (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -445,6 +446,9 @@ def _snapshot(target_date: str) -> dict:
             "mnp_net": mnp_net, "pp_brands": pp_brands}
 
 
+ACTIVE_MIN = 5   # v1.11: 하루 실적(후불 IN, 선불 신규+IN)이 이 값 이하인 망은 실적 없는 것으로 봄 (사용자 요청)
+
+
 def _net_mix_lines(net_sets: list, sm_solo: list = None) -> str:
     """망 통합 사업자를 실적 난 망 수로 나눔 (v1.11): 3사망 / 2사망 / 단독(단독은 망별 SM·KM·LM 내역)."""
     norm = [{ {"SKT": "S", "KT": "K", "LGU": "L"}.get(n, n) for n in x} for x in net_sets]
@@ -464,7 +468,7 @@ def _active_operator_line(snap: dict) -> str:
     merged = {}   # 망 통합: 망 표시를 뗀 이름 기준 (프리텔레콤SKT/KT + 프리티LG = 1개) → 실적 난 망들
     for brand, (tin, _) in snap["mnp"].items():
         net = snap["mnp_net"].get(brand)
-        if tin > 0 and net in cnt and not is_mno_brand(brand):
+        if tin > ACTIVE_MIN and net in cnt and not is_mno_brand(brand):
             cnt[net] += 1
             name, prev = brand, None
             while name != prev:
@@ -472,7 +476,7 @@ def _active_operator_line(snap: dict) -> str:
             key = ALIASES.get(name, name)
             merged.setdefault(key, set()).add(net)
             tin_by.setdefault(key, {})[net] = tin
-    return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
+    return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>{ACTIVE_MIN})\n"
             f"  실사업자(망 통합) : {len(merged)}개" + _net_mix_lines(
                 list(merged.values()),
                 [SHORT_NAMES.get(k, k) for k, v in sorted(merged.items(), key=lambda kv: -tin_by[kv[0]].get("SKT", 0))
@@ -487,7 +491,7 @@ def _prepaid_operator_line(pp_brands: dict) -> str:
         hit = set()
         for n in cnt:
             blk = b.get(n) or {}
-            if blk.get("reg", 0) > 0 or blk.get("pin", 0) > 0:
+            if blk.get("reg", 0) + blk.get("pin", 0) > ACTIVE_MIN:
                 cnt[n] += 1
                 hit.add(n)
         if hit:
@@ -495,7 +499,7 @@ def _prepaid_operator_line(pp_brands: dict) -> str:
         if hit == {"S"}:
             blk = b.get("S") or {}
             solo_sm.append((blk.get("reg", 0) + blk.get("pin", 0), b.get("short") or name))
-    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 (IN>0)\n"
+    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 (신규+IN>{ACTIVE_MIN})\n"
             f"  실사업자(망 통합) : {len(mix)}개" + _net_mix_lines(mix, [t for _, t in sorted(solo_sm, key=lambda x: -x[0])]))
 
 
