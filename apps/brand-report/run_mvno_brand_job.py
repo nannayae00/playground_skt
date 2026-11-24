@@ -1,5 +1,10 @@
 """
 [수정 이력]
+- v1.11 (2026-11-16): 07:30 재수집 확인 메시지에 선불(010 신규 + MNP IN 합산) 망별 실사업자 수와
+  망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시.
+  '사업자별 MNP' → '후불 MNP', '이상 없음' → '수집 완료', 후불·선불 블록 사이 빈 줄,
+  망 통합 아래에 3사망/2사망/단독 사업자 수, 단독은 SM/KM/LM 내역과 SM 단독 사업자 약칭.
+  3사망/2사망/단독 구분 때 하루 실적 5건 이하인 망은 빼고 봄(ACTIVE_MIN, 모든 망이 5건 이하면 그대로) (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -418,7 +423,7 @@ def _snapshot(target_date: str) -> dict:
     """대상일 값 스냅샷: 사업자별 MNP(IN/OUT)와 선불(망 합계·사업자×망의 신규/해지/IN/OUT)."""
     from google.cloud import firestore
     db = firestore.Client(project=PROJECT_ID, database=DATABASE_ID)
-    mnp, prepaid, mnp_net = {}, {}, {}
+    mnp, prepaid, mnp_net, pp_brands = {}, {}, {}, {}
     for coll, field, idx in (("ktoa_mvno_brand_in", "total_in", 0), ("ktoa_mvno_brand_out", "total_out", 1)):
         for d in db.collection(coll).where("date", "==", target_date).stream():
             x = d.to_dict()
@@ -432,20 +437,41 @@ def _snapshot(target_date: str) -> dict:
         keys = ("reg", "term", "pin", "pout")
         for n, m in s.get("networks", {}).items():
             prepaid[n] = [m.get(k, 0) for k in keys]
-        for b in s.get("brands", {}).values():
+        pp_brands = s.get("brands", {})
+        for b in pp_brands.values():
             for n in ("S", "K", "L"):
                 if n in b:
                     prepaid[f"{b['short']}({n})"] = [b[n].get(k, 0) for k in keys]
     return {"mnp": {k: tuple(v) for k, v in mnp.items()}, "prepaid": {k: tuple(v) for k, v in prepaid.items()},
-            "mnp_net": mnp_net}
+            "mnp_net": mnp_net, "pp_brands": pp_brands}
+
+
+ACTIVE_MIN = 5   # v1.11: 3사망/2사망/단독 구분 때 하루 실적(후불 IN, 선불 신규+IN)이 이 값 이하인 망은 빼고 봄.
+                 #        모든 망이 이 값 이하인 사업자는 실적 난 망 그대로 (사용자 요청: 조이텔KT 1건은 무시, 네이블 4건은 포함)
+
+
+def _main_nets(vals: dict) -> set:
+    """망별 실적 {망: 건수} → 3사망/2사망/단독 구분에 쓸 망 (ACTIVE_MIN 초과 망, 없으면 실적>0인 망)."""
+    big = {n for n, v in vals.items() if v > ACTIVE_MIN}
+    return big or {n for n, v in vals.items() if v > 0}
+
+
+def _net_mix_lines(net_sets: list, sm_solo: list = None) -> str:
+    """망 통합 사업자를 실적 난 망 수로 나눔 (v1.11): 3사망 / 2사망 / 단독(단독은 망별 SM·KM·LM 내역)."""
+    norm = [{ {"SKT": "S", "KT": "K", "LGU": "L"}.get(n, n) for n in x} for x in net_sets]
+    c = {k: sum(1 for x in norm if len(x) == k) for k in (3, 2, 1)}
+    solo = {n: sum(1 for x in norm if x == {n}) for n in "SKL"}
+    return (f"\n   - 3사망 : {c[3]}개\n   - 2사망 : {c[2]}개\n   - 단독 : {c[1]}개"
+            f" (SM {solo['S']}개, KM {solo['K']}개, LM {solo['L']}개)"
+            + (f"\n     · SM 단독 : {', '.join(sm_solo)}" if sm_solo else ""))
 
 
 def _active_operator_line(snap: dict) -> str:
     """MNO(SKT/KT/LGU+) 제외, 당일 IN>0인 알뜰폰 사업자 수를 망별로 (v1.10)."""
     from ktoa_mvno_report import is_mno_brand, clean_brand_name
-    from ktoa_prepaid_summary import ALIASES
+    from ktoa_prepaid_summary import ALIASES, SHORT_NAMES
     cnt = {"SKT": 0, "KT": 0, "LGU": 0}
-    merged = set()   # 망 통합: 망 표시를 뗀 이름 기준 (프리텔레콤SKT/KT + 프리티LG = 1개)
+    tin_by = {}   # 망 통합 이름(프리텔레콤SKT/KT + 프리티LG = 1개) → {망: IN}
     for brand, (tin, _) in snap["mnp"].items():
         net = snap["mnp_net"].get(brand)
         if tin > 0 and net in cnt and not is_mno_brand(brand):
@@ -453,9 +479,35 @@ def _active_operator_line(snap: dict) -> str:
             name, prev = brand, None
             while name != prev:
                 prev, name = name, clean_brand_name(name)
-            merged.add(ALIASES.get(name, name))
+            key = ALIASES.get(name, name)
+            tin_by.setdefault(key, {})[net] = tin_by.get(key, {}).get(net, 0) + tin
+    nets = {k: _main_nets(v) for k, v in tin_by.items()}
+    sm_solo = [SHORT_NAMES.get(k, k) for k in sorted(nets, key=lambda k: -tin_by[k].get("SKT", 0)) if nets[k] == {"SKT"}]
     return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
-            f"  실사업자(망 통합) : {len(merged)}개")
+            f"  실사업자(망 통합) : {len(nets)}개" + _net_mix_lines(list(nets.values()), sm_solo))
+
+
+def _prepaid_operator_line(pp_brands: dict) -> str:
+    """선불 사업자 수 (v1.11): 010 신규 또는 MNP IN이 1건 이상인 사업자. 망별(S/K/L)과 망 통합(대표명 기준)."""
+    cnt = {"S": 0, "K": 0, "L": 0}
+    mix, solo_sm = [], []
+    for name, b in (pp_brands or {}).items():
+        vals = {n: (b.get(n) or {}).get("reg", 0) + (b.get(n) or {}).get("pin", 0) for n in cnt}
+        for n, v in vals.items():
+            if v > 0:
+                cnt[n] += 1
+        main = _main_nets(vals)
+        if main:
+            mix.append(main)
+        if main == {"S"}:
+            solo_sm.append((vals["S"], b.get("short") or name))
+    return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 (IN>0)\n"
+            f"  실사업자(망 통합) : {len(mix)}개" + _net_mix_lines(mix, [t for _, t in sorted(solo_sm, key=lambda x: -x[0])]))
+
+
+def _no_perf_text(target_date_obj: date) -> str:
+    """실적 0인 날 표시 (v1.11): 일요일은 '실적 없음 (일요일)', 그 밖은 '실적 없음 (KTOA 집계 0)'."""
+    return "실적 없음 (일요일)" if target_date_obj.weekday() == 6 else "실적 없음 (KTOA 집계 0)"
 
 
 def _diff_lines(before: dict, after: dict, cols: tuple, limit: int = 10) -> list[str]:
@@ -481,21 +533,33 @@ def run_morning_verify(target_date: str, target_date_obj: date) -> None:
     if run_scraper():
         after = _snapshot(target_date)
         d, n = _diff_lines(before["mnp"], after["mnp"], ("IN", "OUT"))
-        lines.append(f"· 사업자별 MNP : {'이상 없음' if not n else f'변경 {n}건'} (사업자 {len(after['mnp'])}개)")
-        lines.append(_active_operator_line(after))
+        status = '수집 완료' if not n else f'수집 완료, 변경 {n}건'
+        if sum(v[0] for v in after["mnp"].values()) == 0:
+            lines.append(f"· 후불 MNP : {_no_perf_text(target_date_obj)}" + ("" if not n else f", 변경 {n}건"))
+        else:
+            lines.append(f"· 후불 MNP : {status} (사업자 {len(after['mnp'])}개)")
+            lines.append(_active_operator_line(after))
         lines += d
     else:
-        lines.append("· 사업자별 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
+        lines.append("· 후불 MNP : ⚠️ 재수집 실패 (00시 값 유지)")
 
+    lines.append("")   # 후불·선불 블록 사이 빈 줄 (v1.11)
     try:
         from ktoa_prepaid_scraper import run_daily
         run_daily(7, dry_run=False, notify=False)
-        after_pp = _snapshot(target_date)["prepaid"]
-        d, n = _diff_lines(before["prepaid"], after_pp, ("신규", "해지", "IN", "OUT"))
-        lines.append(f"· 선불 : {'이상 없음' if not n else f'변경 {n}건'}")
+        snap_pp = _snapshot(target_date)
+        d, n = _diff_lines(before["prepaid"], snap_pp["prepaid"], ("신규", "해지", "IN", "OUT"))
+        status = '수집 완료' if not n else f'수집 완료, 변경 {n}건'
+        has_perf = any((b.get(k) or {}).get(m, 0) > 0
+                       for b in snap_pp["pp_brands"].values() for k in "SKL" for m in ("reg", "pin"))
+        if not has_perf:
+            lines.append(f"· 선불(010·MNP) : {_no_perf_text(target_date_obj)}" + ("" if not n else f", 변경 {n}건"))
+        else:
+            lines.append(f"· 선불(010·MNP) : {status} (사업자 {len(snap_pp['pp_brands'])}개)")
+            lines.append(_prepaid_operator_line(snap_pp["pp_brands"]))
         lines += d
     except Exception as e:
-        lines.append(f"· 선불 : ⚠️ 재수집 실패 ({e})")
+        lines.append(f"· 선불(010·MNP) : ⚠️ 재수집 실패 ({e})")
 
     if any(l.startswith("· ") and "변경" in l for l in lines):
         lines.append("(DB는 재수집 값으로 갱신됨, 리포트는 재발송 안 함)")
