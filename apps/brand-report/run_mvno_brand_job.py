@@ -3,7 +3,7 @@
 - v1.11 (2026-11-16): 07:30 재수집 확인 메시지에 선불(010 신규 + MNP IN 합산) 망별 실사업자 수와
   망 통합 사업자 수를 표시. 대상일이 일요일 등 실적 0인 날은 사업자 0개 대신 '실적 없음'으로 표시.
   '사업자별 MNP' → '후불 MNP', '이상 없음' → '수집 완료', 후불·선불 블록 사이 빈 줄,
-  망 통합 아래에 3사망/2사망/단독 사업자 수, 단독은 SM/KM/LM 내역과 SM 단독 사업자 실적 (사용자 요청).
+  망 통합 아래에 3사망/2사망/단독 사업자 수, 단독은 SM/KM/LM 내역과 SM 단독 사업자 약칭 (사용자 요청).
 - v1.10 (2026-10-29): 07:30 재수집 확인 메시지에 망별 실사업자 수(MNO 제외, IN>0)와
   망 통합 사업자 수(같은 회사 여러 망 = 1개) 추가 (사용자 요청).
 - v1.9 (2026-10-29): 07:30 실행은 대상일이 00시대에 이미 발송됐으면 재수집 후 변경 여부만
@@ -458,7 +458,7 @@ def _net_mix_lines(net_sets: list, sm_solo: list = None) -> str:
 def _active_operator_line(snap: dict) -> str:
     """MNO(SKT/KT/LGU+) 제외, 당일 IN>0인 알뜰폰 사업자 수를 망별로 (v1.10)."""
     from ktoa_mvno_report import is_mno_brand, clean_brand_name
-    from ktoa_prepaid_summary import ALIASES
+    from ktoa_prepaid_summary import ALIASES, SHORT_NAMES
     cnt = {"SKT": 0, "KT": 0, "LGU": 0}
     tin_by = {}   # 망 통합 이름 → {망: IN} (SM 단독 실적 표시용)
     merged = {}   # 망 통합: 망 표시를 뗀 이름 기준 (프리텔레콤SKT/KT + 프리티LG = 1개) → 실적 난 망들
@@ -475,7 +475,7 @@ def _active_operator_line(snap: dict) -> str:
     return (f"  실사업자 SM {cnt['SKT']}개, KM {cnt['KT']}개, LM {cnt['LGU']}개 (IN>0)\n"
             f"  실사업자(망 통합) : {len(merged)}개" + _net_mix_lines(
                 list(merged.values()),
-                [f"{k} IN {tin_by[k]['SKT']:,}" for k, v in sorted(merged.items(), key=lambda kv: -tin_by[kv[0]].get("SKT", 0))
+                [SHORT_NAMES.get(k, k) for k, v in sorted(merged.items(), key=lambda kv: -tin_by[kv[0]].get("SKT", 0))
                  if v == {"SKT"}]))
 
 
@@ -494,8 +494,7 @@ def _prepaid_operator_line(pp_brands: dict) -> str:
             mix.append(hit)
         if hit == {"S"}:
             blk = b.get("S") or {}
-            solo_sm.append((blk.get("reg", 0) + blk.get("pin", 0),
-                            f"{name} 신규 {blk.get('reg', 0):,}·IN {blk.get('pin', 0):,}"))
+            solo_sm.append((blk.get("reg", 0) + blk.get("pin", 0), b.get("short") or name))
     return (f"  실사업자 SM {cnt['S']}개, KM {cnt['K']}개, LM {cnt['L']}개 (IN>0)\n"
             f"  실사업자(망 통합) : {len(mix)}개" + _net_mix_lines(mix, [t for _, t in sorted(solo_sm, key=lambda x: -x[0])]))
 
