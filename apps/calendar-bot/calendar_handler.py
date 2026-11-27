@@ -21,6 +21,8 @@ v1.9 | 2026-09-20 | list_events(keyword=)/search_events - Google Calendar API의
      | ("점심" 검색 시 "MVNo팀 점심"은 잡히는데 "IIC점심"은 빠짐). q 서버측
      | 필터링 대신 _fetch_all_pages로 기간 내 전체를 받아 클라이언트에서
      | substring 매칭하도록 변경
+v2.0 | 2026-11-27 | check_duplicates - 기간 한 번에 조회, 항공 스케줄표는 시간 달라도
+     | 같은 날+같은 제목이면 중복 처리 (등록 시 중복은 자동 제외하는 기능용)
 """
 
 import os
@@ -273,26 +275,42 @@ class CalendarHandler:
     def check_duplicates(self, events: list) -> list:
         """같은 날 + 같은 제목 + 같은 시작 시간(둘 다 종일 일정이면 시간 없음도 일치)
         일 때만 중복으로 판단. 예전엔 제목만 봐서 같은 날 다른 시간대 동명 일정도
-        전부 중복으로 떴음 (예: 오전 "회의"와 오후 "회의")."""
+        전부 중복으로 떴음 (예: 오전 "회의"와 오후 "회의").
+        [v2.0] 항공 스케줄표(input_type=schedule)는 같은 날 + 같은 제목이면 시간이
+        달라도 중복으로 봄 (SHOWUP 시간을 손으로 넣은 기존 일정과 몇 분씩 다를 수 있음).
+        기간 전체를 한 번에 조회해서 비교 (예전엔 일정마다 API 호출)."""
+        dated = [ev for ev in events if ev.get("date")]
+        if not dated:
+            return []
+        try:
+            dates = sorted(ev["date"] for ev in dated)
+            date_from = datetime.strptime(dates[0], "%Y-%m-%d")
+            date_to = datetime.strptime(dates[-1], "%Y-%m-%d")
+            params = {
+                "timeMin": date_from.strftime("%Y-%m-%dT00:00:00+09:00"),
+                "timeMax": date_to.strftime("%Y-%m-%dT23:59:59+09:00"),
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": 250,
+            }
+            raw_items, _ = _fetch_all_pages(f"{CALENDAR_BASE}/calendars/{CALENDAR_ID}/events", params)
+            existing = self._parse_events(raw_items)
+        except Exception as e:
+            logger.error(f"Duplicate check error: {e}")
+            return []
+
         results = []
-        for ev in events:
-            date_str = ev.get("date")
-            if not date_str:
-                continue
-            try:
-                date_from = datetime.strptime(date_str, "%Y-%m-%d")
-                existing = self.list_events(date_from, date_from)
-                ev_title = ev.get("title", "").replace(" ", "")
-                ev_time = ev.get("time_start")
-                dups = [
-                    e for e in existing
-                    if e["title"].replace(" ", "") == ev_title
-                    and e.get("time_start") == ev_time
-                ]
-                if dups:
-                    results.append({"event": ev, "duplicates": dups})
-            except Exception as e:
-                logger.error(f"Duplicate check error: {e}")
+        for ev in dated:
+            ev_title = (ev.get("title") or "").replace(" ", "")
+            ignore_time = ev.get("input_type") == "schedule"
+            dups = [
+                e for e in existing
+                if e["date"] == ev["date"]
+                and e["title"].replace(" ", "") == ev_title
+                and (ignore_time or e.get("time_start") == ev.get("time_start"))
+            ]
+            if dups:
+                results.append({"event": ev, "duplicates": dups})
         return results
 
     def find_duplicate_groups(self, events: list) -> list:

@@ -41,6 +41,8 @@ v3.0 | 2026-09-20 | 조회/검색/브리핑에서 중복 등록된 일정이 두
 v3.1 | 2026-09-20 | 일정을 여러 메시지로 나눠 보내면 확인 누르기 전에 이전
      | 메시지분이 sessions.set()에 덮어써져서 마지막 메시지 일정만 남던 문제 -
      | waiting_confirm 상태면 새 일정을 이어붙이도록 수정 (handle_text, handle_image)
+v3.3 | 2026-11-27 | 등록 시 이미 캘린더에 있는 일정은 자동으로 빼고 새 일정만 확인 카드에
+     | 올림 (_prepare_confirm). 예전엔 중복이 있으면 '그냥 등록'으로 전체를 등록했음
 """
 
 import os
@@ -580,6 +582,34 @@ def _merge_with_pending(chat_id: int, new_events: list) -> list:
     return new_events
 
 
+def _prepare_confirm(chat_id: int, events: list):
+    """[v3.3] 이미 캘린더에 있는 일정(중복)은 빼고 새 일정만 등록 확인 카드에 올림.
+    예전엔 중복이 하나라도 있으면 '그냥 등록' 버튼으로 전체(중복 포함)를 등록했음."""
+    dups = calendar.check_duplicates(events)
+    dup_ids = {id(d["event"]) for d in dups}
+    new_events = [ev for ev in events if id(ev) not in dup_ids]
+
+    skipped = ""
+    if dups:
+        skipped = f"\n\n⏭️ <b>이미 있는 {len(dups)}건은 제외했어요</b>"
+        for d in dups:
+            skipped += f"\n  • {esc(d['event'].get('title', ''))} {format_date(d['event'].get('date', ''))}"
+
+    if not new_events:
+        sessions.clear(chat_id)
+        send_message(chat_id, "✅ 모두 이미 캘린더에 있는 일정이라 새로 등록할 게 없어요." + skipped)
+        return
+
+    sessions.set(chat_id, {"state": "waiting_confirm", "events": new_events})
+    msg = format_events_message(new_events)
+    if not dups:
+        # 비서 코멘트 (중복 없을 때만)
+        comment = _get_assistant_comment(new_events)
+        if comment:
+            msg += f"\n\n💬 <i>{esc(comment)}</i>"
+    send_message(chat_id, msg + skipped, make_confirm_keyboard())
+
+
 def handle_text(chat_id: int, text: str):
     send_message(chat_id, "⏳ 일정을 분석중입니다...")
     try:
@@ -589,23 +619,7 @@ def handle_text(chat_id: int, text: str):
             return
         events = _merge_with_pending(chat_id, events)
 
-        # 중복 체크
-        dups = calendar.check_duplicates(events)
-        if dups:
-            dup_msg = "⚠️ <b>이미 등록된 비슷한 일정이 있어요!</b>\n\n"
-            for d in dups:
-                dup_msg += f"• <b>{esc(d['event']['title'])}</b> {d['event']['date']} → 이미 있음\n"
-            dup_msg += "\n그래도 등록하시겠어요?"
-            sessions.set(chat_id, {"state": "waiting_confirm", "events": events})
-            send_message(chat_id, dup_msg, make_confirm_anyway_keyboard())
-        else:
-            sessions.set(chat_id, {"state": "waiting_confirm", "events": events})
-            # 1개 일정일 때 비서 코멘트
-            comment = _get_assistant_comment(events)
-            msg = format_events_message(events)
-            if comment:
-                msg += f"\n\n💬 <i>{esc(comment)}</i>"
-            send_message(chat_id, msg, make_confirm_keyboard())
+        _prepare_confirm(chat_id, events)
     except Exception as e:
         logger.error(f"Parse error: {e}")
         send_message(chat_id, f"❗ 오류: {esc(str(e))}")
@@ -622,23 +636,7 @@ def handle_image(chat_id: int, message: dict):
             return
         events = _merge_with_pending(chat_id, events)
 
-        # 중복 체크
-        dups = calendar.check_duplicates(events)
-        if dups:
-            dup_msg = "⚠️ <b>이미 등록된 비슷한 일정이 있어요!</b>\n\n"
-            for d in dups:
-                dup_msg += f"• <b>{esc(d['event']['title'])}</b> {d['event']['date']} → 이미 있음\n"
-            dup_msg += "\n그래도 등록하시겠어요?"
-            sessions.set(chat_id, {"state": "waiting_confirm", "events": events})
-            send_message(chat_id, dup_msg, make_confirm_anyway_keyboard())
-        else:
-            sessions.set(chat_id, {"state": "waiting_confirm", "events": events})
-            # 1개 일정일 때 비서 코멘트
-            comment = _get_assistant_comment(events)
-            msg = format_events_message(events)
-            if comment:
-                msg += f"\n\n💬 <i>{esc(comment)}</i>"
-            send_message(chat_id, msg, make_confirm_keyboard())
+        _prepare_confirm(chat_id, events)
     except Exception as e:
         logger.error(f"Image error: {e}", exc_info=True)
         send_message(chat_id, f"❗ 이미지 분석 오류: {esc(str(e))}")
