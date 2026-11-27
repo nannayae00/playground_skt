@@ -41,9 +41,18 @@ v3.0 | 2026-09-20 | 조회/검색/브리핑에서 중복 등록된 일정이 두
 v3.1 | 2026-09-20 | 일정을 여러 메시지로 나눠 보내면 확인 누르기 전에 이전
      | 메시지분이 sessions.set()에 덮어써져서 마지막 메시지 일정만 남던 문제 -
      | waiting_confirm 상태면 새 일정을 이어붙이도록 수정 (handle_text, handle_image)
+v3.2 | 2026-10-20 | 사진 캡션을 버리던 문제 - "11/12 고양시 대회"처럼 날짜를 캡션으로
+     | 보내도 오늘 날짜로 등록됨. 캡션을 Gemini에 함께 넘기도록 수정
+     | ("파란 네모만 추가" 같은 필터 지시도 동작). 앨범(여러 장 묶음)은 캡션이
+     | 첫 장에만 붙어서 오므로 media_group_id로 공유
+v3.3 | 2026-10-21 | 여러 날에 걸친 시간 일정 표시를 "11-03 (화) 15:30 ~ 11-05 (목) 07:25"로
+     | 변경 (예전 표시는 매일 15:30~07:25처럼 보였음, 캘린더 등록은 원래 정상)
+v3.4 | 2026-10-30 | 텔레그램 메시지 전송 중 Connection reset이 나면 일정은 다 등록됐는데도
+     | "캘린더 등록 실패"로 안내되던 문제 - send_message 재시도 + 예외 전파 안 함
 """
 
 import os
+import time
 import html
 import json
 import logging
@@ -86,12 +95,23 @@ def esc(text) -> str:
 
 
 def send_message(chat_id: int, text: str, reply_markup: dict = None):
+    """[v3.4] 연결 끊김(Connection reset)은 최대 3번 재시도하고, 그래도 실패하면
+    로그만 남김. 예전엔 예외가 호출한 쪽으로 올라가서, 캘린더 등록은 다 됐는데
+    결과 메시지 전송이 끊기면 "캘린더 등록 실패"로 잘못 안내됐음."""
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    resp = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload)
-    if not resp.ok:
-        logger.error(f"sendMessage 실패 ({resp.status_code}): {resp.text[:300]} | text={text[:200]!r}")
+    for attempt in range(3):
+        try:
+            resp = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=30)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"sendMessage 연결 오류 (시도 {attempt + 1}/3): {e}")
+            time.sleep(2 ** attempt)
+            continue
+        if not resp.ok:
+            logger.error(f"sendMessage 실패 ({resp.status_code}): {resp.text[:300]} | text={text[:200]!r}")
+        return
+    logger.error(f"sendMessage 최종 실패 | text={text[:200]!r}")
 
 
 def make_modify_keyboard(events: list) -> dict:
@@ -172,15 +192,18 @@ def format_event_line(ev: dict, idx: int = None) -> str:
     title = esc(ev.get("title", "제목 없음"))
     location = esc(ev.get("location", ""))
     date_fmt = format_date(date)
-    if date_end and date_end != date:
-        date_range = f"{date_fmt}~{format_date(date_end)}"
-    else:
-        date_range = date_fmt
+    multi_day = bool(date_end) and date_end != date
     time_str = ""
-    if time_start and time_end:
-        time_str = f" {time_start}~{time_end}"
-    elif time_start:
-        time_str = f" {time_start}"
+    if multi_day and time_start and time_end:
+        # [v3.3] 여러 날 + 시간 일정(항공 왕복 등)은 시작일시~종료일시로 표시.
+        # "11-03~11-05 15:30~07:25"는 매일 15:30~07:25처럼 읽혀서 헷갈림
+        date_range = f"{date_fmt} {time_start} ~ {format_date(date_end)} {time_end}"
+    else:
+        date_range = f"{date_fmt}~{format_date(date_end)}" if multi_day else date_fmt
+        if time_start and time_end:
+            time_str = f" {time_start}~{time_end}"
+        elif time_start:
+            time_str = f" {time_start}"
     loc_str = f" 📍{location}" if location else ""
     prefix = f"<b>{idx})</b> " if idx else ""
     return f"  {prefix}{title} | {date_range}{time_str}{loc_str}"
@@ -318,7 +341,8 @@ def handle_message(message: dict):
             "• <code>3/21 하키 10시</code>\n"
             "• <code>시애틀 일정 지워줘</code>\n"
             "• 예약 확인 문자 붙여넣기\n"
-            "• 스케줄표 사진 전송 📸\n\n"
+            "• 스케줄표 사진 전송 📸\n"
+            "• 사진 + 캡션: <code>11/12 고양시 대회</code>, <code>파란 네모만 추가</code>\n\n"
             "<b>명령어:</b>\n"
             "• <code>/list</code>, <code>/list 4/5</code>, <code>/list 4/5~4/10</code>\n"
             "• <code>/search 키워드</code>"
@@ -611,12 +635,40 @@ def handle_text(chat_id: int, text: str):
         send_message(chat_id, f"❗ 오류: {esc(str(e))}")
 
 
+def _get_image_caption(message: dict) -> str:
+    """[v3.2] 사진 캡션. 앨범으로 여러 장을 보내면 캡션은 한 장에만 붙고 나머지는
+    별도 update로 (병렬) 들어오므로, media_group_id 기준으로 Firestore에 저장해
+    같은 앨범의 다른 사진도 같은 캡션을 쓰게 함. 캡션 없는 사진이 먼저 처리될 수
+    있어 잠깐 기다렸다가 다시 확인."""
+    caption = (message.get("caption") or "").strip()
+    group_id = message.get("media_group_id")
+    if not group_id:
+        return caption
+    try:
+        db = sessions._get_db()
+        if db is None:
+            return caption
+        ref = db.collection("calendar_bot_media_captions").document(str(group_id))
+        if caption:
+            ref.set({"caption": caption, "ts": time.time()})
+            return caption
+        for _ in range(5):
+            snap = ref.get()
+            if snap.exists:
+                return snap.to_dict().get("caption", "")
+            time.sleep(1)
+    except Exception as e:
+        logger.warning(f"Media group caption lookup failed: {e}")
+    return caption
+
+
 def handle_image(chat_id: int, message: dict):
     send_message(chat_id, "📸 이미지에서 일정을 분석중입니다...")
     try:
         file_id = message["photo"][-1]["file_id"] if message.get("photo") else message["document"]["file_id"]
+        caption = _get_image_caption(message)
         image_bytes, mime_type = download_telegram_file(file_id)
-        events = gemini.parse_schedule_from_image(image_bytes, mime_type)
+        events = gemini.parse_schedule_from_image(image_bytes, mime_type, caption)
         if not events:
             send_message(chat_id, "❗ 이미지에서 일정을 찾지 못했어요.")
             return
