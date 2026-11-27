@@ -56,6 +56,8 @@ SOURCES = {
             '유모비': '유모비', '헬로': '헬로', '이야기후불': '이야기후불',
             # [추가 20261017] 실제로 올라온 파일명 변형 ("스카이라이프.png", "세븐_수정.png")
             '스카이라이프': '스카이', '텔링크': '텔링크',
+            # [추가 20261127] 부성 13차(11/27)부터 세븐 파일명이 "SK7.png"로 바뀌어 텔링크 칸이 공란으로 나감
+            'SK7': '텔링크', '세븐모바일': '텔링크',
         },
         # 본문 "N. 통신사명 (...)" 섹션 헤더 -> 메시지 양식 라벨
         'body_label_to_msg_label': {
@@ -196,6 +198,11 @@ def _get_chrome_driver():
     options.add_argument(f"user-agent={UA}")
     options.binary_location = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
     return webdriver.Chrome(options=options)
+
+
+def _norm_carrier_map(carrier_map: dict) -> dict:
+    """[추가 20261127] 헤더 매핑 키를 대소문자·공백 무시 형태로 ("KT M mobile" → "ktmmobile")"""
+    return {re.sub(r'\s+', '', k).lower(): v for k, v in carrier_map.items()}
 
 
 def _label_from_filename(stem: str, filename_to_label: dict) -> str:
@@ -388,7 +395,10 @@ def extract_prices_from_summary_image(source: dict, image_bytes: bytes) -> dict:
     by_carrier = {}
     for p in plans:
         carrier_raw = (p.get('carrier') or '').strip()
-        label = carrier_map.get(carrier_raw, carrier_raw)
+        # [수정 20261127] Gemini가 헤더를 "kt M mobile"처럼 대소문자·띄어쓰기를 바꿔 돌려주면
+        # 매핑을 못 찾아 KTM 칸이 공란으로 나감(비전 11/24·11/27) → 대소문자·공백 무시하고 비교
+        label = carrier_map.get(carrier_raw) or _norm_carrier_map(carrier_map).get(
+            re.sub(r'\s+', '', carrier_raw).lower(), carrier_raw)
         by_carrier.setdefault(label, []).append(p)
 
     # [수정 20260923] 내국인 MNP가 없는(=외국인전용, "내국인 개통불가") 요금제만 있는
