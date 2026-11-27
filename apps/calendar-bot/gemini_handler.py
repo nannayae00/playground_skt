@@ -23,6 +23,8 @@ v2.4 | 2026-09-20 | "다음주 점심일정들 알려줘"처럼 날짜+키워드
      | list action에 keyword 필드 추가
 v2.5 | 2026-09-20 | cleanup_duplicates action 추가 - "다음주 중복된 일정
      | 확인해서 삭제해줘"처럼 특정 기간 중복 일정 찾아서 정리하는 요청 지원
+v2.6 | 2026-11-27 | 스케줄표 휴무·병가 코드 설명 추가 - ATDO/ADO/DO 등은 제목
+     | "DAY OFF" + description에 "코드 · 영어 의미", 병가/미확정 코드 매핑
 """
 
 import os
@@ -97,6 +99,21 @@ def _build_parse_prompt() -> str:
 4. 당일 왕복: 출발편 SHOWUP ~ 귀국편 STA 로 합치기
 5. 체류 있는 왕복: date=출발일, date_end=귀국일로 합치기, 체류지 단독 일정 흡수
 6. STBY확인, 휴무, DAY OFF 등은 그대로 유지
+7. 휴무 코드(종일 일정): 제목은 "DAY OFF"로 통일하고, description에 "코드 · 영어 의미"를 넣음
+   (T_ 접두사가 붙은 코드는 T_를 뗀 코드와 같은 의미로 보되 description에는 원래 코드 표기)
+   - ATDO → "ATDO · Auto tagged days off"
+   - ADO → "ADO · Auto rostered day off"
+   - DO, T_DO → "DO · Day off" (T_DO면 "T_DO · Day off")
+   - PDO → "PDO · Requested day off"
+   - CDO → "CDO · Compensation day off"
+   - RCDO → "RCDO · Requested compensation day off"
+   - LDO → "LDO · Offset day off to last year"
+   - DAF3 → "DAF3 · Day off"
+8. 병가/미확정 코드(종일 일정): 제목은 코드의 영어 의미, description에 "코드 · 영어 의미"
+   - SIC2, SICA, CKLV (INJ/INE) → 제목 "Sick leave (work)"
+   - CKL3, SIC3 (ILL/HUJ) → 제목 "Sick leave (private)"
+   - TEMP, UFS, DFS → 제목 "Unfixed skd"
+9. STBY, T_STBY → 제목 "STBY확인요망" (description에 원래 코드)
 
 반드시 JSON 배열만 반환, 다른 텍스트 없음
 """
