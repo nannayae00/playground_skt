@@ -23,6 +23,8 @@ v1.9 | 2026-09-20 | list_events(keyword=)/search_events - Google Calendar API의
      | substring 매칭하도록 변경
 v2.0 | 2026-11-27 | check_duplicates - 기간 한 번에 조회, 항공 스케줄표는 시간 달라도
      | 같은 날+같은 제목이면 중복 처리 (등록 시 중복은 자동 제외하는 기능용)
+v2.1 | 2026-11-28 | 항공 스케줄표(input_type=schedule) 일정은 아내 일정이라 색상
+     | 구분 - colorId=SCHEDULE_COLOR_ID(기본 3, 보라)로 등록
 """
 
 import os
@@ -59,6 +61,8 @@ def dedupe_events(events: list) -> list:
 CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "primary")
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 CALENDAR_BASE = "https://www.googleapis.com/calendar/v3"
+# [v2.1] 항공 스케줄표(아내 근무 일정: 비행·DAY OFF·STBY) 색상. 3 = 포도(보라)
+SCHEDULE_COLOR_ID = os.environ.get("SCHEDULE_COLOR_ID", "3")
 
 
 def _get_access_token() -> str:
@@ -150,6 +154,8 @@ class CalendarHandler:
             body["location"] = location
         if description:
             body["description"] = description
+        if event.get("input_type") == "schedule" and SCHEDULE_COLOR_ID:
+            body["colorId"] = SCHEDULE_COLOR_ID
         return body
 
     def add_events(self, events: list) -> list:
