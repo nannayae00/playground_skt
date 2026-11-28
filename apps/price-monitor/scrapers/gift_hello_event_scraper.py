@@ -224,7 +224,7 @@ def parse_event_images(image_urls: list) -> tuple:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY 환경변수 없음")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))  # [수정 20261123] SDK 3.x가 v1로 호출 → thinking_config 400 오류(11/16~), v1beta 고정
     model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 
     raw_plans, raw_common, failures, calls = [], [], 0, 0
@@ -246,7 +246,9 @@ def parse_event_images(image_urls: list) -> tuple:
                 resp = client.models.generate_content(
                     model=model_name,
                     contents=[types.Part.from_bytes(data=data, mime_type=mime), GEMINI_PROMPT],
-                    config=types.GenerateContentConfig(response_mime_type="application/json"),
+                    # [수정 20261030] 생각량 1,024 제한 - 무제한과 일치율 같음(14장 중 9장, 무제한끼리도 9장), 비용 약 1/3
+                    config=types.GenerateContentConfig(response_mime_type="application/json",
+                                                       thinking_config=types.ThinkingConfig(thinking_budget=1024)),
                 )
                 obj = json.loads((resp.text or "{}").strip())
             except Exception as e:

@@ -15,6 +15,6 @@ openpyxl
 # 뽐뿌 크롤링용 추가 패키지
 beautifulsoup4==4.12.3
 lxml==5.1.0
-google-genai
+google-genai==3.3.0  # 2026-11-24 운영 이미지와 같은 버전으로 고정
 openpyxl
 pillow  # 헬로모바일 긴 이벤트 이미지 분할 (gift_hello_event_scraper)

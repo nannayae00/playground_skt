@@ -56,6 +56,8 @@ SOURCES = {
             '유모비': '유모비', '헬로': '헬로', '이야기후불': '이야기후불',
             # [추가 20261017] 실제로 올라온 파일명 변형 ("스카이라이프.png", "세븐_수정.png")
             '스카이라이프': '스카이', '텔링크': '텔링크',
+            # [추가 20261127] 부성 13차(11/27)부터 세븐 파일명이 "SK7.png"로 바뀌어 텔링크 칸이 공란으로 나감
+            'SK7': '텔링크', '세븐모바일': '텔링크',
         },
         # 본문 "N. 통신사명 (...)" 섹션 헤더 -> 메시지 양식 라벨
         'body_label_to_msg_label': {
@@ -196,6 +198,11 @@ def _get_chrome_driver():
     options.add_argument(f"user-agent={UA}")
     options.binary_location = os.environ.get('CHROME_BIN', '/usr/bin/chromium')
     return webdriver.Chrome(options=options)
+
+
+def _norm_carrier_map(carrier_map: dict) -> dict:
+    """[추가 20261127] 헤더 매핑 키를 대소문자·공백 무시 형태로 ("KT M mobile" → "ktmmobile")"""
+    return {re.sub(r'\s+', '', k).lower(): v for k, v in carrier_map.items()}
 
 
 def _label_from_filename(stem: str, filename_to_label: dict) -> str:
@@ -388,7 +395,10 @@ def extract_prices_from_summary_image(source: dict, image_bytes: bytes) -> dict:
     by_carrier = {}
     for p in plans:
         carrier_raw = (p.get('carrier') or '').strip()
-        label = carrier_map.get(carrier_raw, carrier_raw)
+        # [수정 20261127] Gemini가 헤더를 "kt M mobile"처럼 대소문자·띄어쓰기를 바꿔 돌려주면
+        # 매핑을 못 찾아 KTM 칸이 공란으로 나감(비전 11/24·11/27) → 대소문자·공백 무시하고 비교
+        label = carrier_map.get(carrier_raw) or _norm_carrier_map(carrier_map).get(
+            re.sub(r'\s+', '', carrier_raw).lower(), carrier_raw)
         by_carrier.setdefault(label, []).append(p)
 
     # [수정 20260923] 내국인 MNP가 없는(=외국인전용, "내국인 개통불가") 요금제만 있는
@@ -662,6 +672,18 @@ def process_new_article(source: dict, article: dict) -> dict:
             except Exception:
                 pass
 
+    # [추가 20261114] 요약본 이미지가 없어(예: 비전이 정책표를 ZIP으로만 올림) 7G/11G를 못 뽑았으면
+    # 원문 아카이브(첨부 엑셀 파싱)를 먼저 돌려 그 결과로 채움
+    archive_res = None
+    if mode == 'image_summary' and not any(
+            isinstance(v, dict) and (v.get('seven') or v.get('eleven')) for v in prices_by_label.values()):
+        archive_res = _run_archive(source, article)
+        rows = (archive_res or {}).get('_plan_rows') or []
+        if rows:
+            import offline_policy_archive as opa
+            prices_by_label = opa.summary_prices_from_plans(rows, source['row_order'])
+            print(f'[{source["msg_prefix"]}] 요약본 이미지 없음 → 첨부 엑셀로 7G/11G 산출: {len(rows)}행')
+
     write_date = datetime.fromtimestamp(article['write_ts_ms'] / 1000, tz=KST)
     round_no = _extract_round_no(article['subject'])
     highlights = extract_highlights(source, detail['body_text'])
@@ -712,8 +734,14 @@ def process_new_article(source: dict, article: dict) -> dict:
     db.collection(source['firestore_collection']).document(doc_id).set(record)
     set_last_seen_article_id(source, article_id)
 
-    # [추가 20261024] 분석용 원문 아카이브 (엑셀·이미지 원본 GCS 보관 + 전 요금제·본문 조건 파싱 →
-    # offline_policy_rounds). 메시지·위 레코드와 별개라 실패해도 알림 흐름엔 영향 없음
+    if archive_res is None:
+        _run_archive(source, article)
+    return record
+
+
+def _run_archive(source: dict, article: dict):
+    """[추가 20261024] 분석용 원문 아카이브 (엑셀·이미지 원본 GCS 보관 + 전 요금제·본문 조건 파싱 →
+    offline_policy_rounds). 실패해도 알림 흐름엔 영향 없음. 반환: archive_article 결과 또는 None"""
     try:
         import offline_policy_archive as opa
         source_key = next(k for k, v in SOURCES.items() if v is source)
@@ -723,10 +751,11 @@ def process_new_article(source: dict, article: dict) -> dict:
         finally:
             driver.quit()
         opa.recompute_effective_periods(source_key)
-        print(f'[archive] {res}')
+        print(f'[archive] { {k: v for k, v in res.items() if k != "_plan_rows"} }')
+        return res
     except Exception as e:
         print(f'[archive] 실패 (메시지 발송과 무관): {e}')
-    return record
+        return None
 
 
 def _get_secret_json(secret_name: str) -> dict:

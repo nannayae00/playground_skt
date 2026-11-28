@@ -27,6 +27,9 @@ d = db.collection("ktoa_daily").document("2026-10-07").get().to_dict()
 
 `apps/mvno-bot/forecast_engine.py`의 `_get_db()`를 써도 됩니다(그 경우 `pip install -r apps/mvno-bot/requirements.txt`).
 범위 조회는 `where('date','>=',...)`로 하고, 많은 문서를 반복 조회할 때는 한 번 받아 로컬(JSON)에 저장해서 쓰세요.
+`ktoa_mvno_brand_in`(약 38만 건)·`ktoa_mvno_brand_out`(약 52만 건)은 컬렉션 전체를 `stream()`하면 한 번에 수십만~백만 건이 읽혀 비용이 납니다
+(2026-11-10·11-17 각 약 200만 건, 회당 약 ₩1,200). 필요한 날짜 범위만 `where('date', ...)`로 읽고, 건수만 필요하면 `count()`를 쓰세요.
+두 컬렉션의 `inflows`·`outflows` 필드는 2026-11-19부터 색인에서 제외했으므로 이 필드로 `where`/`order_by` 하면 안 됩니다(파이썬에서 거르기).
 
 ## 핵심 데이터 (Firestore `mvno-data`)
 

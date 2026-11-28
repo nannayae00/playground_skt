@@ -312,7 +312,7 @@ def parse_images_with_vision(image_urls: list) -> list:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY 환경변수 없음")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))  # [수정 20261123] SDK 3.x가 v1로 호출 → thinking_config 400 오류(11/16~), v1beta 고정
     model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 
     global LAST_VISION_FAILURES
@@ -334,7 +334,9 @@ def parse_images_with_vision(image_urls: list) -> list:
                 contents=[
                     types.Part.from_bytes(data=base64.b64decode(b64), mime_type=mime),
                     GEMINI_VISION_PROMPT,
-                ]
+                ],
+                # [수정 20261030] 이미지 금액 추출은 생각(thinking) 없이 처리 (비용 절감, KT엠 비교 기준)
+                config=types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0)),
             )
             raw = (resp.text or "[]").strip()
             raw = re.sub(r"^```json\s*|^```\s*|```$", "", raw, flags=re.MULTILINE).strip()
@@ -410,13 +412,14 @@ def parse_text_with_gemini(text: str) -> list:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY 환경변수 없음")
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))  # [수정 20261123] SDK 3.x가 v1로 호출 → thinking_config 400 오류(11/16~), v1beta 고정
     model_name = os.environ.get("GEMINI_VISION_MODEL", "gemini-2.5-flash")
     try:
         resp = client.models.generate_content(
             model=model_name,
             contents=[GEMINI_TEXT_PROMPT + text],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            config=types.GenerateContentConfig(response_mime_type="application/json",
+                                               thinking_config=types.ThinkingConfig(thinking_budget=0)),
         )
         items = json.loads((resp.text or "[]").strip())
     except Exception as e:
